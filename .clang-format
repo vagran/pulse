@@ -1,0 +1,21 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+IndentCaseBlocks: false
+IndentCaseLabels: false
+AlwaysBreakAfterReturnType: All
+ColumnLimit: 100
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  SplitEmptyFunction: false
+PackConstructorInitializers: Never
+BreakConstructorInitializers: AfterColon
+SpaceBeforeCtorInitializerColon: false
+SeparateDefinitionBlocks: Always
+MaxEmptyLinesToKeep: 2
+AllowAllArgumentsOnNextLine: true
+AlignAfterOpenBracket: Align
+AccessModifierOffset: -4
+SortIncludes: Never

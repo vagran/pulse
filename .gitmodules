@@ -1,0 +1,4 @@
+[submodule "src/modules/etl"]
+	path = src/modules/etl
+	url = https://github.com/ETLCPP/etl.git
+	shallow = true

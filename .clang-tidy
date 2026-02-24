@@ -1,0 +1,7 @@
+Checks: 'bugprone-*,clang-analyzer-*,concurrency-*,misc-*,
+        performance-*,portability-*,
+        -modernize-use-trailing-return-type,-misc-no-recursion,
+        -bugprone-implicit-widening-of-multiplication-result,
+        -bugprone-easily-swappable-parameters,
+        -bugprone-exception-escape,
+        -misc-non-private-member-variables-in-classes'
