@@ -1,5 +1,5 @@
 {
-    "cmake.parallelJobs": 1,
+    // "cmake.parallelJobs": 1,
     // "cmake.sourceDirectory": "${workspaceFolder}/test",
     "cmake.sourceDirectory": "${workspaceFolder}/examples/stm32f103-blue-pill",
     "cmake.configureArgs": [

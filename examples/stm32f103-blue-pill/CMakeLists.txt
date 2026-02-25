@@ -11,34 +11,12 @@ set(CMAKE_C_STANDARD 23)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
-
-# set(CMAKE_C_COMPILER_TARGET "arm-none-eabi")
-# set(CMAKE_CXX_COMPILER_TARGET "arm-none-eabi")
-
 add_compile_options(-mcpu=cortex-m3 -mthumb)
 add_compile_options(-ffunction-sections -fdata-sections -fno-common -fmessage-length=0)
 
 add_compile_definitions(STM32F103xB)
 
 add_compile_options(-Werror -Wall -Wno-pedantic)
-
-# add_compile_options(-nostdlib -nodefaultlibs)
-
-
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
-    message(STATUS "Maximum optimization for speed")
-    add_compile_options(-O3 -ffast-math)
-elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "RelWithDebInfo")
-    message(STATUS "Maximum optimization for speed, debug info included")
-    add_compile_options(-O3 -ffast-math -g)
-elseif ("${CMAKE_BUILD_TYPE}" STREQUAL "MinSizeRel")
-    message(STATUS "Maximum optimization for size")
-    add_compile_options(-Os -g)
-else ()
-    message(STATUS "Minimal optimization, debug info included")
-    add_compile_options(-O0 -g -fno-omit-frame-pointer)
-    add_compile_definitions(DEBUG)
-endif ()
 
 
 set(CUBE_DIR "${CMAKE_SOURCE_DIR}/STM32CubeF1")
@@ -63,8 +41,6 @@ add_link_options(-mcpu=cortex-m3 -mthumb)
 
 add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map)
 add_link_options(-T ${LINKER_SCRIPT})
-
-# link_directories(/usr/lib/gcc/arm-none-eabi/14.2.0/)
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${LINKER_SCRIPT})
 
