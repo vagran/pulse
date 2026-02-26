@@ -9,6 +9,11 @@
             "command": "build/pulse_test"
         },
         {
+            "label": "Run unit tests (Valgrind)",
+            "type": "shell",
+            "command": "valgrind --leak-check=full build/pulse_test"
+        },
+        {
             "label": "Upload firmware",
             "type": "shell",
             "command": "st-flash write ${workspaceFolder}/build/firmware.bin 0x08000000"

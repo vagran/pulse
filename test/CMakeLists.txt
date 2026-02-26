@@ -10,12 +10,14 @@ add_compile_options(-Werror -Wall)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
-file(GLOB_RECURSE SOURCES "*.cpp")
+file(GLOB_RECURSE SOURCES "*.cpp" "common/*.cpp")
 
 find_package(Catch2 REQUIRED)
 
-add_subdirectory("${CMAKE_SOURCE_DIR}/../src/modules/etl" "${CMAKE_BINARY_DIR}/etl")
+add_subdirectory("${CMAKE_SOURCE_DIR}/../modules/etl" "${CMAKE_BINARY_DIR}/etl")
+
+add_subdirectory("${CMAKE_SOURCE_DIR}/../src" "${CMAKE_BINARY_DIR}/pulse")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain etl::etl)
+target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain etl::etl pulse::pulse)

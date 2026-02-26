@@ -45,7 +45,9 @@ MEMORY
 /* Highest address of the user mode stack */
 _estack = ORIGIN(RAM) + LENGTH(RAM); /* end of "RAM" Ram type memory */
 
-_Min_Heap_Size = 0x200; /* required amount of heap */
+/* Heap is allocated explicitly in code. */
+_Min_Heap_Size = 0;
+
 _Min_Stack_Size = 0x400; /* required amount of stack */
 
 /* Sections */

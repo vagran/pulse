@@ -1,6 +1,7 @@
 #include <stm32f1xx_hal.h>
 #include <stm32f103xb.h>
 
+
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
 
@@ -12,7 +13,6 @@ Panic()
 {
     for(;;);
 }
-
 
 static void
 SystemClock_Config(void)
@@ -91,4 +91,5 @@ main()
 		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 		HAL_Delay(500);
 	}
+    while (true);
 }
