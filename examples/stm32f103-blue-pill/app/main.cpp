@@ -5,14 +5,14 @@
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
 
-namespace {
-
 //XXX
-void
+extern "C" void
 Panic()
 {
     for(;;);
 }
+
+namespace {
 
 static void
 SystemClock_Config(void)
@@ -91,5 +91,4 @@ main()
 		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 		HAL_Delay(500);
 	}
-    while (true);
 }

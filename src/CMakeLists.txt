@@ -8,10 +8,11 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 
 file(GLOB_RECURSE SOURCES "common/*.cpp")
 
-include_directories("include")
-
-add_library(${PROJECT_NAME} STATIC ${SOURCES})
-
+add_library(${PROJECT_NAME} INTERFACE)
 add_library(pulse::pulse ALIAS ${PROJECT_NAME})
 
-target_link_libraries(${PROJECT_NAME} PRIVATE etl::etl)
+target_include_directories(${PROJECT_NAME} INTERFACE "include")
+
+target_sources(${PROJECT_NAME} INTERFACE ${SOURCES})
+
+target_link_libraries(${PROJECT_NAME} INTERFACE etl::etl)

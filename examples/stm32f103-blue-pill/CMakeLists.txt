@@ -50,6 +50,13 @@ target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-ex
 
 target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:-Wno-unused-command-line-argument>)
 
+
+add_subdirectory("${CMAKE_SOURCE_DIR}/../../modules/etl" "${CMAKE_BINARY_DIR}/etl")
+
+add_subdirectory("${CMAKE_SOURCE_DIR}/../../src" "${CMAKE_BINARY_DIR}/pulse")
+target_link_libraries(${PROJECT_NAME} PRIVATE pulse::pulse)
+
+
 set(HEX_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.hex)
 set(BIN_FILE ${PROJECT_BINARY_DIR}/${PROJECT_NAME}.bin)
 

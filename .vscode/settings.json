@@ -1,9 +1,12 @@
 {
     // "cmake.parallelJobs": 1,
-    // "cmake.sourceDirectory": "${workspaceFolder}/test",
-    "cmake.sourceDirectory": "${workspaceFolder}/examples/stm32f103-blue-pill",
+    "cmake.sourceDirectory": "${workspaceFolder}/test",
+    // "cmake.sourceDirectory": "${workspaceFolder}/examples/stm32f103-blue-pill",
     "cmake.configureArgs": [
         // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-gcc-toolchain.cmake"
-        "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-clang-toolchain.cmake"
+        // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-clang-toolchain.cmake"
+    ],
+    "cSpell.words": [
+        "MALLOC"
     ]
 }
