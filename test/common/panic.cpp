@@ -1,7 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-
-
-extern "C" void Panic(const char *msg);
+#include <pulse_config.h>
 
 void
 Panic(const char *msg)

@@ -1,7 +1,9 @@
 #ifndef MALLOC_H
 #define MALLOC_H
 
+#include <pulse/details/default_config.h>
 #include <stddef.h>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,8 +18,9 @@ pulse_free(void *ptr);
 void *
 pulse_realloc(void *ptr, size_t newSize);
 
-/** Register next region to run heap on. pulseConfig_MULTI_REGIONS should be specified in the
- * configuration.
+
+/** Register next region to run heap on. At least one region should be added to succeed next
+ * allocation. Additional regions cna be added at any time.
  */
 void
 pulse_add_heap_region(void *region, size_t size);

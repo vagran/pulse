@@ -1,5 +1,5 @@
-#ifndef PULSE_DEFAULT_CONFIG_H
-#define PULSE_DEFAULT_CONFIG_H
+#ifndef DEFAULT_CONFIG_H
+#define DEFAULT_CONFIG_H
 
 #include <pulse_config.h>
 #include <pulse/defs.h>
@@ -19,7 +19,7 @@
 
 /* pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE
  * Defines size in bytes of block metadata field which stores block size. It has one bit reserved,
- * so remaining bits define maximal supported allocation size (in pulseConfig_MALLOC_GRANULARITY
+ * so remaining bits define maximal supported allocation size (in `pulseConfig_MALLOC_GRANULARITY`
  * units). Allocation overhead is two such fields. Must be power of two.
  */
 #ifndef pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE
@@ -33,7 +33,7 @@
 
 /* pulseConfig_MALLOC_ALIGNMENT
  * Default alignment of allocated blocks. Allocated blocks are always aligned at least by this
- * value (even if smaller alignment is requested by pulse_aligned_alloc()).
+ * value. Must be power of 2. Cannot be less than pointer size.
  */
 #ifndef pulseConfig_MALLOC_ALIGNMENT
 #   define pulseConfig_MALLOC_ALIGNMENT 4
@@ -44,49 +44,28 @@
 #endif
 
 
+/* pulseConfig_MALLOC_BEST_FIT
+ * When defined, smallest enough-sized free block is used to fullfil allocation request. First fit
+ * used otherwise. This may require longer traversal of free blocks list.
+ */
+
+
 /* pulseConfig_MALLOC_LOCK
  * User provided lock for heap operations. Not required for cooperative scheduling if allocations in
  * ISR are not permitted, otherwise should disable interrupts.
  */
-#ifndef pulseConfig_MALLOC_LOCK
-#define pulseConfig_MALLOC_LOCK()
-#endif
 
 
 /* pulseConfig_MALLOC_UNLOCK
- * Heap operations unlocking complemental to pulseConfig_MALLOC_LOCK.
- */
-#ifndef pulseConfig_MALLOC_UNLOCK
-#define pulseConfig_MALLOC_UNLOCK()
-#endif
-
-
-/* pulseConfig_HEAP_SIZE
- * Heap size if using default single region (allocated in BSS) or single explicitly provided region
- * via pulseConfig_PROVIDED_HEAP.
+ * Heap operations unlocking complemental to `pulseConfig_MALLOC_LOCK`.
  */
 
 
-/* pulseConfig_PROVIDED_HEAP
- * Byte array to use as single heap region. Size should be specified by pulseConfig_HEAP_SIZE.
- */
-
-
-/* pulseConfig_HEAP_MULTI_REGIONS
- * Enable heap running on multiple regions. Value should be maximal number of regions.
- * pulse_add_heap_region() must be called for each provided region before any allocation.
- */
-#ifndef pulseConfig_HEAP_MULTI_REGIONS
-#define pulseConfig_HEAP_MULTI_REGIONS 0
-#endif
-
-
-/* pulseConfig_HEAP_STRICT_REGION
- * Do not allow improperly aligned or sized provided heap regions, panic immediately if such
- * condition is detected. Silently align/trim provided region if disabled.
- */
-#ifndef pulseConfig_HEAP_STRICT_REGION
-#define pulseConfig_HEAP_STRICT_REGION 1
+ /** pulseConfig_MALLOC_STATS
+  * Maintain heap usage statistics if enabled.
+  */
+#ifndef pulseConfig_MALLOC_STATS
+#   define pulseConfig_MALLOC_STATS 0
 #endif
 
 
@@ -107,4 +86,4 @@
 #endif
 
 
-#endif /* PULSE_DEFAULT_CONFIG_H */
+#endif /* DEFAULT_CONFIG_H */

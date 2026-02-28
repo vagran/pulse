@@ -22,6 +22,9 @@
 /** Align integer value to the next alignment position. Alignment must be power of 2. */
 #define PULSE_ALIGN2(__x, __alignment)  (((__x) + (__alignment) - 1) & ~((__alignment) - 1))
 
+/** Align integer value to the previous alignment position. Alignment must be power of 2. */
+#define PULSE_ALIGN2_DOWN(__x, __alignment) ((__x) & ~((__alignment) - 1))
+
 /** Check if non-null integer value is power of two. */
 #define PULSE_IS_POW2(__x)              ((((__x) - 1) & (__x)) == 0)
 
