@@ -462,6 +462,10 @@ pulse_free(void *ptr)
 void *
 pulse_realloc(void *ptr, size_t newSize)
 {
+    if (!ptr) {
+        return pulse_malloc(newSize);
+    }
+
     if (newSize > MAX_ALLOC_SIZE) {
         return nullptr;
     }
@@ -608,3 +612,20 @@ pulse_add_heap_region(void *region, size_t size)
         prevBlock->isLast = 1;
     }
 }
+
+size_t
+get_malloc_max_size()
+{
+    return MAX_ALLOC_SIZE;
+}
+
+#if pulseConfig_MALLOC_STATS
+
+void
+get_malloc_stats(MallocStats *stats)
+{
+    stats->totalFree = totalFree << ALLOC_UNIT_SHIFT;
+    stats->totalUsed = totalUsed << ALLOC_UNIT_SHIFT;
+}
+
+#endif // pulseConfig_MALLOC_STATS

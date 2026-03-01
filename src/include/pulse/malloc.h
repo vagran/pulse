@@ -26,6 +26,26 @@ pulse_realloc(void *ptr, size_t newSize);
 void
 pulse_add_heap_region(void *region, size_t size);
 
+/** @return Maximal possible allocation size according to current heap configuration.
+ */
+size_t
+get_malloc_max_size();
+
+
+#if pulseConfig_MALLOC_STATS
+
+typedef struct {
+    size_t totalFree, totalUsed;
+} MallocStats;
+
+/** Get current allocation statistics. It might be not exactly corresponding to requested sizes
+ * since internally it is counted in allocation units, and also may utilize paddings in block tail.
+ */
+void
+get_malloc_stats(MallocStats *stats);
+
+#endif // pulseConfig_MALLOC_STATS
+
 #ifdef __cplusplus
 }
 #endif
