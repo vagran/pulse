@@ -346,7 +346,8 @@ AllocateBlock(size_t size)
     BlockHeader *p = freeList;
     BlockHeader *bestFit = nullptr;
 
-    while (true) {
+    while (p) {
+        PULSE_ASSERT(p->isFree);
 #if pulseConfig_MALLOC_BEST_FIT
         if (p->blockSize == numUnits) {
             bestFit = p;
@@ -363,10 +364,7 @@ AllocateBlock(size_t size)
             break;
         }
 #endif // pulseConfig_MALLOC_BEST_FIT
-        if (!p->HasNext()) {
-            break;
-        }
-        p = p->GetNext();
+        p = p->GetFreeBlock().nextFree;
     }
 
     if (bestFit) {
@@ -568,8 +566,8 @@ pulse_realloc(void *ptr, size_t newSize)
     prev->GetFreeBlock().Unlink(freeList);
     prev->Merge(block);
     memcpy(prev->data, block->data, curSize);
-    StatsAlloc(block);
-    return block->data;
+    StatsAlloc(prev);
+    return prev->data;
 }
 
 void

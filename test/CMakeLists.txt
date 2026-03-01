@@ -6,6 +6,11 @@ set(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
+    add_definitions(-DDEBUG)
+endif()
+
 add_compile_options(-Werror -Wall)
 
 include_directories(${CMAKE_SOURCE_DIR})
