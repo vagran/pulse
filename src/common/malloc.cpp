@@ -5,6 +5,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#if pulseConfig_MALLOC_DEBUG
+#   include <etl/vector.h>
+#endif
+
 
 namespace {
 
@@ -38,6 +42,7 @@ GetAllocSize(BlockSizeUint numUnits)
 }
 
 struct BlockHeader {
+    //XXX make flag
     BlockSizeUint isFree:1,
                   blockSize:(sizeof(BlockSizeUint) * 8 - 1),
     // Last in region.
@@ -109,11 +114,11 @@ struct BlockHeader {
         if constexpr (pulseConfig_MALLOC_ALIGNMENT > alignof(BlockHeader)) {
             // align data first, then take header address
             _addr += sizeof(BlockHeader);
-            _addr = PULSE_ALIGN2(_addr, pulseConfig_MALLOC_ALIGNMENT);
+            _addr = PULSE_ALIGN2(_addr, static_cast<uintptr_t>(pulseConfig_MALLOC_ALIGNMENT));
             _addr -= sizeof(BlockHeader);
         } else {
             // just align the header
-            _addr = PULSE_ALIGN2(_addr, alignof(BlockHeader));
+            _addr = PULSE_ALIGN2(_addr, static_cast<uintptr_t>(alignof(BlockHeader)));
         }
         // Avoid integer-to-pointer cast which might be significant de-optimization at least in
         // Clang.
@@ -129,11 +134,11 @@ struct BlockHeader {
         if constexpr (pulseConfig_MALLOC_ALIGNMENT > alignof(BlockHeader)) {
             // align data first, then take header address
             _addr += sizeof(BlockHeader);
-            _addr = PULSE_ALIGN2_DOWN(_addr, pulseConfig_MALLOC_ALIGNMENT);
+            _addr = PULSE_ALIGN2_DOWN(_addr, static_cast<uintptr_t>(pulseConfig_MALLOC_ALIGNMENT));
             _addr -= sizeof(BlockHeader);
         } else {
             // just align the header
-            _addr = PULSE_ALIGN2_DOWN(_addr, alignof(BlockHeader));
+            _addr = PULSE_ALIGN2_DOWN(_addr, static_cast<uintptr_t>(alignof(BlockHeader)));
         }
         return reinterpret_cast<BlockHeader *>(
             reinterpret_cast<uint8_t *>(addr) + (_addr - reinterpret_cast<uintptr_t>(addr)));
@@ -151,8 +156,7 @@ struct BlockHeader {
     GetNext()
     {
         PULSE_ASSERT(!isLast);
-        return AlignUpBlockAddress(
-            reinterpret_cast<uint8_t *>(data) + GetAllocSize(blockSize));
+        return AlignUpBlockAddress(data + GetAllocSize(blockSize));
     }
 
     void
@@ -196,6 +200,7 @@ struct BlockHeader {
         blockSize = (endAddr - data) >> ALLOC_UNIT_SHIFT;
         if (HasNext()) {
             GetNext()->prevBlockSize = blockSize;
+            PULSE_ASSERT(GetNext()->GetPrev() == this);
         }
     }
 };
@@ -226,7 +231,8 @@ BlockHeader *
 BlockHeader::Split(size_t dataSize)
 {
     uint8_t *end = GetEndAddress();
-    BlockHeader *next = AlignUpBlockAddress(data + dataSize);
+    BlockHeader *next = AlignUpBlockAddress(
+        data + PULSE_ALIGN2(dataSize, pulseConfig_MALLOC_GRANULARITY));
     if (next->data + MIN_ALLOC_SIZE > end) {
         return nullptr;
     }
@@ -236,6 +242,8 @@ BlockHeader::Split(size_t dataSize)
     blockSize = (reinterpret_cast<uint8_t *>(next) - data) >> ALLOC_UNIT_SHIFT;
     next->prevBlockSize = blockSize;
     isLast = 0;
+    PULSE_ASSERT(next->GetPrev() == this);
+    PULSE_ASSERT(GetNext() == next);
     return next;
 }
 
@@ -321,7 +329,8 @@ void
 PoisonFreeBlock(BlockHeader *block)
 {
     PULSE_ASSERT(block->isFree);
-    memset(block->data, pulseConfig_MALLOC_FREE_SPACE_POISONING, block->GetSize());
+    memset(block->data + sizeof(BlockHeader::FreeBlock), pulseConfig_MALLOC_FREE_SPACE_POISONING,
+           block->GetSize() - sizeof(BlockHeader::FreeBlock));
 }
 
 #else // pulseConfig_MALLOC_FREE_SPACE_POISONING
@@ -337,7 +346,7 @@ AllocateBlock(size_t size)
     PULSE_ASSERT(size >= MIN_ALLOC_SIZE);
     PULSE_ASSERT(size <= MAX_ALLOC_SIZE);
 
-    size_t numUnits PULSE_UNUSED = PULSE_ALIGN2(size, pulseConfig_MALLOC_GRANULARITY);
+    size_t numUnits PULSE_UNUSED = PULSE_ALIGN2(size, pulseConfig_MALLOC_GRANULARITY);//XXX shift
 
     if (!freeList) {
         return nullptr;
@@ -417,9 +426,70 @@ FreeBlock(BlockHeader *block)
 
     block->isFree = 1;
     StatsFree(block);
-    block->GetFreeBlock().Link(freeList);
     PoisonFreeBlock(block);
+    block->GetFreeBlock().Link(freeList);
 }
+
+#if pulseConfig_MALLOC_DEBUG
+
+struct HeapRegion {
+    uint8_t *ptr;
+    size_t size;
+
+    BlockHeader *
+    GetFirstBlock() const
+    {
+        BlockHeader *block = BlockHeader::AlignUpBlockAddress(ptr);
+        ptrdiff_t blockOffset = reinterpret_cast<uint8_t *>(block) - ptr;
+        if (blockOffset + sizeof(BlockHeader) + MIN_ALLOC_SIZE > size) {
+            return nullptr;
+        }
+        return block;
+    }
+
+    bool
+    ContainsBlock(BlockHeader *block)
+    {
+        uint8_t *end = block->GetEndAddress();
+        return reinterpret_cast<uint8_t *>(block) >= ptr || end <= ptr + size;
+    }
+
+    bool
+    IsLast(BlockHeader *block)
+    {
+        PULSE_ASSERT(block->isLast);
+        uint8_t *end = block->GetEndAddress();
+        BlockHeader *next = BlockHeader::AlignUpBlockAddress(end);
+        ptrdiff_t blockOffset = reinterpret_cast<uint8_t *>(next) - end;
+        size_t size = ptr + this->size - end;
+        return blockOffset + sizeof(BlockHeader) + MIN_ALLOC_SIZE > size;
+    }
+};
+
+etl::vector<HeapRegion, 8> heapRegions;
+
+void
+DebugRegisterHeapRegion(void *region, size_t size)
+{
+    if (heapRegions.full()) {
+        return;
+    }
+    heapRegions.emplace_back(HeapRegion{reinterpret_cast<uint8_t *>(region), size});
+}
+
+#define DEBUG_ASSERT(x) do { \
+    bool _x = (x); \
+    PULSE_ASSERT(_x && PULSE_STR(x)); \
+    if (!_x) { \
+        return false; \
+    } \
+} while (false)
+
+#else  // pulseConfig_MALLOC_DEBUG
+
+#define DebugRegisterHeapRegion(region, size)
+
+#endif // pulseConfig_MALLOC_DEBUG
 
 } // anonymous namespace
 
@@ -484,9 +554,9 @@ pulse_realloc(void *ptr, size_t newSize)
             StatsDealloc(block);
             BlockHeader *next = block->Split(newSize);
             if (next) {
-                next->GetFreeBlock().Link(freeList);
                 StatsFree(next);
                 PoisonFreeBlock(next);
+                next->GetFreeBlock().Link(freeList);
             }
             StatsAlloc(block);
         }
@@ -579,16 +649,22 @@ pulse_add_heap_region(void *region, size_t size)
 
     LockGuard();
 
+    DebugRegisterHeapRegion(region, size);
+
     uint8_t *addr = reinterpret_cast<uint8_t *>(region);
+    uint8_t *end = addr + size;
     BlockHeader *prevBlock = nullptr;
 
     while (true) {
         BlockHeader *block = BlockHeader::AlignUpBlockAddress(addr);
-        ptrdiff_t blockOffset = reinterpret_cast<uint8_t *>(block) - addr;
-        if (blockOffset + sizeof(BlockHeader) + MIN_ALLOC_SIZE > size) {
+        if (block->data + MIN_ALLOC_SIZE > end) {
             break;
         }
-        size_t dataSize = size - blockOffset - sizeof(BlockHeader);
+        if (prevBlock) {
+            // Can do if next block is available otherwise isLast must be set
+            PoisonFreeBlock(prevBlock);
+        }
+        size_t dataSize = end - block->data;
         if (dataSize > MAX_ALLOC_SIZE) {
             dataSize = MAX_ALLOC_SIZE;
         }
@@ -597,17 +673,15 @@ pulse_add_heap_region(void *region, size_t size)
         block->isLast = 0;
         block->prevBlockSize = prevBlock ? prevBlock->blockSize : 0;
         StatsFree(block);
-        PoisonFreeBlock(block);
         block->GetFreeBlock().Link(freeList);
         prevBlock = block;
-
-        size_t consumed = blockOffset + sizeof(BlockHeader) + dataSize;
-        addr += consumed;
-        size -= consumed;
+        addr = block->data + GetAllocSize(block->blockSize);
+        PULSE_ASSERT(addr <= end);
     }
 
     if (prevBlock) {
         prevBlock->isLast = 1;
+        PoisonFreeBlock(prevBlock);
     }
 }
 
@@ -627,3 +701,42 @@ get_malloc_stats(MallocStats *stats)
 }
 
 #endif // pulseConfig_MALLOC_STATS
+
+#if pulseConfig_MALLOC_DEBUG
+
+bool
+validate_heap()
+{
+    for (HeapRegion &region: heapRegions) {
+        BlockHeader *block = region.GetFirstBlock();
+        BlockHeader *prevBlock = nullptr;
+        while (block) {
+            DEBUG_ASSERT(region.ContainsBlock(block));
+            if (prevBlock) {
+                DEBUG_ASSERT(block->GetPrev() == prevBlock);
+                DEBUG_ASSERT(block->prevBlockSize == prevBlock->blockSize);
+            }
+            if (!block->HasNext()) {
+                break;
+            }
+            prevBlock = block;
+            block = block->GetNext();
+        }
+        //XXX
+        // if (block) {
+        //     DEBUG_ASSERT(region.IsLast(block));
+        // }
+    }
+
+    BlockHeader *p = freeList;
+    BlockHeader *prevBlock = nullptr;
+    while (p) {
+        DEBUG_ASSERT(p->isFree);
+        DEBUG_ASSERT(p->GetFreeBlock().prevFree == prevBlock);
+        p = p->GetFreeBlock().nextFree;
+    }
+
+    return true;
+}
+
+#endif // pulseConfig_MALLOC_DEBUG

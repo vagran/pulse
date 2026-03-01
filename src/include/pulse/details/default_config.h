@@ -61,16 +61,24 @@
  */
 
 
- /* pulseConfig_MALLOC_FREE_SPACE_POISONING
- * Fill freed blocks with the specified byte value. Mostly for testing and troubleshooting.
+/* pulseConfig_MALLOC_FREE_SPACE_POISONING
+* Fill freed blocks with the specified byte value. Mostly for testing and troubleshooting.
+*/
+
+
+/** pulseConfig_MALLOC_STATS
+ * Maintain heap usage statistics if enabled.
  */
-
-
- /** pulseConfig_MALLOC_STATS
-  * Maintain heap usage statistics if enabled.
-  */
 #ifndef pulseConfig_MALLOC_STATS
 #   define pulseConfig_MALLOC_STATS 0
+#endif
+
+
+/** pulseConfig_MALLOC_DEBUG
+ * Allow internal heap validation code. Mostly for testing. Not intended for use in production code.
+ */
+#ifndef pulseConfig_MALLOC_DEBUG
+#   define pulseConfig_MALLOC_DEBUG 0
 #endif
 
 

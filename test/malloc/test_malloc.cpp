@@ -180,15 +180,16 @@ public:
     }
 };
 
-}
+} // anonymous namespace
 
 TEST_CASE("Random activity") {
-    Context ctx(GetHeapSize() / 16);
+    Context ctx(GetHeapSize() / 16, 441416213);
     std::uniform_int_distribution<uint8_t> actionDist{0, 2};
 
     for (int i = 0; i < 100; i++) {
         ctx.Allocate();
         ctx.CheckAllFills();
+        validate_heap();
     }
 
     for (int i = 0; i < 10000; i++) {
@@ -215,12 +216,14 @@ TEST_CASE("Random activity") {
             FAIL("should not be reached");
         }
         ctx.CheckAllFills();
+        validate_heap();
     }
 
     while (!ctx.IsEmpty()) {
         Block block = ctx.GetRandomBlock();
         ctx.Free(block);
         ctx.CheckAllFills();
+        validate_heap();
     }
 
     MallocStats stats;

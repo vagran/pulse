@@ -22,4 +22,6 @@ extern "C" void Panic(const char *msg);
 
 #define pulseConfig_MALLOC_FREE_SPACE_POISONING     0xfe
 
+#define pulseConfig_MALLOC_DEBUG                    1
+
 #endif /* COMMON_PULSE_CONFIG_H */

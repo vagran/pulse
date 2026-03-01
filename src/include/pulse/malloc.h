@@ -46,6 +46,16 @@ get_malloc_stats(MallocStats *stats);
 
 #endif // pulseConfig_MALLOC_STATS
 
+#if pulseConfig_MALLOC_DEBUG
+
+/** Perfroms heap validation as much as possible. Mostly useful with pulseConfig_ASSERT specified.
+ * @return true if heap state valid.
+ */
+bool
+validate_heap();
+
+#endif // pulseConfig_MALLOC_DEBUG
+
 #ifdef __cplusplus
 }
 #endif
