@@ -12,6 +12,13 @@
 
 namespace {
 
+void
+CheckAligned(void *ptr)
+{
+    constexpr uintptr_t mask = static_cast<uintptr_t>(pulseConfig_MALLOC_ALIGNMENT) - 1;
+    REQUIRE((reinterpret_cast<uintptr_t>(ptr) & mask) == 0);
+}
+
 struct Block {
     size_t size;
     uint8_t fill;
@@ -24,6 +31,7 @@ struct Block {
     {
         if (ptr) {
             CheckInHeap(ptr, size);
+            CheckAligned(ptr);
             std::memset(ptr, fill, size);
         }
     }
@@ -60,7 +68,11 @@ struct Block {
             return false;
         }
         ptr = reinterpret_cast<uint8_t *>(newPtr);
+        if (size < this->size) {
+            this->size = size;
+        }
         CheckInHeap(ptr, size);
+        CheckAligned(ptr);
         CheckFill();
         this->size = size;
         this->fill = fill;
@@ -81,14 +93,24 @@ class Context {
 public:
     std::set<Block, Block::Compare> blocks;
     const size_t maxAllocSize;
+    uint32_t seed;
     std::mt19937 rng;
     std::uniform_int_distribution<size_t> sizeDist{1, maxAllocSize};
     std::uniform_int_distribution<uint8_t> fillDist{0, 0xff};
 
     Context(size_t maxAllocSize, uint32_t seed = 0):
         maxAllocSize(maxAllocSize),
-        rng(seed ? seed : std::random_device()())
-    {}
+        seed(seed ? seed : std::random_device()()),
+        rng(this->seed)
+    {
+        std::cout << "Test random seed: " << this->seed << "\n";
+    }
+
+    bool
+    IsEmpty() const
+    {
+        return blocks.empty();
+    }
 
     size_t
     GetRandomSize()
@@ -105,7 +127,8 @@ public:
     const Block &
     GetRandomBlock()
     {
-        std::uniform_int_distribution<size_t> dist(0, blocks.size());
+        REQUIRE(!blocks.empty());
+        std::uniform_int_distribution<size_t> dist(0, blocks.size() - 1);
         size_t targetIdx = dist(rng);
         auto it = blocks.begin();
         for (size_t idx = 0; idx != targetIdx; it++, idx++);
@@ -175,13 +198,17 @@ TEST_CASE("Random activity") {
             ctx.Allocate();
             break;
         case 1: {
-            Block block = ctx.GetRandomBlock();
-            ctx.Free(block);
+            if (!ctx.IsEmpty()) {
+                Block block = ctx.GetRandomBlock();
+                ctx.Free(block);
+            }
             break;
         }
         case 2: {
-            Block block = ctx.GetRandomBlock();
-            ctx.Reallocate(block);
+            if (!ctx.IsEmpty()) {
+                Block block = ctx.GetRandomBlock();
+                ctx.Reallocate(block);
+            }
             break;
         }
         default:
@@ -190,7 +217,7 @@ TEST_CASE("Random activity") {
         ctx.CheckAllFills();
     }
 
-    while (!ctx.blocks.empty()) {
+    while (!ctx.IsEmpty()) {
         Block block = ctx.GetRandomBlock();
         ctx.Free(block);
         ctx.CheckAllFills();
@@ -199,5 +226,5 @@ TEST_CASE("Random activity") {
     MallocStats stats;
     get_malloc_stats(&stats);
     REQUIRE(stats.totalUsed == 0);
-    std::cout << "Total free after test: " << stats.totalFree;
+    std::cout << "Total free after test: " << stats.totalFree << "\n";
 }
