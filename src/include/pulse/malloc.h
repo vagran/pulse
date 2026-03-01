@@ -20,7 +20,8 @@ pulse_realloc(void *ptr, size_t newSize);
 
 
 /** Register next region to run heap on. At least one region should be added to succeed next
- * allocation. Additional regions cna be added at any time.
+ * allocation. Additional regions can be added at any time. Region is trimmed if necessary to ensure
+ * proper alignment.
  */
 void
 pulse_add_heap_region(void *region, size_t size);

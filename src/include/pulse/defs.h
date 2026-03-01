@@ -19,6 +19,8 @@
 
 #define PULSE_PACKED                    __attribute__((packed))
 
+#define PULSE_UNUSED                    __attribute__((unused))
+
 /** Align integer value to the next alignment position. Alignment must be power of 2. */
 #define PULSE_ALIGN2(__x, __alignment)  (((__x) + (__alignment) - 1) & ~((__alignment) - 1))
 

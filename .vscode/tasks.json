@@ -16,7 +16,7 @@
         {
             "label": "Run malloc unit tests",
             "type": "shell",
-            "command": "cmake --build build --target run_malloc_tests"
+            "command": "cmake --build build --target run_malloc_tests -j 16"
         },
         {
             "label": "Upload firmware",

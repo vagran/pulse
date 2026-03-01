@@ -41,13 +41,14 @@ endfunction()
 
 
 # Variations for malloc test
+# XXX make proper combinations
 set(MALLOC_CONFIG_LIST [=[
 [
-    ["M_GRAN=16", "M_BSZ=1", "M_ALIGN=8"],
-    ["M_GRAN=1", "M_BSZ=1", "M_ALIGN=8"],
-    ["M_GRAN=1", "M_BSZ=4", "M_ALIGN=16"],
-    ["M_GRAN=16", "M_BSZ=2", "M_ALIGN=8"],
-    ["M_GRAN=4", "M_BSZ=4", "M_ALIGN=8"]
+    ["M_GRAN=16", "M_BSZ=1", "M_ALIGN=8", "M_FIT=1"],
+    ["M_GRAN=1", "M_BSZ=1", "M_ALIGN=8", "M_FIT=0"],
+    ["M_GRAN=1", "M_BSZ=4", "M_ALIGN=16", "M_FIT=0"],
+    ["M_GRAN=16", "M_BSZ=2", "M_ALIGN=8", "M_FIT=1"],
+    ["M_GRAN=4", "M_BSZ=4", "M_ALIGN=8", "M_FIT=0"]
 ]
 ]=])
 

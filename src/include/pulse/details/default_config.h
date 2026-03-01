@@ -61,6 +61,11 @@
  */
 
 
+ /* pulseConfig_MALLOC_FREE_SPACE_POISONING
+ * Fill freed blocks with the specified byte value. Mostly for testing and troubleshooting.
+ */
+
+
  /** pulseConfig_MALLOC_STATS
   * Maintain heap usage statistics if enabled.
   */
