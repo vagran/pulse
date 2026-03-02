@@ -74,9 +74,13 @@ struct BlockHeader {
         void
         Link(BlockHeader *&head)
         {
+            BlockHeader *block = FromDataPtr(this);
             prevFree = nullptr;
+            if (head) {
+                head->GetFreeBlock().prevFree = block;
+            }
             nextFree = head;
-            head = FromDataPtr(this);
+            head = block;
         }
     };
 
@@ -231,20 +235,26 @@ BlockHeader *
 BlockHeader::Split(size_t dataSize)
 {
     uint8_t *end = GetEndAddress();
-    BlockHeader *next = AlignUpBlockAddress(
+    BlockHeader *tail = AlignUpBlockAddress(
         data + PULSE_ALIGN2(dataSize, pulseConfig_MALLOC_GRANULARITY));
-    if (next->data + MIN_ALLOC_SIZE > end) {
+    if (tail->data + MIN_ALLOC_SIZE > end) {
         return nullptr;
     }
-    next->blockSize = (end - next->data) >> ALLOC_UNIT_SHIFT;
-    next->isFree = 1;
-    next->isLast = isLast;
-    blockSize = (reinterpret_cast<uint8_t *>(next) - data) >> ALLOC_UNIT_SHIFT;
-    next->prevBlockSize = blockSize;
+    tail->blockSize = (end - tail->data) >> ALLOC_UNIT_SHIFT;
+    tail->isFree = 1;
+    tail->isLast = isLast;
+    if (!isLast) {
+        BlockHeader *next = tail->GetNext();
+        PULSE_ASSERT(next == GetNext());
+        next->prevBlockSize = tail->blockSize;
+        PULSE_ASSERT(next->GetPrev() == tail);
+    }
+    blockSize = (reinterpret_cast<uint8_t *>(tail) - data) >> ALLOC_UNIT_SHIFT;
+    tail->prevBlockSize = blockSize;
     isLast = 0;
-    PULSE_ASSERT(next->GetPrev() == this);
-    PULSE_ASSERT(GetNext() == next);
-    return next;
+    PULSE_ASSERT(tail->GetPrev() == this);
+    PULSE_ASSERT(GetNext() == tail);
+    return tail;
 }
 
 // Head of free blocks list.
@@ -606,6 +616,11 @@ pulse_realloc(void *ptr, size_t newSize)
             prev = nullptr;
         }
     }
+    if (wantPrev && !prev) {
+        // Previous block was required but is not available. So merging with the next one does not
+        // make any sense as well.
+        nextEndAddr = nullptr;
+    }
 
     if (!nextEndAddr && !prev) {
         // No merging, try allocating new block and move there.
@@ -634,6 +649,7 @@ pulse_realloc(void *ptr, size_t newSize)
 
     StatsUnfree(prev);
     prev->GetFreeBlock().Unlink(freeList);
+    prev->isFree = 0;
     prev->Merge(block);
     memcpy(prev->data, block->data, curSize);
     StatsAlloc(prev);
@@ -707,6 +723,7 @@ get_malloc_stats(MallocStats *stats)
 bool
 validate_heap()
 {
+    size_t numFreeBlocks = 0;
     for (HeapRegion &region: heapRegions) {
         BlockHeader *block = region.GetFirstBlock();
         BlockHeader *prevBlock = nullptr;
@@ -715,6 +732,9 @@ validate_heap()
             if (prevBlock) {
                 DEBUG_ASSERT(block->GetPrev() == prevBlock);
                 DEBUG_ASSERT(block->prevBlockSize == prevBlock->blockSize);
+            }
+            if (block->isFree) {
+                numFreeBlocks++;
             }
             if (!block->HasNext()) {
                 break;
@@ -730,11 +750,15 @@ validate_heap()
 
     BlockHeader *p = freeList;
     BlockHeader *prevBlock = nullptr;
+    size_t freeListSize = 0;
     while (p) {
         DEBUG_ASSERT(p->isFree);
         DEBUG_ASSERT(p->GetFreeBlock().prevFree == prevBlock);
+        freeListSize++;
+        prevBlock = p;
         p = p->GetFreeBlock().nextFree;
     }
+    DEBUG_ASSERT(freeListSize == numFreeBlocks);
 
     return true;
 }

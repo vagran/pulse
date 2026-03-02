@@ -19,6 +19,17 @@ CheckAligned(void *ptr)
     REQUIRE((reinterpret_cast<uintptr_t>(ptr) & mask) == 0);
 }
 
+bool
+IsFilled(uint8_t *ptr, size_t size, uint8_t value)
+{
+    for (size_t i = 0; i < size; i++) {
+        if (ptr[i] != value) [[unlikely]] {
+            return false;
+        }
+    }
+    return true;
+}
+
 struct Block {
     size_t size;
     uint8_t fill;
@@ -45,9 +56,7 @@ struct Block {
     CheckFill() const
     {
         if (ptr) {
-            for (size_t i = 0; i < size; i++) {
-                CHECK(ptr[i] == fill);
-            }
+            REQUIRE(IsFilled(ptr, size, fill));
         }
     }
 
