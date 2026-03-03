@@ -7,7 +7,6 @@
 
 #define pulseConfig_MALLOC_GRANULARITY              8
 #define pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE     2
-#define pulseConfig_MALLOC_ALIGNMENT                4
 
 #define pulseConfig_HEAP_SIZE                       (1024 * 1024)
 

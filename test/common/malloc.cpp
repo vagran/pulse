@@ -6,7 +6,7 @@
 
 namespace {
 
-uint8_t heap[1024 * 1024];
+MallocUnit heap[1024 * 1024 / sizeof(MallocUnit)];
 
 bool isHeapLocked = false;
 
@@ -15,6 +15,7 @@ bool isHeapLocked = false;
 void
 InitHeap()
 {
+    pulse_reset_heap();
     pulse_add_heap_region(heap, sizeof(heap));
 }
 
@@ -45,8 +46,8 @@ IsHeapLocked()
 void
 CheckInHeap(void *addr, std::size_t size)
 {
-    REQUIRE(reinterpret_cast<uint8_t *>(addr) >= heap);
-    REQUIRE(reinterpret_cast<uint8_t *>(addr) + size <= heap + sizeof(heap));
+    REQUIRE(reinterpret_cast<uint8_t *>(addr) >= heap->unit);
+    REQUIRE(reinterpret_cast<uint8_t *>(addr) + size <= heap->unit + sizeof(heap));
 }
 
 std::size_t

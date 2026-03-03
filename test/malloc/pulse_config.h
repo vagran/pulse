@@ -5,7 +5,6 @@
 
 #define pulseConfig_MALLOC_GRANULARITY              M_GRAN
 #define pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE     M_BSZ
-#define pulseConfig_MALLOC_ALIGNMENT                M_ALIGN
 #define pulseConfig_MALLOC_BEST_FIT                 M_FIT
 
 #include <common_pulse_config.h>

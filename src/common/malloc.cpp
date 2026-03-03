@@ -15,12 +15,22 @@ namespace {
 static_assert(pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE <= sizeof(size_t),
               "pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE cannot be greater than size of size_t");
 
+// Required for storing free list pointers.
+static_assert(pulseConfig_MALLOC_GRANULARITY >= alignof(void *),
+              "pulseConfig_MALLOC_GRANULARITY cannot be less than pointer alignment");
+
+// Required for proper alignment calculations.
+static_assert(pulseConfig_MALLOC_GRANULARITY >= pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE,
+              "pulseConfig_MALLOC_GRANULARITY cannot be less than pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE");
+
 constexpr int ALLOC_UNIT_SHIFT =
     etl::countr_zero(static_cast<unsigned>(pulseConfig_MALLOC_GRANULARITY));
 
-// Required for storing free list pointer.
-static_assert(pulseConfig_MALLOC_ALIGNMENT >= alignof(void *),
-              "pulseConfig_MALLOC_ALIGNMENT cannot be less than pointer alignment");
+constexpr size_t UNIT_PADDING_SIZE = PULSE_MALLOC_UNIT_PADDING_SIZE;
+
+// Maximal number of units in one block.
+constexpr size_t MAX_ALLOC_UNITS =
+    (static_cast<size_t>(1) << (pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 8 - 1)) - 1;
 
 
 // Best matched uint type of given size.
@@ -44,6 +54,8 @@ GetAllocSize(BlockSizeUint numUnits)
 struct BlockHeader {
     //XXX make flag
     BlockSizeUint isFree:1,
+    // In units. In case UNIT_PADDING_SIZE is non-zero, it is number of full units plus one for
+    // last padding (value 1 is just the padding).
                   blockSize:(sizeof(BlockSizeUint) * 8 - 1),
     // Last in region.
                   isLast:1,
@@ -110,57 +122,37 @@ struct BlockHeader {
         return *reinterpret_cast<FreeBlock *>(data);
     }
 
-    // Get next properly aligned block address equal or greater than the specified one.
-    static BlockHeader *
-    AlignUpBlockAddress(void *addr)
-    {
-        uintptr_t _addr = reinterpret_cast<uintptr_t>(addr);
-        if constexpr (pulseConfig_MALLOC_ALIGNMENT > alignof(BlockHeader)) {
-            // align data first, then take header address
-            _addr += sizeof(BlockHeader);
-            _addr = PULSE_ALIGN2(_addr, static_cast<uintptr_t>(pulseConfig_MALLOC_ALIGNMENT));
-            _addr -= sizeof(BlockHeader);
-        } else {
-            // just align the header
-            _addr = PULSE_ALIGN2(_addr, static_cast<uintptr_t>(alignof(BlockHeader)));
-        }
-        // Avoid integer-to-pointer cast which might be significant de-optimization at least in
-        // Clang.
-        return reinterpret_cast<BlockHeader *>(
-            reinterpret_cast<uint8_t *>(addr) + (_addr - reinterpret_cast<uintptr_t>(addr)));
-    }
-
-    // Get previous properly aligned block address equal or less than the specified one.
-    static BlockHeader *
-    AlignDownBlockAddress(void *addr)
-    {
-        uintptr_t _addr = reinterpret_cast<uintptr_t>(addr);
-        if constexpr (pulseConfig_MALLOC_ALIGNMENT > alignof(BlockHeader)) {
-            // align data first, then take header address
-            _addr += sizeof(BlockHeader);
-            _addr = PULSE_ALIGN2_DOWN(_addr, static_cast<uintptr_t>(pulseConfig_MALLOC_ALIGNMENT));
-            _addr -= sizeof(BlockHeader);
-        } else {
-            // just align the header
-            _addr = PULSE_ALIGN2_DOWN(_addr, static_cast<uintptr_t>(alignof(BlockHeader)));
-        }
-        return reinterpret_cast<BlockHeader *>(
-            reinterpret_cast<uint8_t *>(addr) + (_addr - reinterpret_cast<uintptr_t>(addr)));
-    }
-
     inline BlockHeader *
     GetPrev()
     {
         PULSE_ASSERT(prevBlockSize != 0);
-        return AlignDownBlockAddress(
-            reinterpret_cast<uint8_t *>(this) - GetAllocSize(prevBlockSize) - sizeof(BlockHeader));
+        if constexpr (UNIT_PADDING_SIZE == 0) {
+            return reinterpret_cast<BlockHeader *>(reinterpret_cast<uint8_t *>(this) -
+                GetAllocSize(prevBlockSize) - sizeof(BlockHeader));
+        } else {
+            return reinterpret_cast<BlockHeader *>(reinterpret_cast<uint8_t *>(this) -
+                UNIT_PADDING_SIZE - GetAllocSize(prevBlockSize - 1) - sizeof(BlockHeader));
+        }
+    }
+
+    /** @return Next block header if this block would have the specified number of units. */
+    inline BlockHeader *
+    GetNext(BlockSizeUint blockSize)
+    {
+        if constexpr (UNIT_PADDING_SIZE == 0) {
+            return reinterpret_cast<BlockHeader *>(data + GetAllocSize(blockSize));
+        } else {
+            return reinterpret_cast<BlockHeader *>(
+                data + GetAllocSize(blockSize - 1) + UNIT_PADDING_SIZE);
+        }
     }
 
     inline BlockHeader *
     GetNext()
     {
         PULSE_ASSERT(!isLast);
-        return AlignUpBlockAddress(data + GetAllocSize(blockSize));
+        PULSE_ASSERT(blockSize > 0);
+        return GetNext(blockSize);
     }
 
     void
@@ -178,6 +170,7 @@ struct BlockHeader {
         if (HasNext()) {
             return reinterpret_cast<uint8_t *>(GetNext());
         }
+        // Last block utilizes last unit fully.
         return data + GetAllocSize(blockSize);
     }
 
@@ -186,6 +179,37 @@ struct BlockHeader {
     GetSize()
     {
         return GetEndAddress() - data;
+    }
+
+    /** @returns Number of units required to fit the specified payload size. */
+    static constexpr size_t
+    FitPayload(size_t requiredSize, bool isLast)
+    {
+        if constexpr (UNIT_PADDING_SIZE != 0) {
+            if (isLast) {
+                return PULSE_ALIGN2(requiredSize, pulseConfig_MALLOC_GRANULARITY) >>
+                    ALLOC_UNIT_SHIFT;
+            } else if (requiredSize < UNIT_PADDING_SIZE) {
+                return 1;
+            } else {
+                return (PULSE_ALIGN2(requiredSize - UNIT_PADDING_SIZE,
+                                     pulseConfig_MALLOC_GRANULARITY) >>
+                    ALLOC_UNIT_SHIFT) + 1;
+            }
+        } else {
+            return PULSE_ALIGN2(requiredSize, pulseConfig_MALLOC_GRANULARITY) >>
+                ALLOC_UNIT_SHIFT;
+        }
+    }
+
+    /** Check if requested payload size fits the block.
+     * @return 0 - exact fit, positive number - number of spare blocks, negative number - does not
+     *  fit.
+     */
+    ssize_t
+    CheckFit(size_t requiredSize)
+    {
+        return static_cast<ssize_t>(blockSize) - FitPayload(requiredSize, isLast);
     }
 
     /** Split the block if possible.
@@ -201,7 +225,7 @@ struct BlockHeader {
         PULSE_ASSERT(next == GetNext());
         isLast = next->isLast;
         uint8_t *endAddr = next->GetEndAddress();
-        blockSize = (endAddr - data) >> ALLOC_UNIT_SHIFT;
+        blockSize = FitPayload(endAddr - data, isLast);
         if (HasNext()) {
             GetNext()->prevBlockSize = blockSize;
             PULSE_ASSERT(GetNext()->GetPrev() == this);
@@ -213,44 +237,71 @@ consteval size_t
 CalculateMaxAllocSize()
 {
     // One bit is used for `free` flag.
-    int blockSizeBits = sizeof(BlockSizeUint) * 8 - 1;
-    int sizeTypeBits = sizeof(size_t) * 8;
+    constexpr int blockSizeBits = sizeof(BlockSizeUint) * 8 - 1;
+    constexpr int sizeTypeBits = sizeof(size_t) * 8;
 
     size_t numUnits;
     if (blockSizeBits + ALLOC_UNIT_SHIFT > sizeTypeBits) {
         numUnits = etl::numeric_limits<size_t>::max() >> ALLOC_UNIT_SHIFT;
+        static_assert(blockSizeBits + ALLOC_UNIT_SHIFT - sizeTypeBits < sizeTypeBits / 2,
+                      "Header waste, consider reducing pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE");
     } else {
         numUnits = (static_cast<size_t>(1) << blockSizeBits) - 1;
     }
-    return numUnits << ALLOC_UNIT_SHIFT;
+    if constexpr (UNIT_PADDING_SIZE == 0) {
+        return numUnits << ALLOC_UNIT_SHIFT;
+    } else {
+        return ((numUnits - 1) << ALLOC_UNIT_SHIFT) + UNIT_PADDING_SIZE;
+    }
 }
 
+consteval size_t
+CalculateMinAllocSize()
+{
+    if constexpr (sizeof(BlockHeader::FreeBlock) <= UNIT_PADDING_SIZE) {
+        return UNIT_PADDING_SIZE;
+    }
+    if constexpr (UNIT_PADDING_SIZE != 0) {
+        size_t numUnits = BlockHeader::FitPayload(sizeof(BlockHeader::FreeBlock), false);
+        return ((numUnits - 1) << ALLOC_UNIT_SHIFT) + UNIT_PADDING_SIZE;
+    }
+    return PULSE_ALIGN2(sizeof(BlockHeader::FreeBlock), pulseConfig_MALLOC_GRANULARITY);
+}
 
 constexpr size_t MAX_ALLOC_SIZE = CalculateMaxAllocSize();
 
-constexpr size_t MIN_ALLOC_SIZE =
-    PULSE_ALIGN2(sizeof(BlockHeader::FreeBlock), pulseConfig_MALLOC_GRANULARITY);
+constexpr size_t MIN_ALLOC_SIZE = CalculateMinAllocSize();
+
+static_assert(MIN_ALLOC_SIZE >= sizeof(BlockHeader::FreeBlock));
 
 BlockHeader *
 BlockHeader::Split(size_t dataSize)
 {
     uint8_t *end = GetEndAddress();
-    BlockHeader *tail = AlignUpBlockAddress(
-        data + PULSE_ALIGN2(dataSize, pulseConfig_MALLOC_GRANULARITY));
+
+    size_t requiredUnits = FitPayload(dataSize, isLast);
+    PULSE_ASSERT(requiredUnits <= blockSize);
+    if (requiredUnits == blockSize) {
+        return nullptr;
+    }
+
+    BlockHeader *tail = GetNext(requiredUnits);
     if (tail->data + MIN_ALLOC_SIZE > end) {
         return nullptr;
     }
-    tail->blockSize = (end - tail->data) >> ALLOC_UNIT_SHIFT;
+    tail->blockSize = FitPayload(end - tail->data, isLast);
     tail->isFree = 1;
+    tail->prevBlockSize = requiredUnits;
     tail->isLast = isLast;
+
     if (!isLast) {
         BlockHeader *next = tail->GetNext();
         PULSE_ASSERT(next == GetNext());
         next->prevBlockSize = tail->blockSize;
         PULSE_ASSERT(next->GetPrev() == tail);
     }
-    blockSize = (reinterpret_cast<uint8_t *>(tail) - data) >> ALLOC_UNIT_SHIFT;
-    tail->prevBlockSize = blockSize;
+
+    blockSize = requiredUnits;
     isLast = 0;
     PULSE_ASSERT(tail->GetPrev() == this);
     PULSE_ASSERT(GetNext() == tail);
@@ -294,31 +345,30 @@ public:
 #endif // pulseConfig_MALLOC_LOCK
 
 #if pulseConfig_MALLOC_STATS
-// In allocation units.
-size_t totalUsed = 0, totalFree = 0;
+MallocStats stats = {0, 0};
 
 inline void
 StatsAlloc(BlockHeader *block)
 {
-    totalUsed += block->blockSize;
+    stats.totalUsed += block->GetSize();
 }
 
 inline void
 StatsDealloc(BlockHeader *block)
 {
-    totalUsed -= block->blockSize;
+    stats.totalUsed -= block->GetSize();
 }
 
 inline void
 StatsFree(BlockHeader *block)
 {
-    totalFree += block->blockSize;
+    stats.totalFree += block->GetSize();
 }
 
 inline void
 StatsUnfree(BlockHeader *block)
 {
-    totalFree -= block->blockSize;
+    stats.totalFree -= block->GetSize();
 }
 
 #else // pulseConfig_MALLOC_STATS
@@ -356,25 +406,26 @@ AllocateBlock(size_t size)
     PULSE_ASSERT(size >= MIN_ALLOC_SIZE);
     PULSE_ASSERT(size <= MAX_ALLOC_SIZE);
 
-    size_t numUnits PULSE_UNUSED = PULSE_ALIGN2(size, pulseConfig_MALLOC_GRANULARITY);//XXX shift
-
     if (!freeList) {
         return nullptr;
     }
 
     BlockHeader *p = freeList;
     BlockHeader *bestFit = nullptr;
+    size_t bestFitSpare PULSE_UNUSED = 0;
 
     while (p) {
         PULSE_ASSERT(p->isFree);
 #if pulseConfig_MALLOC_BEST_FIT
-        if (p->blockSize == numUnits) {
+        ssize_t spare = p->CheckFit(size);
+        if (spare == 0) {
             bestFit = p;
             break;
         }
-        if (p->blockSize > numUnits) {
-            if (!bestFit || bestFit->blockSize > p->blockSize) {
+        if (spare > 0) {
+            if (!bestFit || bestFitSpare > spare) {
                 bestFit = p;
+                bestFitSpare = spare;
             }
         }
 #else // pulseConfig_MALLOC_BEST_FIT
@@ -449,12 +500,7 @@ struct HeapRegion {
     BlockHeader *
     GetFirstBlock() const
     {
-        BlockHeader *block = BlockHeader::AlignUpBlockAddress(ptr);
-        ptrdiff_t blockOffset = reinterpret_cast<uint8_t *>(block) - ptr;
-        if (blockOffset + sizeof(BlockHeader) + MIN_ALLOC_SIZE > size) {
-            return nullptr;
-        }
-        return block;
+        return reinterpret_cast<BlockHeader *>(ptr);
     }
 
     bool
@@ -468,11 +514,7 @@ struct HeapRegion {
     IsLast(BlockHeader *block)
     {
         PULSE_ASSERT(block->isLast);
-        uint8_t *end = block->GetEndAddress();
-        BlockHeader *next = BlockHeader::AlignUpBlockAddress(end);
-        ptrdiff_t blockOffset = reinterpret_cast<uint8_t *>(next) - end;
-        size_t size = ptr + this->size - end;
-        return blockOffset + sizeof(BlockHeader) + MIN_ALLOC_SIZE > size;
+        return block->GetEndAddress() == ptr + size;
     }
 };
 
@@ -662,43 +704,92 @@ pulse_add_heap_region(void *region, size_t size)
     // Null pointer are not supported as heap address. They are used to indicate invalid pointer in
     // free list.
     PULSE_ASSERT(region);
+    PULSE_ASSERT(size > 0);
+
+    uint8_t *addr = reinterpret_cast<uint8_t *>(region);
+
+#if pulseConfig_MALLOC_REGION_STRICT_CHECK
+
+    if (!PULSE_IS_ALIGNED2(reinterpret_cast<uintptr_t>(region), pulseConfig_MALLOC_GRANULARITY)) {
+        pulseConfig_PANIC("Region not aligned");
+        return;
+    }
+    if (!PULSE_IS_ALIGNED2(size, pulseConfig_MALLOC_GRANULARITY)) {
+        pulseConfig_PANIC("Region size should be multiple of unit size");
+        return;
+    }
+    addr += UNIT_PADDING_SIZE;
+    size -= UNIT_PADDING_SIZE;
+
+#else // pulseConfig_MALLOC_REGION_STRICT_CHECK
+
+    uintptr_t alignedAddr = PULSE_ALIGN2(reinterpret_cast<uintptr_t>(addr) + sizeof(BlockHeader),
+                                         pulseConfig_MALLOC_GRANULARITY);
+    alignedAddr -= sizeof(BlockHeader);
+    alignedAddr -= reinterpret_cast<uintptr_t>(addr);
+    if (alignedAddr >= size) {
+        // Nothing left
+        return;
+    }
+    addr += alignedAddr;
+    size -= alignedAddr;
+
+    size = PULSE_ALIGN2_DOWN(size, pulseConfig_MALLOC_GRANULARITY);
+
+#endif //pulseConfig_MALLOC_REGION_STRICT_CHECK
+
+    uint8_t *start = addr;
+    uint8_t *end = addr + size;
 
     LockGuard();
 
-    DebugRegisterHeapRegion(region, size);
-
-    uint8_t *addr = reinterpret_cast<uint8_t *>(region);
-    uint8_t *end = addr + size;
     BlockHeader *prevBlock = nullptr;
 
-    while (true) {
-        BlockHeader *block = BlockHeader::AlignUpBlockAddress(addr);
-        if (block->data + MIN_ALLOC_SIZE > end) {
+    while (addr < end) {
+        BlockHeader *block = reinterpret_cast<BlockHeader *>(addr);
+        if (end - block->data < MIN_ALLOC_SIZE) {
             break;
         }
         if (prevBlock) {
-            // Can do if next block is available otherwise isLast must be set
+            // isLast should be known before calling these functions.
+            StatsFree(prevBlock);
             PoisonFreeBlock(prevBlock);
         }
-        size_t dataSize = end - block->data;
-        if (dataSize > MAX_ALLOC_SIZE) {
-            dataSize = MAX_ALLOC_SIZE;
+        size_t numBlocks = BlockHeader::FitPayload(end - block->data, true);
+        if (numBlocks > MAX_ALLOC_UNITS) {
+            numBlocks = MAX_ALLOC_UNITS;
         }
-        block->isFree = 1;
-        block->blockSize = dataSize >> ALLOC_UNIT_SHIFT;
-        block->isLast = 0;
+        block->blockSize = numBlocks;
+        block->isFree = true;
         block->prevBlockSize = prevBlock ? prevBlock->blockSize : 0;
-        StatsFree(block);
+        block->isLast = 0;
         block->GetFreeBlock().Link(freeList);
         prevBlock = block;
-        addr = block->data + GetAllocSize(block->blockSize);
+        addr = block->GetEndAddress();
         PULSE_ASSERT(addr <= end);
     }
 
     if (prevBlock) {
         prevBlock->isLast = 1;
+        StatsFree(prevBlock);
         PoisonFreeBlock(prevBlock);
+        end = prevBlock->GetEndAddress();
     }
+
+    DebugRegisterHeapRegion(start, end - start);
+}
+
+void
+pulse_reset_heap()
+{
+    freeList = nullptr;
+#if pulseConfig_MALLOC_DEBUG
+    heapRegions.clear();
+#endif
+#if pulseConfig_MALLOC_STATS
+    stats.totalFree = 0;
+    stats.totalUsed = 0;
+#endif
 }
 
 size_t
@@ -712,8 +803,7 @@ get_malloc_max_size()
 void
 get_malloc_stats(MallocStats *stats)
 {
-    stats->totalFree = totalFree << ALLOC_UNIT_SHIFT;
-    stats->totalUsed = totalUsed << ALLOC_UNIT_SHIFT;
+    *stats = ::stats;
 }
 
 #endif // pulseConfig_MALLOC_STATS
@@ -724,17 +814,24 @@ bool
 validate_heap()
 {
     size_t numFreeBlocks = 0;
+    size_t freeSize = 0, usedSize = 0;
     for (HeapRegion &region: heapRegions) {
         BlockHeader *block = region.GetFirstBlock();
         BlockHeader *prevBlock = nullptr;
         while (block) {
+            DEBUG_ASSERT(block->blockSize);
             DEBUG_ASSERT(region.ContainsBlock(block));
             if (prevBlock) {
                 DEBUG_ASSERT(block->GetPrev() == prevBlock);
                 DEBUG_ASSERT(block->prevBlockSize == prevBlock->blockSize);
+            } else {
+                DEBUG_ASSERT(block->prevBlockSize == 0);
             }
             if (block->isFree) {
                 numFreeBlocks++;
+                freeSize += block->GetSize();
+            } else {
+                usedSize += block->GetSize();
             }
             if (!block->HasNext()) {
                 break;
@@ -742,10 +839,9 @@ validate_heap()
             prevBlock = block;
             block = block->GetNext();
         }
-        //XXX
-        // if (block) {
-        //     DEBUG_ASSERT(region.IsLast(block));
-        // }
+        if (block) {
+            DEBUG_ASSERT(region.IsLast(block));
+        }
     }
 
     BlockHeader *p = freeList;
@@ -759,6 +855,11 @@ validate_heap()
         p = p->GetFreeBlock().nextFree;
     }
     DEBUG_ASSERT(freeListSize == numFreeBlocks);
+
+#ifdef pulseConfig_MALLOC_STATS
+    DEBUG_ASSERT(freeSize == stats.totalFree);
+    DEBUG_ASSERT(usedSize == stats.totalUsed);
+#endif // pulseConfig_MALLOC_STATS
 
     return true;
 }

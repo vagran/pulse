@@ -15,7 +15,7 @@ namespace {
 void
 CheckAligned(void *ptr)
 {
-    constexpr uintptr_t mask = static_cast<uintptr_t>(pulseConfig_MALLOC_ALIGNMENT) - 1;
+    constexpr uintptr_t mask = static_cast<uintptr_t>(pulseConfig_MALLOC_GRANULARITY) - 1;
     REQUIRE((reinterpret_cast<uintptr_t>(ptr) & mask) == 0);
 }
 
@@ -195,6 +195,9 @@ TEST_CASE("Random activity") {
     Context ctx(GetHeapSize() / 16, 441416213);
     std::uniform_int_distribution<uint8_t> actionDist{0, 2};
 
+    InitHeap();
+    validate_heap();
+
     for (int i = 0; i < 100; i++) {
         ctx.Allocate();
         ctx.CheckAllFills();
@@ -202,6 +205,9 @@ TEST_CASE("Random activity") {
     }
 
     for (int i = 0; i < 10000; i++) {
+        if (i == 2786) {
+            validate_heap();//XXX
+        }
         uint8_t action = actionDist(ctx.rng);
         switch (action) {
         case 0:

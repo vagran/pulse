@@ -6,7 +6,8 @@
 
 
 /* pulseConfig_MALLOC_GRANULARITY
- * Allocation block size is always multiple of this number of bytes. Must be power of two.
+ * Allocation block size is always multiple of this number of bytes. Must be power of two. This also
+ * is alignment value for all allocated blocks.
  */
 #ifndef pulseConfig_MALLOC_GRANULARITY
 #   define pulseConfig_MALLOC_GRANULARITY 8
@@ -28,19 +29,6 @@
 
 #if pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE <= 0 || !PULSE_IS_POW2(pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE)
 #   error pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE must be positive power of two
-#endif
-
-
-/* pulseConfig_MALLOC_ALIGNMENT
- * Default alignment of allocated blocks. Allocated blocks are always aligned at least by this
- * value. Must be power of 2. Cannot be less than pointer size.
- */
-#ifndef pulseConfig_MALLOC_ALIGNMENT
-#   define pulseConfig_MALLOC_ALIGNMENT 4
-#endif
-
-#if pulseConfig_MALLOC_ALIGNMENT <= 0 || !PULSE_IS_POW2(pulseConfig_MALLOC_ALIGNMENT)
-#   error pulseConfig_MALLOC_ALIGNMENT must be positive power of two
 #endif
 
 
@@ -66,6 +54,15 @@
 */
 
 
+/** pulseConfig_MALLOC_REGION_STRICT_CHECK
+ * Enables strict checking of size and alignment of regions passed to `pulse_add_heap_region()`.
+ * `pulseConfig_PANIC()` is called if check is not passed. This prevents memory wasting which may be
+ * important on very tiny MCUs.
+ */
+#ifndef pulseConfig_MALLOC_REGION_STRICT_CHECK
+#   define pulseConfig_MALLOC_REGION_STRICT_CHECK 1
+#endif
+
 /** pulseConfig_MALLOC_STATS
  * Maintain heap usage statistics if enabled.
  */
@@ -86,7 +83,7 @@
  * Takes condition to check. May apply some action if condition fails.
  */
 #ifndef pulseConfig_ASSERT
-#define pulseConfig_ASSERT(x)
+#   define pulseConfig_ASSERT(x)
 #endif
 
 
@@ -95,7 +92,7 @@
  * return.
  */
 #ifndef pulseConfig_PANIC
-#define pulseConfig_PANIC(msg) for(;;)
+#   define pulseConfig_PANIC(msg) for(;;)
 #endif
 
 

@@ -3,11 +3,50 @@
 
 #include <pulse/details/default_config.h>
 #include <stddef.h>
+#include <stdint.h>
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** Initial allocation unit in the heap will have unused padding of this size.  */
+#define PULSE_MALLOC_UNIT_PADDING_SIZE \
+    ((pulseConfig_MALLOC_GRANULARITY > pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 2) ? \
+        pulseConfig_MALLOC_GRANULARITY - pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 2 : 0)
+
+#ifdef __cplusplus
+
+/** Helper stucture for allocation units. Provided heap regions should be multiple of these units.
+ * Squeezing every RAM byte:
+ * @code
+ * MallocUnit heap[HEAP_SIZE / pulseConfig_MALLOC_GRANULARITY];
+ * struct MyData {
+ *     uint16_t i;
+ *     uint8_t b1, b2;
+ * };
+ * static_assert(sizeof(MyData) <= PULSE_MALLOC_UNIT_PADDING_SIZE);
+ * #define myData reinterpret_cast<MyData *>(heap[0].firstUnit.padding)
+ * ...
+ * pulse_add_heap_region(heap, sizeof(heap));
+ * new(myData) MyData();
+ * DoSomeStuff(myData->i);
+ * @endcode
+ */
+struct alignas(pulseConfig_MALLOC_GRANULARITY) MallocUnit {
+    union {
+        uint8_t unit[pulseConfig_MALLOC_GRANULARITY];
+        /** This space in the first unit can be utilized after passing the region to
+            * `pulse_add_heap_region()`. Use it if each RAM byte matters on your platform.
+            */
+        uint8_t padding[PULSE_MALLOC_UNIT_PADDING_SIZE];
+    };
+};
+
+static_assert(sizeof(MallocUnit) == pulseConfig_MALLOC_GRANULARITY);
+
+#endif // __cplusplus
+
 
 void *
 pulse_malloc(size_t size);
@@ -20,11 +59,16 @@ pulse_realloc(void *ptr, size_t newSize);
 
 
 /** Register next region to run heap on. At least one region should be added to succeed next
- * allocation. Additional regions can be added at any time. Region is trimmed if necessary to ensure
- * proper alignment.
+ * allocation. Additional regions can be added at any time. Should be properly sized and aligned if
+ * `pulseConfig_MALLOC_REGION_STRICT_CHECK` is enabled (to `pulseConfig_MALLOC_GRANULARITY`).
+ * Otherwise the region is trimmed if necessary to ensure proper alignment.
  */
 void
 pulse_add_heap_region(void *region, size_t size);
+
+/** De-initialize heap so regions can be added again. Mostly for unit tests. */
+void
+pulse_reset_heap();
 
 /** @return Maximal possible allocation size according to current heap configuration.
  */
