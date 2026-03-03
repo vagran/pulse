@@ -189,7 +189,7 @@ struct BlockHeader {
             if (isLast) {
                 return PULSE_ALIGN2(requiredSize, pulseConfig_MALLOC_GRANULARITY) >>
                     ALLOC_UNIT_SHIFT;
-            } else if (requiredSize < UNIT_PADDING_SIZE) {
+            } else if (requiredSize <= UNIT_PADDING_SIZE) {
                 return 1;
             } else {
                 return (PULSE_ALIGN2(requiredSize - UNIT_PADDING_SIZE,
@@ -283,6 +283,11 @@ BlockHeader::Split(size_t dataSize)
     PULSE_ASSERT(requiredUnits <= blockSize);
     if (requiredUnits == blockSize) {
         return nullptr;
+    }
+    if constexpr (UNIT_PADDING_SIZE != 0) {
+        if (isLast) {
+            requiredUnits = FitPayload(dataSize, false);
+        }
     }
 
     BlockHeader *tail = GetNext(requiredUnits);

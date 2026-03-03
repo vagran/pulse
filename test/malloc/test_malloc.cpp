@@ -205,9 +205,6 @@ TEST_CASE("Random activity") {
     }
 
     for (int i = 0; i < 10000; i++) {
-        if (i == 2786) {
-            validate_heap();//XXX
-        }
         uint8_t action = actionDist(ctx.rng);
         switch (action) {
         case 0:
