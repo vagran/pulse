@@ -515,7 +515,7 @@ struct HeapRegion {
     ContainsBlock(BlockHeader *block)
     {
         uint8_t *end = block->GetEndAddress();
-        return reinterpret_cast<uint8_t *>(block) >= ptr || end <= ptr + size;
+        return reinterpret_cast<uint8_t *>(block) >= ptr && end <= ptr + size;
     }
 
     bool
@@ -577,6 +577,10 @@ pulse_malloc(size_t size)
 void
 pulse_free(void *ptr)
 {
+    if (!ptr) {
+        return;
+    }
+
     BlockHeader *block = BlockHeader::FromDataPtr(ptr);
     PULSE_ASSERT(!block->isFree);
 
