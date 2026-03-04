@@ -206,10 +206,10 @@ struct BlockHeader {
      * @return 0 - exact fit, positive number - number of spare blocks, negative number - does not
      *  fit.
      */
-    ssize_t
+    ptrdiff_t
     CheckFit(size_t requiredSize)
     {
-        return static_cast<ssize_t>(blockSize) - FitPayload(requiredSize, isLast);
+        return static_cast<ptrdiff_t>(blockSize) - FitPayload(requiredSize, isLast);
     }
 
     /** Split the block if possible.
@@ -425,7 +425,7 @@ AllocateBlock(size_t size)
     while (p) {
         PULSE_ASSERT(p->isFree);
 #if pulseConfig_MALLOC_BEST_FIT
-        ssize_t spare = p->CheckFit(size);
+        ptrdiff_t spare = p->CheckFit(size);
         if (spare == 0) {
             bestFit = p;
             break;
@@ -750,7 +750,7 @@ pulse_add_heap_region(void *region, size_t size)
 
 #endif //pulseConfig_MALLOC_REGION_STRICT_CHECK
 
-    uint8_t *start = addr;
+    uint8_t *start PULSE_UNUSED = addr;
     uint8_t *end = addr + size;
 
     LockGuard();
