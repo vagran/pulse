@@ -5,7 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <common.h>
 #include <pulse/malloc.h>
-#include <set>
+#include <unordered_set>
 #include <random>
 #include <iostream>
 
@@ -89,6 +89,12 @@ struct Block {
         return true;
     }
 
+    bool
+    operator==(const Block& other) const
+    {
+        return ptr == other.ptr;
+    }
+
     struct Compare {
         bool
         operator()(const Block& lhs, const Block& rhs) const
@@ -96,16 +102,27 @@ struct Block {
             return lhs.ptr < rhs.ptr;
         }
     };
+
+    struct Hash {
+        size_t
+        operator()(const Block& block) const
+        {
+            return std::hash<decltype(block.ptr)>{}(block.ptr);
+        }
+    };
+
 };
 
 class Context {
 public:
-    std::set<Block, Block::Compare> blocks;
+    std::unordered_set<Block, Block::Hash> blocks;
     const size_t maxAllocSize;
     uint32_t seed;
     std::mt19937 rng;
     std::uniform_int_distribution<size_t> sizeDist{1, maxAllocSize};
     std::uniform_int_distribution<uint8_t> fillDist{0, 0xff};
+    size_t totalAllocs = 0, totalReallocs = 0, totalFrees = 0;
+    size_t numFailedAllocs = 0, numFailedReallocs = 0;
 
     Context(size_t maxAllocSize, uint32_t seed = 0):
         maxAllocSize(maxAllocSize),
@@ -155,8 +172,10 @@ public:
     const Block *
     Allocate()
     {
+        totalAllocs++;
         Block block(GetRandomSize(), GetRandomFill());
         if (!block) {
+            numFailedAllocs++;
             return nullptr;
         }
         auto res = blocks.emplace(block);
@@ -167,6 +186,7 @@ public:
     void
     Free(Block &block)
     {
+        totalFrees++;
         if (block.ptr) {
             REQUIRE(blocks.erase(block) == 1);
         }
@@ -176,10 +196,13 @@ public:
     const Block *
     Reallocate(Block &block)
     {
+        totalReallocs++;
         if (block) {
             REQUIRE(blocks.erase(block) == 1);
         }
-        block.Realloc(GetRandomSize(), GetRandomFill());
+        if (!block.Realloc(GetRandomSize(), GetRandomFill())) {
+            numFailedReallocs++;
+        }
         if (block) {
             auto res = blocks.emplace(block);
             REQUIRE(res.second);
@@ -191,18 +214,49 @@ public:
 
 } // anonymous namespace
 
+#ifndef M_ALLOC_RATIO
+#define M_ALLOC_RATIO 64
+#endif
+
+
 TEST_CASE("Random activity") {
-    Context ctx(GetHeapSize() / 16, 441416213);
+
+    std::cout << "M_GRAN=" << M_GRAN << " M_BSZ=" << M_BSZ << " M_FIT=" << M_FIT << "\n";
+
+    size_t maxAllocSize = GetHeapSize() / M_ALLOC_RATIO;
+    Context ctx(maxAllocSize);
     std::uniform_int_distribution<uint8_t> actionDist{0, 2};
 
     InitHeap();
     validate_heap();
 
-    for (int i = 0; i < 100; i++) {
+    MallocStats stats;
+    get_malloc_stats(&stats);
+
+    std::cout << "Total free before tests: " << stats.totalFree << "\n";
+    std::cout << "Maximal allocation size: " << maxAllocSize << ", allocator limit: " <<
+        get_malloc_max_size() << "\n";
+
+    size_t numInitialAllocations = std::max(M_ALLOC_RATIO * 2, 1000);
+    for (int i = 0; i < numInitialAllocations; i++) {
         ctx.Allocate();
         ctx.CheckAllFills();
         validate_heap();
+        if ((i & 1023) == 0) {
+            get_malloc_stats(&stats);
+            if (stats.totalFree < maxAllocSize * 2) {
+                std::cout << "Interrupting initial allocation due to heap depletion after " <<
+                    i + 1<< " iterations\n";
+                break;
+            }
+        }
     }
+
+    get_malloc_stats(&stats);
+    std::cout << "Total free after initial allocations: " << stats.totalFree << ", min free: " <<
+        stats.minFree << ", total used: " << stats.totalUsed << "\n";
+    std::cout << "Failed allocations: " << ctx.numFailedAllocs << "\n";
+    std::cout << "Number of allocated blocks: " << ctx.blocks.size() << "\n";
 
     for (int i = 0; i < 10000; i++) {
         uint8_t action = actionDist(ctx.rng);
@@ -231,6 +285,15 @@ TEST_CASE("Random activity") {
         validate_heap();
     }
 
+    get_malloc_stats(&stats);
+    std::cout << "Total free after mixed actions: " << stats.totalFree << ", min free: " <<
+        stats.minFree << ", total used: " << stats.totalUsed << "\n";
+    std::cout << "Total allocs: " << ctx.totalAllocs << ", reallocs: " << ctx.totalReallocs <<
+        ", frees: " << ctx.totalFrees << "\n";
+    std::cout << "Failed allocations: " << ctx.numFailedAllocs << ", failed re-allocs: " <<
+        ctx.numFailedReallocs << "\n";
+    std::cout << "Number of allocated blocks: " << ctx.blocks.size() << "\n";
+
     while (!ctx.IsEmpty()) {
         Block block = ctx.GetRandomBlock();
         ctx.Free(block);
@@ -238,8 +301,8 @@ TEST_CASE("Random activity") {
         validate_heap();
     }
 
-    MallocStats stats;
     get_malloc_stats(&stats);
     REQUIRE(stats.totalUsed == 0);
-    std::cout << "Total free after test: " << stats.totalFree << "\n";
+    std::cout << "Total free after test: " << stats.totalFree << ", min free: " << stats.minFree <<
+        ", total used: " << stats.totalUsed << "\n";
 }

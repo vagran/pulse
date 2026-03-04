@@ -55,7 +55,15 @@ set(MALLOC_CONFIG_LIST [=[
     ["M_GRAN=8", "M_BSZ=4", "M_FIT=0"],
     ["M_GRAN=16", "M_BSZ=2", "M_FIT=1"],
     ["M_GRAN=8", "M_BSZ=8", "M_FIT=0"],
-    ["M_GRAN=256", "M_BSZ=4", "M_FIT=0"]
+    ["M_GRAN=256", "M_BSZ=4", "M_FIT=0"],
+
+    ["M_GRAN=16", "M_BSZ=1", "M_FIT=1", "M_ALLOC_RATIO=16384"],
+    ["M_GRAN=8", "M_BSZ=1", "M_FIT=1", "M_ALLOC_RATIO=16384"],
+    ["M_GRAN=8", "M_BSZ=2", "M_FIT=0", "M_ALLOC_RATIO=1024"],
+    ["M_GRAN=8", "M_BSZ=4", "M_FIT=0", "M_ALLOC_RATIO=1024"],
+    ["M_GRAN=16", "M_BSZ=2", "M_FIT=1", "M_ALLOC_RATIO=1024"],
+    ["M_GRAN=8", "M_BSZ=8", "M_FIT=0", "M_ALLOC_RATIO=1024"],
+    ["M_GRAN=256", "M_BSZ=4", "M_FIT=0", "M_ALLOC_RATIO=1024"]
 ]
 ]=])
 
@@ -87,12 +95,24 @@ foreach(config IN LISTS MALLOC_CONFIG_LIST)
     math(EXPR index "${index} + 1")
 endforeach()
 
-add_custom_target(run_malloc_tests ALL DEPENDS ${MALLOC_TEST_TARGETS})
+add_custom_target(run_malloc_tests_valgrind ALL DEPENDS ${MALLOC_TEST_TARGETS})
 foreach(malloc_test_exe IN LISTS MALLOC_TEST_EXES)
     add_custom_command(
-        TARGET run_malloc_tests
+        TARGET run_malloc_tests_valgrind
         POST_BUILD
         COMMAND valgrind --leak-check=full ${malloc_test_exe}
         VERBATIM
     )
 endforeach()
+set_target_properties(run_malloc_tests_valgrind PROPERTIES EXCLUDE_FROM_ALL TRUE)
+
+add_custom_target(run_malloc_tests ALL DEPENDS ${MALLOC_TEST_TARGETS})
+foreach(malloc_test_exe IN LISTS MALLOC_TEST_EXES)
+    add_custom_command(
+        TARGET run_malloc_tests
+        POST_BUILD
+        COMMAND ${malloc_test_exe}
+        VERBATIM
+    )
+endforeach()
+set_target_properties(run_malloc_tests PROPERTIES EXCLUDE_FROM_ALL TRUE)

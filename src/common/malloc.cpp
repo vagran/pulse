@@ -350,7 +350,7 @@ public:
 #endif // pulseConfig_MALLOC_LOCK
 
 #if pulseConfig_MALLOC_STATS
-MallocStats stats = {0, 0};
+MallocStats stats = {0, 0, std::numeric_limits<size_t>::max()};
 
 inline void
 StatsAlloc(BlockHeader *block)
@@ -374,6 +374,9 @@ inline void
 StatsUnfree(BlockHeader *block)
 {
     stats.totalFree -= block->GetSize();
+    if (stats.totalFree < stats.minFree) {
+        stats.minFree = stats.totalFree;
+    }
 }
 
 #else // pulseConfig_MALLOC_STATS
@@ -794,6 +797,7 @@ pulse_reset_heap()
 #if pulseConfig_MALLOC_STATS
     stats.totalFree = 0;
     stats.totalUsed = 0;
+    stats.minFree = std::numeric_limits<size_t>::max();
 #endif
 }
 
