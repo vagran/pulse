@@ -52,20 +52,94 @@ GetAllocSize(BlockSizeUint numUnits)
 }
 
 struct BlockHeader {
-    //XXX make flag
-    BlockSizeUint isFree:1,
+    static constexpr BlockSizeUint SIZE_MASK = etl::numeric_limits<BlockSizeUint>::max() >> 1;
+    static constexpr BlockSizeUint FREE_FLAG =
+        static_cast<BlockSizeUint>(1) << (pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 8 - 1);
+    static constexpr BlockSizeUint LAST_FLAG = FREE_FLAG;
+
     // In units. In case UNIT_PADDING_SIZE is non-zero, it is number of full units plus one for
-    // last padding (value 1 is just the padding).
-                  blockSize:(sizeof(BlockSizeUint) * 8 - 1),
-    // Last in region.
-                  isLast:1,
-    // Zero if the first block.
-                  prevBlockSize:(sizeof(BlockSizeUint) * 8 - 1);
+    // last padding (value 1 is just the padding). HO bit is used for free flag.
+    BlockSizeUint _blockSize;
+    // Zero if the first block. HO bit is used for last flag.
+    BlockSizeUint _prevBlockSize;
     // User data or FreeBlock. Cannot declare union here because alignment is ensured explicitly.
     // No padding needed here (and otherwise added by compiler if
     // `alignof(FreeBlock) > 2 * alignof(BlockSizeUint)` which is some extreme case like 32-bits
     // pointers with 1 byte pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE, but still supported).
     uint8_t data[];
+
+    inline BlockSizeUint
+    blockSize() const
+    {
+        return _blockSize & SIZE_MASK;
+    }
+
+    inline BlockSizeUint
+    prevBlockSize() const
+    {
+        return _prevBlockSize & SIZE_MASK;
+    }
+
+    inline bool
+    isFree() const
+    {
+        return (_blockSize & FREE_FLAG) != 0;
+    }
+
+    // Last block in region when set.
+    inline bool
+    isLast() const
+    {
+        return (_prevBlockSize & LAST_FLAG) != 0;
+    }
+
+    inline void
+    SetBlockSize(BlockSizeUint blockSize)
+    {
+        PULSE_ASSERT((blockSize & ~SIZE_MASK) == 0);
+        _blockSize = (_blockSize & ~SIZE_MASK) | blockSize;
+    }
+
+    inline void
+    SetPrevBlockSize(BlockSizeUint prevBlockSize)
+    {
+        PULSE_ASSERT((prevBlockSize & ~SIZE_MASK) == 0);
+        _prevBlockSize = (_prevBlockSize & ~SIZE_MASK) | prevBlockSize;
+    }
+
+    inline void
+    SetFree()
+    {
+        _blockSize |= FREE_FLAG;
+    }
+
+    inline void
+    ClearFree()
+    {
+        _blockSize &= ~FREE_FLAG;
+    }
+
+    inline void
+    SetLast()
+    {
+        _prevBlockSize |= LAST_FLAG;
+    }
+
+    inline void
+    ClearLast()
+    {
+        _prevBlockSize &= ~LAST_FLAG;
+    }
+
+    inline void
+    SetLast(bool value)
+    {
+        if (value) {
+            SetLast();
+        } else {
+            ClearLast();
+        }
+    }
 
     struct FreeBlock {
         BlockHeader *prevFree, *nextFree;
@@ -106,32 +180,32 @@ struct BlockHeader {
     inline bool
     HasPrev() const
     {
-        return prevBlockSize != 0;
+        return prevBlockSize() != 0;
     }
 
     inline bool
     HasNext() const
     {
-        return !isLast;
+        return !isLast();
     }
 
     inline FreeBlock &
     GetFreeBlock()
     {
-        PULSE_ASSERT(isFree);
+        PULSE_ASSERT(isFree());
         return *reinterpret_cast<FreeBlock *>(data);
     }
 
     inline BlockHeader *
     GetPrev()
     {
-        PULSE_ASSERT(prevBlockSize != 0);
+        PULSE_ASSERT(prevBlockSize() != 0);
         if constexpr (UNIT_PADDING_SIZE == 0) {
             return reinterpret_cast<BlockHeader *>(reinterpret_cast<uint8_t *>(this) -
-                GetAllocSize(prevBlockSize) - sizeof(BlockHeader));
+                GetAllocSize(prevBlockSize()) - sizeof(BlockHeader));
         } else {
             return reinterpret_cast<BlockHeader *>(reinterpret_cast<uint8_t *>(this) -
-                UNIT_PADDING_SIZE - GetAllocSize(prevBlockSize - 1) - sizeof(BlockHeader));
+                UNIT_PADDING_SIZE - GetAllocSize(prevBlockSize() - 1) - sizeof(BlockHeader));
         }
     }
 
@@ -150,17 +224,17 @@ struct BlockHeader {
     inline BlockHeader *
     GetNext()
     {
-        PULSE_ASSERT(!isLast);
-        PULSE_ASSERT(blockSize > 0);
-        return GetNext(blockSize);
+        PULSE_ASSERT(!isLast());
+        PULSE_ASSERT(blockSize() > 0);
+        return GetNext(blockSize());
     }
 
     void
     Allocate(BlockHeader *&freeList)
     {
-        PULSE_ASSERT(isFree);
+        PULSE_ASSERT(isFree());
         GetFreeBlock().Unlink(freeList);
-        isFree = 0;
+        ClearFree();
     }
 
     // Get block end address including padding before next block if any.
@@ -171,7 +245,7 @@ struct BlockHeader {
             return reinterpret_cast<uint8_t *>(GetNext());
         }
         // Last block utilizes last unit fully.
-        return data + GetAllocSize(blockSize);
+        return data + GetAllocSize(blockSize());
     }
 
     // Get full size including padding before next block if any.
@@ -209,7 +283,7 @@ struct BlockHeader {
     ptrdiff_t
     CheckFit(size_t requiredSize)
     {
-        return static_cast<ptrdiff_t>(blockSize) - FitPayload(requiredSize, isLast);
+        return static_cast<ptrdiff_t>(blockSize()) - FitPayload(requiredSize, isLast());
     }
 
     /** Split the block if possible.
@@ -223,11 +297,12 @@ struct BlockHeader {
     Merge(BlockHeader *next)
     {
         PULSE_ASSERT(next == GetNext());
-        isLast = next->isLast;
+        SetLast(next->isLast());
         uint8_t *endAddr = next->GetEndAddress();
-        blockSize = FitPayload(endAddr - data, isLast);
+        BlockSizeUint size = FitPayload(endAddr - data, isLast());
+        SetBlockSize(size);
         if (HasNext()) {
-            GetNext()->prevBlockSize = blockSize;
+            GetNext()->SetPrevBlockSize(size);
             PULSE_ASSERT(GetNext()->GetPrev() == this);
         }
     }
@@ -279,13 +354,13 @@ BlockHeader::Split(size_t dataSize)
 {
     uint8_t *end = GetEndAddress();
 
-    size_t requiredUnits = FitPayload(dataSize, isLast);
-    PULSE_ASSERT(requiredUnits <= blockSize);
-    if (requiredUnits == blockSize) {
+    size_t requiredUnits = FitPayload(dataSize, isLast());
+    PULSE_ASSERT(requiredUnits <= blockSize());
+    if (requiredUnits == blockSize()) {
         return nullptr;
     }
     if constexpr (UNIT_PADDING_SIZE != 0) {
-        if (isLast) {
+        if (isLast()) {
             requiredUnits = FitPayload(dataSize, false);
         }
     }
@@ -294,20 +369,20 @@ BlockHeader::Split(size_t dataSize)
     if (tail->data + MIN_ALLOC_SIZE > end) {
         return nullptr;
     }
-    tail->blockSize = FitPayload(end - tail->data, isLast);
-    tail->isFree = 1;
-    tail->prevBlockSize = requiredUnits;
-    tail->isLast = isLast;
+    tail->SetBlockSize(FitPayload(end - tail->data, isLast()));
+    tail->SetFree();
+    tail->SetPrevBlockSize(requiredUnits);
+    tail->SetLast(isLast());
 
-    if (!isLast) {
+    if (!isLast()) {
         BlockHeader *next = tail->GetNext();
         PULSE_ASSERT(next == GetNext());
-        next->prevBlockSize = tail->blockSize;
+        next->SetPrevBlockSize(tail->blockSize());
         PULSE_ASSERT(next->GetPrev() == tail);
     }
 
-    blockSize = requiredUnits;
-    isLast = 0;
+    SetBlockSize(requiredUnits);
+    ClearLast();
     PULSE_ASSERT(tail->GetPrev() == this);
     PULSE_ASSERT(GetNext() == tail);
     return tail;
@@ -396,7 +471,7 @@ static_assert(pulseConfig_MALLOC_FREE_SPACE_POISONING <= etl::numeric_limits<uin
 void
 PoisonFreeBlock(BlockHeader *block)
 {
-    PULSE_ASSERT(block->isFree);
+    PULSE_ASSERT(block->isFree());
     memset(block->data + sizeof(BlockHeader::FreeBlock), pulseConfig_MALLOC_FREE_SPACE_POISONING,
            block->GetSize() - sizeof(BlockHeader::FreeBlock));
 }
@@ -423,7 +498,7 @@ AllocateBlock(size_t size)
     size_t bestFitSpare PULSE_UNUSED = 0;
 
     while (p) {
-        PULSE_ASSERT(p->isFree);
+        PULSE_ASSERT(p->isFree());
 #if pulseConfig_MALLOC_BEST_FIT
         ptrdiff_t spare = p->CheckFit(size);
         if (spare == 0) {
@@ -468,7 +543,7 @@ FreeBlock(BlockHeader *block)
 {
     if (block->HasNext()) {
         BlockHeader *next = block->GetNext();
-        if (next->isFree) {
+        if (next->isFree()) {
             uint8_t *endAddr = next->GetEndAddress();
             if (endAddr - block->data <= MAX_ALLOC_SIZE) {
                 // Merge with the next block
@@ -481,7 +556,7 @@ FreeBlock(BlockHeader *block)
 
     if (block->HasPrev()) {
         BlockHeader *prev = block->GetPrev();
-        if (prev->isFree) {
+        if (prev->isFree()) {
             uint8_t *endAddr = block->GetEndAddress();
             if (endAddr - prev->data <= MAX_ALLOC_SIZE) {
                 // Merge with the previous block
@@ -493,7 +568,7 @@ FreeBlock(BlockHeader *block)
         }
     }
 
-    block->isFree = 1;
+    block->SetFree();
     StatsFree(block);
     PoisonFreeBlock(block);
     block->GetFreeBlock().Link(freeList);
@@ -521,7 +596,7 @@ struct HeapRegion {
     bool
     IsLast(BlockHeader *block)
     {
-        PULSE_ASSERT(block->isLast);
+        PULSE_ASSERT(block->isLast());
         return block->GetEndAddress() == ptr + size;
     }
 };
@@ -582,7 +657,7 @@ pulse_free(void *ptr)
     }
 
     BlockHeader *block = BlockHeader::FromDataPtr(ptr);
-    if (block->isFree) {
+    if (block->isFree()) {
         pulseConfig_PANIC("Double free");
     }
 
@@ -608,7 +683,7 @@ pulse_realloc(void *ptr, size_t newSize)
     }
 
     BlockHeader *block = BlockHeader::FromDataPtr(ptr);
-    PULSE_ASSERT(!block->isFree);
+    PULSE_ASSERT(!block->isFree());
 
     LockGuard();
 
@@ -634,7 +709,7 @@ pulse_realloc(void *ptr, size_t newSize)
     bool wantPrev = true;
     if (block->HasNext()) {
         next = block->GetNext();
-        if (next->isFree) {
+        if (next->isFree()) {
             nextEndAddr = next->GetEndAddress();
             if (nextEndAddr - block->data > MAX_ALLOC_SIZE) {
                 // Disable merging with next if too big resulted block
@@ -649,7 +724,7 @@ pulse_realloc(void *ptr, size_t newSize)
     BlockHeader *prev = nullptr;
     if (wantPrev && block->HasPrev()) {
         prev = block->GetPrev();
-        if (prev->isFree) {
+        if (prev->isFree()) {
             size_t size = block->GetEndAddress() - prev->data;
             if (size > MAX_ALLOC_SIZE) {
                 prev = nullptr;
@@ -705,7 +780,7 @@ pulse_realloc(void *ptr, size_t newSize)
 
     StatsUnfree(prev);
     prev->GetFreeBlock().Unlink(freeList);
-    prev->isFree = 0;
+    prev->ClearFree();
     prev->Merge(block);
     memcpy(prev->data, block->data, curSize);
     StatsAlloc(prev);
@@ -773,10 +848,10 @@ pulse_add_heap_region(void *region, size_t size)
         if (numBlocks > MAX_ALLOC_UNITS) {
             numBlocks = MAX_ALLOC_UNITS;
         }
-        block->blockSize = numBlocks;
-        block->isFree = true;
-        block->prevBlockSize = prevBlock ? prevBlock->blockSize : 0;
-        block->isLast = 0;
+        block->SetBlockSize(numBlocks);
+        block->SetFree();
+        block->SetPrevBlockSize(prevBlock ? prevBlock->blockSize() : 0);
+        block->ClearLast();
         block->GetFreeBlock().Link(freeList);
         prevBlock = block;
         addr = block->GetEndAddress();
@@ -784,7 +859,7 @@ pulse_add_heap_region(void *region, size_t size)
     }
 
     if (prevBlock) {
-        prevBlock->isLast = 1;
+        prevBlock->SetLast();
         StatsFree(prevBlock);
         PoisonFreeBlock(prevBlock);
         end = prevBlock->GetEndAddress();
@@ -834,15 +909,15 @@ validate_heap()
         BlockHeader *block = region.GetFirstBlock();
         BlockHeader *prevBlock = nullptr;
         while (block) {
-            DEBUG_ASSERT(block->blockSize);
+            DEBUG_ASSERT(block->blockSize());
             DEBUG_ASSERT(region.ContainsBlock(block));
             if (prevBlock) {
                 DEBUG_ASSERT(block->GetPrev() == prevBlock);
-                DEBUG_ASSERT(block->prevBlockSize == prevBlock->blockSize);
+                DEBUG_ASSERT(block->prevBlockSize() == prevBlock->blockSize());
             } else {
-                DEBUG_ASSERT(block->prevBlockSize == 0);
+                DEBUG_ASSERT(block->prevBlockSize() == 0);
             }
-            if (block->isFree) {
+            if (block->isFree()) {
                 numFreeBlocks++;
                 freeSize += block->GetSize();
             } else {
@@ -863,7 +938,7 @@ validate_heap()
     BlockHeader *prevBlock = nullptr;
     size_t freeListSize = 0;
     while (p) {
-        DEBUG_ASSERT(p->isFree);
+        DEBUG_ASSERT(p->isFree());
         DEBUG_ASSERT(p->GetFreeBlock().prevFree == prevBlock);
         freeListSize++;
         prevBlock = p;
