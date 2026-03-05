@@ -582,7 +582,9 @@ pulse_free(void *ptr)
     }
 
     BlockHeader *block = BlockHeader::FromDataPtr(ptr);
-    PULSE_ASSERT(!block->isFree);
+    if (block->isFree) {
+        pulseConfig_PANIC("Double free");
+    }
 
     LockGuard();
 
