@@ -101,7 +101,36 @@ validate_heap();
 #endif // pulseConfig_MALLOC_DEBUG
 
 #ifdef __cplusplus
+} // extern "C"
+
+namespace pulse {
+
+inline void *
+Malloc(size_t size)
+{
+    return pulse_malloc(size);
 }
-#endif
+
+inline void
+Free(void *ptr)
+{
+    return pulse_free(ptr);
+}
+
+inline void *
+Realloc(void *ptr, size_t newSize)
+{
+    return pulse_realloc(ptr, newSize);
+}
+
+inline void
+AddHeapRegion(void *region, size_t size)
+{
+    pulse_add_heap_region(region, size);
+}
+
+} // namespace pulse
+
+#endif // __cplusplus
 
 #endif /* MALLOC_H */

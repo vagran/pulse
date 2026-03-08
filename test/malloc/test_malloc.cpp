@@ -219,8 +219,8 @@ public:
 #endif
 
 
-TEST_CASE("Random activity") {
-
+TEST_CASE("Random activity")
+{
     std::cout << "M_GRAN=" << M_GRAN << " M_BSZ=" << M_BSZ << " M_FIT=" << M_FIT << "\n";
 
     size_t maxAllocSize = GetHeapSize() / M_ALLOC_RATIO;

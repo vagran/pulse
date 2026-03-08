@@ -7,6 +7,7 @@
         // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-clang-toolchain.cmake"
     ],
     "cSpell.words": [
+        "coro",
         "MALLOC"
     ]
 }
