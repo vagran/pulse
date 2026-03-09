@@ -9,6 +9,8 @@
 #   include <etl/vector.h>
 #endif
 
+using namespace pulse;
+
 
 namespace {
 
@@ -33,16 +35,7 @@ constexpr size_t MAX_ALLOC_UNITS =
     (static_cast<size_t>(1) << (pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 8 - 1)) - 1;
 
 
-// Best matched uint type of given size.
-template<size_t Bits>
-using sized_uint_t = etl::conditional_t<
-    Bits <= 8,  uint8_t,
-    etl::conditional_t<Bits <= 16, uint16_t,
-        etl::conditional_t<Bits <= 32, uint32_t,
-            uint64_t>>>;
-
-
-using BlockSizeUint = sized_uint_t<pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 8>;
+using BlockSizeUint = SizedUint<pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 8>;
 
 // Convert size from allocation units to bytes.
 constexpr size_t
@@ -658,7 +651,7 @@ pulse_free(void *ptr)
 
     BlockHeader *block = BlockHeader::FromDataPtr(ptr);
     if (block->isFree()) {
-        pulseConfig_PANIC("Double free");
+        PULSE_PANIC("Double free");
     }
 
     LockGuard();
@@ -800,11 +793,11 @@ pulse_add_heap_region(void *region, size_t size)
 #if pulseConfig_MALLOC_REGION_STRICT_CHECK
 
     if (!PULSE_IS_ALIGNED2(reinterpret_cast<uintptr_t>(region), pulseConfig_MALLOC_GRANULARITY)) {
-        pulseConfig_PANIC("Region not aligned");
+        PULSE_PANIC("Region not aligned");
         return;
     }
     if (!PULSE_IS_ALIGNED2(size, pulseConfig_MALLOC_GRANULARITY)) {
-        pulseConfig_PANIC("Region size should be multiple of unit size");
+        PULSE_PANIC("Region size should be multiple of unit size");
         return;
     }
     addr += UNIT_PADDING_SIZE;
@@ -955,3 +948,43 @@ validate_heap()
 }
 
 #endif // pulseConfig_MALLOC_DEBUG
+
+#if pulseConfig_DEFINE_CPP_NEW
+
+void *
+operator new(size_t size)
+{
+    return pulse_malloc(size);
+}
+
+void *
+operator new[](size_t size)
+{
+    return pulse_malloc(size);
+}
+
+void
+operator delete(void *ptr) noexcept
+{
+    pulse_free(ptr);
+}
+
+void
+operator delete(void *ptr, std::size_t) noexcept
+{
+    pulse_free(ptr);
+}
+
+void
+operator delete[](void *ptr) noexcept
+{
+    pulse_free(ptr);
+}
+
+void operator
+delete[](void* ptr, std::size_t) noexcept
+{
+    pulse_free(ptr);
+}
+
+#endif // pulseConfig_DEFINE_CPP_NEW

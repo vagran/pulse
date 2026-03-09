@@ -96,4 +96,42 @@
 #endif
 
 
+/* Define C++ new/delete operators bound to Pulse memory allocator. May be useful to disable this,
+ * for example, in unit tests.
+ */
+#ifndef pulseConfig_DEFINE_CPP_NEW
+#   define pulseConfig_DEFINE_CPP_NEW 1
+#endif
+
+
+/** pulseConfig_MAX_TASKS
+ * Maximal number of simultaneously active tasks.
+ */
+#ifndef pulseConfig_MAX_TASKS
+#   define pulseConfig_MAX_TASKS 15
+#endif
+
+
+/** pulseConfig_NUM_TASK_PRIORITIES
+ * Number of priority values for scheduled tasks. Should not be greater than needed for a particular
+ * application to save resources.
+ */
+#ifndef pulseConfig_NUM_TASK_PRIORITIES
+#   define pulseConfig_NUM_TASK_PRIORITIES 4
+#endif
+
+
+/** pulseConfig_ENABLE_ISR_TASKS
+ * Tasks with TasK::ISR_PRIORITY are resumed instantly in ISR context if enabled.
+ */
+#ifndef pulseConfig_ENABLE_ISR_TASKS
+#   define pulseConfig_ENABLE_ISR_TASKS 0
+#endif
+
+
+#ifndef pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE
+#   define pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE 1
+#endif
+
+
 #endif /* DEFAULT_CONFIG_H */

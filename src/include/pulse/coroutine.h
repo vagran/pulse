@@ -40,6 +40,11 @@ struct coroutine_handle<void> {
         framePtr(framePtr)
     {}
 
+    operator bool() const
+    {
+        return framePtr != nullptr;
+    }
+    
     void
     resume() const
     {

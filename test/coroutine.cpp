@@ -1,8 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/coroutine.h>
-#include <pulse/malloc.h>
 #include <concepts>
-#include <iostream>
 
 
 namespace {
@@ -14,7 +12,11 @@ struct Generator
     using handle_type = std::coroutine_handle<promise_type>;
 
     struct promise_type {
-        T value_;
+        std::optional<T> value;
+
+        // Promise default constructor call is not injected by the compiler if not defined
+        // explicitly.
+        promise_type() = default;
 
         Generator
         get_return_object()
@@ -42,38 +44,24 @@ struct Generator
         std::suspend_always
         yield_value(From&& from)
         {
-            value_ = std::forward<From>(from);
+            value.emplace(std::forward<From>(from));
             return {};
         }
 
         void
         return_void()
         {}
-
-        void *
-        operator new(std::size_t n) noexcept
-        {
-            void *p = pulse::Malloc(n);
-            std::cout << "Frame: " << p << "\n";
-            return p;
-        }
-
-        void
-        operator delete(void *p) noexcept
-        {
-            return pulse::Free(p);
-        }
     };
 
-    handle_type h_;
+    handle_type handle;
 
-    Generator(handle_type h):
-        h_(h)
+    Generator(handle_type handle):
+        handle(handle)
     {}
 
     ~Generator()
     {
-        h_.destroy();
+        handle.destroy();
     }
 
     explicit
@@ -85,28 +73,24 @@ struct Generator
                 // coroutine until the next co_yield point (or let it fall off end).
                 // Then we store/cache result in promise to allow getter (operator() below
                 // to grab it without executing coroutine).
-        return !h_.done();
+        return !handle.done();
     }
 
     T
     operator()()
     {
         fill();
-        full_ = false; // we are going to move out previously cached
-                       // result to make promise empty again
-        return std::move(h_.promise().value_);
+        T value(std::move(*handle.promise().value));
+        handle.promise().value.reset();
+        return std::move(value);
     }
 
 private:
-    bool full_ = false;
-
     void
     fill()
     {
-        if (!full_)
-        {
-            h_.resume();
-            full_ = true;
+        if (!handle.promise().value) {
+            handle.resume();
         }
     }
 };
