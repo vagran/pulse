@@ -26,7 +26,7 @@ extern "C" {
  *     uint8_t b1, b2;
  * };
  * static_assert(sizeof(MyData) <= PULSE_MALLOC_UNIT_PADDING_SIZE);
- * #define myData reinterpret_cast<MyData *>(heap[0].firstUnit.padding)
+ * MyData &myData = *reinterpret_cast<MyData *>(heap[0].padding);
  * ...
  * pulse_add_heap_region(heap, sizeof(heap));
  * new(myData) MyData();
