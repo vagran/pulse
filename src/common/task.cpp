@@ -9,7 +9,7 @@ using namespace pulse;
 
 namespace {
 
-using PriorityBitmap = uint32_t;
+using PriorityBitmap = SizedUint<pulseConfig_NUM_TASK_PRIORITIES>;
 
 static_assert(pulseConfig_NUM_TASK_PRIORITIES >= 2,
               "pulseConfig_NUM_TASK_PRIORITIES must be at least 2");
@@ -80,7 +80,7 @@ struct FreeList {
 } freeTasks;
 
 /** Tasks in runnable state, arranged by priority. */
-Task::Id readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
+TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
 
 /** Each set bit corresponds to non-empty queue for corresponding priority. */
 PriorityBitmap readyTasksBitmap;
@@ -99,7 +99,9 @@ Task &
 TaskById(Task::Id id)
 {
     PULSE_ASSERT(id != Task::ID_NONE);
-    return tasks[id - 1].task;
+    Task &task = tasks[id - 1].task;
+    PULSE_ASSERT(task.GetPromise().id == id);
+    return task;
 }
 
 void
@@ -109,6 +111,7 @@ FreeTask(Task::Id id)
     slot->Destroy();
     slot->next = TaskSlotById(freeTasks.head);
     freeTasks.head = slot->GetId();
+    tasksBitmap.set(id, false);
 }
 
 Task::Id
@@ -143,13 +146,13 @@ TaskSlot::GetId() const
 
 } // anonymous namespace
 
-Task::Task(CoroutineHandle handle):
+Task::TTask(CoroutineHandle handle):
     handle(handle)
 {
     GetPromise().AddRef();
 }
 
-Task::Task(const Task &other):
+Task::TTask(const Task &other):
     handle(other.handle)
 {
     if (handle) {
@@ -157,7 +160,7 @@ Task::Task(const Task &other):
     }
 }
 
-Task::~Task()
+Task::~TTask()
 {
     if (handle && GetPromise().ReleaseRef()) {
         handle.destroy();
@@ -201,4 +204,47 @@ TaskPromise::AddRef()
         PULSE_PANIC("Task reference counter overflow");
     }
     refCounter++;
+}
+
+void
+TaskList::AddFirst(Task::Id taskId)
+{
+    PULSE_ASSERT(Task::ById(taskId).GetPromise().next == Task::ID_NONE);
+    if (head == Task::ID_NONE) {
+        head = taskId;
+    } else {
+        TaskPromise &promise = Task::ById(taskId).GetPromise();
+        promise.next = head;
+        head = taskId;
+    }
+}
+
+void
+TaskTailedList::AddFirst(Task::Id taskId)
+{
+    PULSE_ASSERT(Task::ById(taskId).GetPromise().next == Task::ID_NONE);
+    if (head == Task::ID_NONE) {
+        PULSE_ASSERT(tail == Task::ID_NONE);
+        head = taskId;
+        tail = taskId;
+    } else {
+        TaskPromise &promise = Task::ById(taskId).GetPromise();
+        promise.next = head;
+        head = taskId;
+    }
+}
+
+void
+TaskTailedList::AddLast(Task::Id taskId)
+{
+    PULSE_ASSERT(Task::ById(taskId).GetPromise().next == Task::ID_NONE);
+    if (tail == Task::ID_NONE) {
+        PULSE_ASSERT(head == Task::ID_NONE);
+        head = taskId;
+        tail = taskId;
+    } else {
+        TaskPromise &promise = Task::ById(tail).GetPromise();
+        promise.next = taskId;
+        tail = taskId;
+    }
 }

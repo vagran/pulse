@@ -10,17 +10,27 @@
 
 namespace pulse {
 
+template <typename TRet = void>
+class TTask;
+
+using Task = TTask<void>;
+
 class TaskPromise;
 
+template <typename TRet>
+class TTaskPromise;
+
+
 /// Smart pointer for coroutine frame.
-class Task {
+template <>
+class TTask<void> {
 public:
     // ID is one-based index in tasks array. Zero is reserved for ID_NONE.
-    using Id = SizedUint<FitUintBits(pulseConfig_MAX_TASKS)>;
+    using Id = SizedUint<UintBitWidth(pulseConfig_MAX_TASKS)>;
 
     static constexpr Id ID_NONE = 0;
 
-    static constexpr int NUM_PRIO_BITS = 32 - etl::countl_zero(static_cast<uint32_t>(pulseConfig_NUM_TASK_PRIORITIES - 1));
+    static constexpr int NUM_PRIO_BITS = BitWidth(pulseConfig_NUM_TASK_PRIORITIES - 1);
 
     using Priority = uint8_t;
 
@@ -28,21 +38,22 @@ public:
                               ISR_PRIORITY = HIGHEST_PRIORITY,
                               LOWEST_PRIORITY = pulseConfig_NUM_TASK_PRIORITIES - 1;
 
-    Task() = default;
+    TTask() = default;
 
-    Task(const Task &other);
+    TTask(const Task &other);
 
-    Task(Task &&other) noexcept:
+    TTask(Task &&other) noexcept:
         handle(other.handle)
     {
         other.handle = CoroutineHandle();
     }
 
-    ~Task();
+    ~TTask();
 
     TaskPromise &
     GetPromise() const
     {
+        PULSE_ASSERT(handle);
         return handle.promise();
     }
 
@@ -74,10 +85,6 @@ public:
     static void
     RunScheduler();
 
-    //XXX awaitable, template (returned value, yielded values)
-    int
-    Join();
-
 private:
     friend class TaskPromise;
 
@@ -85,9 +92,16 @@ private:
 
     CoroutineHandle handle;
 
-    Task(CoroutineHandle handle);
+    TTask(CoroutineHandle handle);
 };
 
+template <typename TRet>
+class TTask: public Task {
+public:
+    //XXX awaitable, template (returned value, yielded values)
+    int
+    Join();
+};
 
 class TaskPromise {
 public:
@@ -152,23 +166,77 @@ public:
 
     //XXX design value return semantic, set join return value
 
+
+};
+
+template <>
+class TTaskPromise<void>: public TaskPromise {
+public:
+    //XXX awaitable for join
+
     void
     return_void()
     {}
 };
 
+template <typename TRet>
+class TTaskPromise: public TaskPromise {
+public:
+    //XXX awaitable for join
+
+    template<etl::convertible_to<TRet> From>
+    void
+    return_value(From&& from)
+    {
+        //XXX
+    }
+};
+
+
+// Singly-linked list.
 struct TaskList {
     Task::Id head = Task::ID_NONE;
 
+    void
+    AddFirst(Task::Id taskId);
+};
+
+// Singly-linked list with tail pointer.
+struct TaskTailedList {
+    Task::Id head = Task::ID_NONE,
+           tail = Task::ID_NONE;
+
+    void
+    AddFirst(Task::Id taskId);
+
+    void
+    AddLast(Task::Id taskId);
+};
+
+
+template <typename T = void>
+class Awaiter;
+
+template <>
+class Awaiter<void> {
+public:
+    TaskList waitingTasks;
+    
+    //XXX
+};
+
+template <typename T>
+class Awaiter: public Awaiter<void> {
+public:
     //XXX
 };
 
 } // namespace pulse
 
 // Bind TaskPromise to Task coroutine type.
-template<typename... Args>
-struct std::coroutine_traits<pulse::Task, Args...> {
-    using promise_type = pulse::TaskPromise;
+template<typename TRet, typename... Args>
+struct std::coroutine_traits<pulse::TTask<TRet>, Args...> {
+    using promise_type = pulse::TTaskPromise<TRet>;
 };
 
 #endif /* TASK_H */
