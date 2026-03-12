@@ -25,51 +25,6 @@ PriorityBitmap readyTasksBitmap;
 
 } // anonymous namespace
 
-Task::TTask(CoroutineHandle handle):
-    handle(handle)
-{
-    GetPromise().AddRef();
-}
-
-Task::TTask(const Task &other):
-    handle(other.handle)
-{
-    if (handle) {
-        GetPromise().AddRef();
-    }
-}
-
-Task::~TTask()
-{
-    if (handle && GetPromise().ReleaseRef()) {
-        handle.destroy();
-    }
-}
-
-Task &
-Task::operator =(const Task &other)
-{
-    if (handle && GetPromise().ReleaseRef()) {
-        handle.destroy();
-    }
-    handle = other.handle;
-    if (handle) {
-        GetPromise().AddRef();
-    }
-    return *this;
-}
-
-Task &
-Task::operator =(Task &&other) noexcept
-{
-    if (handle && GetPromise().ReleaseRef()) {
-        handle.destroy();
-    }
-    handle = other.handle;
-    other.handle = CoroutineHandle();
-    return *this;
-}
-
 const Task &
 Task::Spawn(Task task, Priority priority)
 {

@@ -41,6 +41,7 @@ public:
         TTask()
     {}
 
+    inline
     TTask(const Task &other);
 
     TTask(Task &&other) noexcept:
@@ -49,12 +50,15 @@ public:
         other.handle = CoroutineHandle();
     }
 
-    ~TTask();
+    ~TTask()
+    {
+        ReleaseHandle();
+    }
 
-    Task &
+    inline Task &
     operator =(const Task &other);
 
-    Task &
+    inline Task &
     operator =(Task &&other) noexcept;
 
     TPromise &
@@ -93,7 +97,11 @@ private:
 
     CoroutineHandle handle;
 
+    inline
     TTask(CoroutineHandle handle);
+
+    inline void
+    ReleaseHandle();
 };
 
 template <typename TRet>
@@ -209,6 +217,50 @@ public:
     }
 };
 
+Task::TTask(CoroutineHandle handle):
+    handle(handle)
+{
+    GetPromise().AddRef();
+}
+
+Task::TTask(const Task &other):
+    handle(other.handle)
+{
+    if (handle) {
+        GetPromise().AddRef();
+    }
+}
+
+Task &
+Task::operator =(const Task &other)
+{
+    ReleaseHandle();
+    handle = other.handle;
+    if (handle) {
+        GetPromise().AddRef();
+    }
+    return *this;
+}
+
+Task &
+Task::operator =(Task &&other) noexcept
+{
+    ReleaseHandle();
+    handle = other.handle;
+    other.handle = CoroutineHandle();
+    return *this;
+}
+
+void
+Task::ReleaseHandle()
+{
+    if (handle) {
+        if (GetPromise().ReleaseRef()) {
+            handle.destroy();
+        }
+        handle = CoroutineHandle();
+    }
+}
 
 // Singly-linked list.
 struct TaskList {
