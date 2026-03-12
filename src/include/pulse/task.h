@@ -25,6 +25,8 @@ class TTaskPromise;
 template <>
 class TTask<void> {
 public:
+    using TPromise = TTaskPromise<void>;
+
     // ID is one-based index in tasks array. Zero is reserved for ID_NONE.
     using Id = SizedUint<UintBitWidth(pulseConfig_MAX_TASKS)>;
 
@@ -50,11 +52,11 @@ public:
 
     ~TTask();
 
-    TaskPromise &
+    TPromise &
     GetPromise() const
     {
         PULSE_ASSERT(handle);
-        return handle.promise();
+        return reinterpret_cast<TPromise &>(handle.promise());
     }
 
     /// @return True if bound to a valid coroutine frame.
@@ -76,6 +78,7 @@ public:
      * @param task Task object returned by coroutine function.
      * @param priority Task priority.
      */
+    //XXX return ID needed?
     static Id
     Spawn(Task task, Priority priority = LOWEST_PRIORITY);
 
@@ -87,6 +90,8 @@ public:
 
 private:
     friend class TaskPromise;
+    template <typename T>
+    friend class TTaskPromise;
 
     using CoroutineHandle = std::coroutine_handle<TaskPromise>;
 
@@ -98,6 +103,15 @@ private:
 template <typename TRet>
 class TTask: public Task {
 public:
+    using TPromise = TTaskPromise<TRet>;
+
+    TPromise &
+    GetPromise() const
+    {
+        PULSE_ASSERT(handle);
+        return reinterpret_cast<TPromise &>(handle.promise());
+    }
+
     //XXX awaitable, template (returned value, yielded values)
     int
     Join();
@@ -128,12 +142,6 @@ public:
     {
         PULSE_ASSERT(refCounter != 0);
         return --refCounter == 0;
-    }
-
-    Task
-    get_return_object()
-    {
-        return Task(Task::CoroutineHandle::from_promise(*this));
     }
 
     // Coroutine body is first entered only by scheduler.
@@ -174,6 +182,12 @@ class TTaskPromise<void>: public TaskPromise {
 public:
     //XXX awaitable for join
 
+    Task
+    get_return_object()
+    {
+        return Task(Task::CoroutineHandle::from_promise(*this));
+    }
+
     void
     return_void()
     {}
@@ -183,6 +197,12 @@ template <typename TRet>
 class TTaskPromise: public TaskPromise {
 public:
     //XXX awaitable for join
+
+    TTask<TRet>
+    get_return_object()
+    {
+        return TTask<TRet>(Task::CoroutineHandle::from_promise(*this));
+    }
 
     template<etl::convertible_to<TRet> From>
     void
@@ -221,7 +241,7 @@ template <>
 class Awaiter<void> {
 public:
     TaskList waitingTasks;
-    
+
     //XXX
 };
 
@@ -236,7 +256,7 @@ public:
 // Bind TaskPromise to Task coroutine type.
 template<typename TRet, typename... Args>
 struct std::coroutine_traits<pulse::TTask<TRet>, Args...> {
-    using promise_type = pulse::TTaskPromise<TRet>;
+    using promise_type = pulse::TTask<TRet>::TPromise;
 };
 
 #endif /* TASK_H */
