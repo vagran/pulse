@@ -21,7 +21,7 @@ static_assert(pulseConfig_NUM_TASK_PRIORITIES < sizeof(PriorityBitmap) * 8,
 TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
 
 /** Each set bit corresponds to non-empty queue for corresponding priority. */
-PriorityBitmap readyTasksBitmap;
+PriorityBitmap readyTasksBitmap PULSE_UNUSED;//XXX
 
 } // anonymous namespace
 
@@ -29,6 +29,7 @@ const Task &
 Task::Spawn(Task task, Priority priority)
 {
     //XXX
+    return task.GetPromise().next;//XXX tmp
 }
 
 TaskPromise::~TaskPromise()

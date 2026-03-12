@@ -121,9 +121,4 @@
 #endif
 
 
-#ifndef pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE
-#   define pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE 1
-#endif
-
-
 #endif /* DEFAULT_CONFIG_H */

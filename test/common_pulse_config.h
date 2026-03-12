@@ -26,4 +26,6 @@ extern "C" void Panic(const char *msg);
 
 #define pulseConfig_MALLOC_REGION_STRICT_CHECK      1
 
+#define pulseConfig_DEFINE_CPP_NEW                  0
+
 #endif /* COMMON_PULSE_CONFIG_H */
