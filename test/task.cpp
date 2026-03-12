@@ -8,7 +8,7 @@ using namespace pulse;
 
 namespace {
 
-Task
+TaskV
 TestTask()
 {
     co_return;

@@ -10,22 +10,16 @@
 
 namespace pulse {
 
-template <typename TRet = void>
-class TTask;
-
-using Task = TTask<void>;
-
 class TaskPromise;
 
-template <typename TRet>
+template <typename TRet, bool initialSuspend>
 class TTaskPromise;
 
 
 /// Smart pointer for coroutine frame.
-template <>
-class TTask<void> {
+class Task {
 public:
-    using TPromise = TTaskPromise<void>;
+    using TPromise = TaskPromise;
 
     static constexpr int NUM_PRIO_BITS = BitWidth(pulseConfig_NUM_TASK_PRIORITIES - 1);
 
@@ -35,22 +29,22 @@ public:
                               ISR_PRIORITY = HIGHEST_PRIORITY,
                               LOWEST_PRIORITY = pulseConfig_NUM_TASK_PRIORITIES - 1;
 
-    TTask() = default;
+    Task() = default;
 
-    TTask(etl::nullptr_t):
-        TTask()
+    Task(etl::nullptr_t):
+        Task()
     {}
 
     inline
-    TTask(const Task &other);
+    Task(const Task &other);
 
-    TTask(Task &&other) noexcept:
+    Task(Task &&other) noexcept:
         handle(other.handle)
     {
         other.handle = CoroutineHandle();
     }
 
-    ~TTask()
+    ~Task()
     {
         ReleaseHandle();
     }
@@ -65,7 +59,7 @@ public:
     GetPromise() const
     {
         PULSE_ASSERT(handle);
-        return reinterpret_cast<TPromise &>(handle.promise());
+        return handle.promise();
     }
 
     /// @return True if bound to a valid coroutine frame.
@@ -88,9 +82,9 @@ public:
     static void
     RunScheduler();
 
-private:
+protected:
     friend class TaskPromise;
-    template <typename T>
+    template <typename, bool>
     friend class TTaskPromise;
 
     using CoroutineHandle = std::coroutine_handle<TaskPromise>;
@@ -98,18 +92,18 @@ private:
     CoroutineHandle handle;
 
     inline
-    TTask(CoroutineHandle handle);
+    Task(CoroutineHandle handle);
 
     inline void
     ReleaseHandle();
 };
 
-template <typename TRet>
+template <typename TRet, bool initialSuspend = true>
 class TTask: public Task {
 public:
-    using TPromise = TTaskPromise<TRet>;
+    using TPromise = TTaskPromise<TRet, initialSuspend>;
 
-    using Task::TTask;
+    using Task::Task;
 
     TPromise &
     GetPromise() const
@@ -117,11 +111,9 @@ public:
         PULSE_ASSERT(handle);
         return reinterpret_cast<TPromise &>(handle.promise());
     }
-
-    //XXX awaitable, template (returned value, yielded values)
-    int
-    Join();
 };
+
+using TaskV = TTask<void>;
 
 class TaskPromise {
 public:
@@ -149,13 +141,6 @@ public:
         return --refCounter == 0;
     }
 
-    // Coroutine body is first entered only by scheduler.
-    std::suspend_always
-    initial_suspend()
-    {
-        return {};
-    }
-
     std::suspend_never
     final_suspend() noexcept
     {
@@ -167,6 +152,35 @@ public:
     {
         PULSE_PANIC("TaskPromise::unhandled_exception");
     }
+};
+
+/** @tparam initialSuspend Enables initial suspend when true. Tasks spawned by scheduler typically
+ * should have it true so that initial body invocation is done when first switched to this task. In
+ * contrast, awaitable returned from async function should have it false so that it runs till first
+ * suspension point (if any).
+ */
+template <typename TRet, bool initialSuspend>
+class TTaskPromise: public TaskPromise {
+public:
+    etl::conditional_t<initialSuspend, std::suspend_always, std::suspend_never>
+    initial_suspend()
+    {
+        //XXX schedule in suspend_always::await_suspend()? priority?
+        return {};
+    }
+
+    TTask<TRet, initialSuspend>
+    get_return_object()
+    {
+        return Task::CoroutineHandle::from_promise(*this);
+    }
+
+    template<etl::convertible_to<TRet> From>
+    void
+    return_value(From&& from)
+    {
+        //XXX
+    }
 
     //XXX design yield semantic
     // template<std::convertible_to<T> From>
@@ -176,21 +190,21 @@ public:
     //     value.emplace(std::forward<From>(from));
     //     return {};
     // }
-
-    //XXX design value return semantic, set join return value
-
-
 };
 
-template <>
-class TTaskPromise<void>: public TaskPromise {
+template <bool initialSuspend>
+class TTaskPromise<void, initialSuspend>: public TaskPromise {
 public:
-    //XXX awaitable for join
+    etl::conditional_t<initialSuspend, std::suspend_always, std::suspend_never>
+    initial_suspend()
+    {
+        return {};
+    }
 
-    Task
+    TTask<void, initialSuspend>
     get_return_object()
     {
-        return Task(Task::CoroutineHandle::from_promise(*this));
+        return Task::CoroutineHandle::from_promise(*this);
     }
 
     void
@@ -198,32 +212,13 @@ public:
     {}
 };
 
-template <typename TRet>
-class TTaskPromise: public TaskPromise {
-public:
-    //XXX awaitable for join
-
-    TTask<TRet>
-    get_return_object()
-    {
-        return TTask<TRet>(Task::CoroutineHandle::from_promise(*this));
-    }
-
-    template<etl::convertible_to<TRet> From>
-    void
-    return_value(From&& from)
-    {
-        //XXX
-    }
-};
-
-Task::TTask(CoroutineHandle handle):
+Task::Task(CoroutineHandle handle):
     handle(handle)
 {
     GetPromise().AddRef();
 }
 
-Task::TTask(const Task &other):
+Task::Task(const Task &other):
     handle(other.handle)
 {
     if (handle) {
@@ -261,6 +256,10 @@ Task::ReleaseHandle()
         handle = CoroutineHandle();
     }
 }
+
+/// For returning from async functions net meant to be spawned as scheduler tasks.
+template <typename TRet>
+using Awaitable = TTask<TRet, false>;
 
 // Singly-linked list.
 struct TaskList {
