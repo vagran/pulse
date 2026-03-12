@@ -104,14 +104,6 @@
 #endif
 
 
-/** pulseConfig_MAX_TASKS
- * Maximal number of simultaneously active tasks.
- */
-#ifndef pulseConfig_MAX_TASKS
-#   define pulseConfig_MAX_TASKS 15
-#endif
-
-
 /** pulseConfig_NUM_TASK_PRIORITIES
  * Number of priority values for scheduled tasks. Should not be greater than needed for a particular
  * application to save resources.

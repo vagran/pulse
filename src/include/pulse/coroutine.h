@@ -44,7 +44,7 @@ struct coroutine_handle<void> {
     {
         return framePtr != nullptr;
     }
-    
+
     void
     resume() const
     {

@@ -27,11 +27,6 @@ class TTask<void> {
 public:
     using TPromise = TTaskPromise<void>;
 
-    // ID is one-based index in tasks array. Zero is reserved for ID_NONE.
-    using Id = SizedUint<UintBitWidth(pulseConfig_MAX_TASKS)>;
-
-    static constexpr Id ID_NONE = 0;
-
     static constexpr int NUM_PRIO_BITS = BitWidth(pulseConfig_NUM_TASK_PRIORITIES - 1);
 
     using Priority = uint8_t;
@@ -42,6 +37,10 @@ public:
 
     TTask() = default;
 
+    TTask(etl::nullptr_t):
+        TTask()
+    {}
+
     TTask(const Task &other);
 
     TTask(Task &&other) noexcept:
@@ -51,6 +50,12 @@ public:
     }
 
     ~TTask();
+
+    Task &
+    operator =(const Task &other);
+
+    Task &
+    operator =(Task &&other) noexcept;
 
     TPromise &
     GetPromise() const
@@ -65,21 +70,12 @@ public:
         return handle;
     }
 
-    /// @return Task ID if managed by scheduler, ID_NONE otherwise.
-    Id
-    GetId() const;
-
-    /// @return Task corresponding to the given ID. Null task if not found.
-    static Task
-    ById(Id id);
-
     /** Spawns new task with the specified priority. Returns ID_NONE if failed (if
      * `pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE` disabled, panics otherwise).
      * @param task Task object returned by coroutine function.
      * @param priority Task priority.
      */
-    //XXX return ID needed?
-    static Id
+    static const Task &
     Spawn(Task task, Priority priority = LOWEST_PRIORITY);
 
     /**
@@ -105,6 +101,8 @@ class TTask: public Task {
 public:
     using TPromise = TTaskPromise<TRet>;
 
+    using Task::TTask;
+
     TPromise &
     GetPromise() const
     {
@@ -119,9 +117,8 @@ public:
 
 class TaskPromise {
 public:
-    Task::Id id = Task::ID_NONE;
     /// Next task when in list, none if last one.
-    Task::Id next = Task::ID_NONE;
+    Task next = nullptr;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
             isRunnable: 1 = 0;
@@ -215,22 +212,22 @@ public:
 
 // Singly-linked list.
 struct TaskList {
-    Task::Id head = Task::ID_NONE;
+    Task head = nullptr;
 
     void
-    AddFirst(Task::Id taskId);
+    AddFirst(const Task &task);
 };
 
 // Singly-linked list with tail pointer.
 struct TaskTailedList {
-    Task::Id head = Task::ID_NONE,
-           tail = Task::ID_NONE;
+    Task head = nullptr,
+         tail = nullptr;
 
     void
-    AddFirst(Task::Id taskId);
+    AddFirst(const Task &task);
 
     void
-    AddLast(Task::Id taskId);
+    AddLast(const Task &task);
 };
 
 
