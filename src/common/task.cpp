@@ -1,4 +1,6 @@
 #include <pulse/task.h>
+#include <pulse/port.h>
+
 #include <etl/limits.h>
 #include <etl/utility.h>
 #include <etl/bitset.h>
@@ -9,7 +11,45 @@ using namespace pulse;
 
 namespace {
 
-using PriorityBitmap = SizedUint<pulseConfig_NUM_TASK_PRIORITIES>;
+class PriorityBitmap {
+public:
+    using Bitmap = SizedUint<pulseConfig_NUM_TASK_PRIORITIES>;
+
+    Bitmap bitmap = 0;
+
+    operator bool() const
+    {
+        return bitmap != 0;
+    }
+
+    void
+    Set(uint8_t priority)
+    {
+        bitmap |= Mask(priority);
+    }
+
+    void
+    Clear(uint8_t priority)
+    {
+        bitmap &= ~Mask(priority);
+    }
+
+    /** @return Index of highest priority bit set. May be greater or equal to
+     * pulseConfig_NUM_TASK_PRIORITIES if no bits set.
+     */
+    uint8_t
+    FirstSet() const
+    {
+        return etl::countr_zero(bitmap);
+    }
+
+private:
+    static constexpr Bitmap
+    Mask(uint8_t priority)
+    {
+        return static_cast<Bitmap>(1) << priority;
+    }
+};
 
 static_assert(pulseConfig_NUM_TASK_PRIORITIES >= 2,
               "pulseConfig_NUM_TASK_PRIORITIES must be at least 2");
@@ -21,20 +61,76 @@ static_assert(pulseConfig_NUM_TASK_PRIORITIES < sizeof(PriorityBitmap) * 8,
 TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
 
 /** Each set bit corresponds to non-empty queue for corresponding priority. */
-PriorityBitmap readyTasksBitmap PULSE_UNUSED;//XXX
+PriorityBitmap readyTasksBitmap;
+
+void
+ScheduleTask(Task task)
+{
+    TaskPromise &promise = task.GetPromise();
+    PULSE_ASSERT(promise.priority < pulseConfig_NUM_TASK_PRIORITIES);
+    TaskTailedList &list = readyTasks[promise.priority];
+    CriticalSection cs;
+    list.AddLast(etl::move(task));
+    readyTasksBitmap.Set(promise.priority);
+}
 
 } // anonymous namespace
 
-const Task &
-Task::Spawn(Task task, Priority priority)
+void
+Task::SpawnImpl(Task task, Priority priority)
 {
-    //XXX
-    return task.GetPromise().next;//XXX tmp
+    TaskPromise &promise = task.GetPromise();
+    promise.priority = priority;
+    ScheduleTask(etl::move(task));
+}
+
+void
+Task::Schedule() const &
+{
+    ScheduleTask(*this);
+}
+
+void
+Task::Schedule() &&
+{
+    ScheduleTask(etl::move(*this));
+}
+
+void
+Task::RunScheduler()
+{
+    while (true) {
+        RunSome();
+        pulsePort_EnableIsr();
+        pulsePort_Sleep();
+    }
+}
+
+
+void
+Task::RunSome()
+{
+    while (true) {
+        CriticalSection cs;
+        if (!readyTasksBitmap) {
+            break;
+        }
+        uint8_t pri = readyTasksBitmap.FirstSet();
+        PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
+        TaskTailedList &list = readyTasks[pri];
+        Task task = list.PopFirst();
+        if (list.IsEmpty()) {
+            readyTasksBitmap.Clear(pri);
+        }
+        cs.Exit();
+        task.Resume();
+    }
 }
 
 TaskPromise::~TaskPromise()
 {
     //XXX need to deregister somewhere?
+    PULSE_ASSERT(refCounter == 0);
 }
 
 void
@@ -44,43 +140,4 @@ TaskPromise::AddRef()
         PULSE_PANIC("Task reference counter overflow");
     }
     refCounter++;
-}
-
-void
-TaskList::AddFirst(const Task &task)
-{
-    if (!head) {
-        head = task;
-    } else {
-        TaskPromise &promise = task.GetPromise();
-        promise.next = head;
-        head = task;
-    }
-}
-
-void
-TaskTailedList::AddFirst(const Task &task)
-{
-    if (!head) {
-        PULSE_ASSERT(!tail);
-        head = task;
-        tail = task;
-    } else {
-        TaskPromise &promise = task.GetPromise();
-        promise.next = head;
-        head = task;
-    }
-}
-
-void
-TaskTailedList::AddLast(const Task &task)
-{
-    if (!tail) {
-        head = task;
-        tail = task;
-    } else {
-        TaskPromise &promise = task.GetPromise();
-        promise.next = task;
-        tail = task;
-    }
 }

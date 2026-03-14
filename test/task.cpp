@@ -29,4 +29,6 @@ TEST_CASE("Basic")
 
     auto t2 = Task::Spawn(IntTask(), 1);
     std::cout << "Task 2: " << t2 << "\n";
+
+    Task::RunSome();
 }

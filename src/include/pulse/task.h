@@ -5,6 +5,7 @@
 #include <pulse/details/default_config.h>
 #include <pulse/details/common.h>
 #include <pulse/coroutine.h>
+#include <pulse/list.h>
 #include <etl/bit.h>
 
 
@@ -14,6 +15,10 @@ class TaskPromise;
 
 template <typename TRet, bool initialSuspend>
 class TTaskPromise;
+
+
+template <typename TRet, bool initialSuspend = true>
+class TTask;
 
 
 /// Smart pointer for coroutine frame.
@@ -68,19 +73,32 @@ public:
         return handle;
     }
 
-    /** Spawns new task with the specified priority. Returns ID_NONE if failed (if
-     * `pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE` disabled, panics otherwise).
-     * @param task Task object returned by coroutine function.
-     * @param priority Task priority.
-     */
-    static const Task &
-    Spawn(Task task, Priority priority = LOWEST_PRIORITY);
+    /** Enqueue this task into ready tasks queue according to its current priority. */
+    void
+    Schedule() const &;
+
+    void
+    Schedule() &&;
+
+    //XXX Terminate()?
+
+    template <typename TRet, bool initialSuspend>
+    static TTask<TRet, initialSuspend>
+    Spawn(TTask<TRet, initialSuspend> task, Priority priority = LOWEST_PRIORITY)
+    {
+        SpawnImpl(task, priority);
+        return etl::move(task);
+    }
 
     /**
      * Run main loop of tasks scheduler. Never returns.
      */
     static void
     RunScheduler();
+
+    /** Run tasks which are currently in runnable state. Exits when no more runnable task. */
+    static void
+    RunSome();
 
 protected:
     friend class TaskPromise;
@@ -96,9 +114,27 @@ protected:
 
     inline void
     ReleaseHandle();
+
+    void
+    Resume()
+    {
+        if (!handle.done()) {
+            handle.resume();
+        }
+    }
+
+private:
+    /** Spawns new task with the specified priority. Returns ID_NONE if failed (if
+     * `pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE` disabled, panics otherwise).
+     * @param task Task object returned by coroutine function.
+     * @param priority Task priority.
+     */
+    static void
+    SpawnImpl(Task task, Priority priority = LOWEST_PRIORITY);
 };
 
-template <typename TRet, bool initialSuspend = true>
+
+template <typename TRet, bool initialSuspend>
 class TTask: public Task {
 public:
     using TPromise = TTaskPromise<TRet, initialSuspend>;
@@ -121,7 +157,7 @@ public:
     Task next = nullptr;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
-            isRunnable: 1 = 0;
+            isRunnable: 1 = 0;//XXX is needed?
 
 
     TaskPromise() = default;
@@ -257,29 +293,24 @@ Task::ReleaseHandle()
     }
 }
 
-/// For returning from async functions net meant to be spawned as scheduler tasks.
+
+namespace details {
+
+inline TaskPromise &
+GetTaskPromise(const Task &task)
+{
+    return task.GetPromise();
+}
+
+} // namespace details
+
+using TaskList = List<Task, details::GetTaskPromise>;
+using TaskTailedList = TailedList<Task, details::GetTaskPromise>;
+
+
+/// For returning from async functions not meant to be spawned as scheduler tasks.
 template <typename TRet>
 using Awaitable = TTask<TRet, false>;
-
-// Singly-linked list.
-struct TaskList {
-    Task head = nullptr;
-
-    void
-    AddFirst(const Task &task);
-};
-
-// Singly-linked list with tail pointer.
-struct TaskTailedList {
-    Task head = nullptr,
-         tail = nullptr;
-
-    void
-    AddFirst(const Task &task);
-
-    void
-    AddLast(const Task &task);
-};
 
 
 template <typename T = void>
