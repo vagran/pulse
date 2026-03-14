@@ -126,18 +126,3 @@ Task::RunSome()
         task.Resume();
     }
 }
-
-TaskPromise::~TaskPromise()
-{
-    //XXX need to deregister somewhere?
-    PULSE_ASSERT(refCounter == 0);
-}
-
-void
-TaskPromise::AddRef()
-{
-    if (refCounter == etl::numeric_limits<decltype(refCounter)>::max()) {
-        PULSE_PANIC("Task reference counter overflow");
-    }
-    refCounter++;
-}

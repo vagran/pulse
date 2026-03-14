@@ -151,22 +151,34 @@ public:
 
 using TaskV = TTask<void>;
 
+/** Also acts as task control block. */
 class TaskPromise {
 public:
     /// Next task when in list, none if last one.
     Task next = nullptr;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
-            isRunnable: 1 = 0;//XXX is needed?
-
+            isRunnable: 1 = 0,//XXX is needed?
+            isFinished: 1 = 0;
 
     TaskPromise() = default;
 
-    ~TaskPromise();
+    // No need to make it virtual since promise object is always constructed and destructed from
+    // coroutine frame constructor/destructor by concrete type.
+    ~TaskPromise()
+    {
+        PULSE_ASSERT(refCounter == 0);
+    }
 
     /// Add reference from new Task instance.
     void
-    AddRef();
+    AddRef()
+    {
+        if (refCounter == etl::numeric_limits<decltype(refCounter)>::max()) {
+            PULSE_PANIC("Task reference counter overflow");
+        }
+        refCounter++;
+    }
 
     /// Release reference from Task instance.
     /// @return True if last reference released.
@@ -177,9 +189,11 @@ public:
         return --refCounter == 0;
     }
 
-    std::suspend_never
+    std::suspend_always
     final_suspend() noexcept
     {
+        // Should suspend in order to prevent coroutine frame destruction by coroutine finishing.
+        // It should only be destructed by releasing last reference from last Task instance.
         return {};
     }
 
@@ -198,6 +212,13 @@ public:
 template <typename TRet, bool initialSuspend>
 class TTaskPromise: public TaskPromise {
 public:
+    ~TTaskPromise()
+    {
+        if (isFinished) {
+            GetResult().~TRet();
+        }
+    }
+
     etl::conditional_t<initialSuspend, std::suspend_always, std::suspend_never>
     initial_suspend()
     {
@@ -215,7 +236,16 @@ public:
     void
     return_value(From&& from)
     {
-        //XXX
+        isFinished = 1;
+        new (result.data) TRet(std::forward<From>(from));
+        //XXX awaiters
+    }
+
+    const TRet &
+    GetResult() const
+    {
+        PULSE_ASSERT(isFinished);
+        return *reinterpret_cast<const TRet *>(result.data);
     }
 
     //XXX design yield semantic
@@ -226,6 +256,10 @@ public:
     //     value.emplace(std::forward<From>(from));
     //     return {};
     // }
+private:
+    struct alignas(TRet) {
+        uint8_t data[sizeof(TRet)];
+    } result;
 };
 
 template <bool initialSuspend>
@@ -245,7 +279,10 @@ public:
 
     void
     return_void()
-    {}
+    {
+        isFinished = 1;
+        //XXX awaiters
+    }
 };
 
 Task::Task(CoroutineHandle handle):
