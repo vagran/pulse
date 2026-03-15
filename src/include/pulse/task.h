@@ -20,6 +20,8 @@ class TTaskPromise;
 template <typename TRet, bool initialSuspend = true>
 class TTask;
 
+class TaskSwitchAwaiter;
+
 
 /// Smart pointer for coroutine frame.
 class Task {
@@ -33,6 +35,26 @@ public:
     static constexpr Priority HIGHEST_PRIORITY = 0,
                               ISR_PRIORITY = HIGHEST_PRIORITY,
                               LOWEST_PRIORITY = pulseConfig_NUM_TASK_PRIORITIES - 1;
+
+    using CoroutineHandle = std::coroutine_handle<TaskPromise>;
+
+    // Awaiter for explicit task switching.
+    class TaskSwitchAwaiter {
+    public:
+        bool
+        await_ready() const
+        {
+            return false;
+        }
+
+        bool
+        await_suspend(Task::CoroutineHandle handle);
+
+        void
+        await_resume() const
+        {}
+    };
+
 
     Task() = default;
 
@@ -100,12 +122,21 @@ public:
     static void
     RunSome();
 
+    /** Switch to other runnable task if any.
+     * @code
+     * co_await Task::Switch();
+     * @endcode
+     */
+    static TaskSwitchAwaiter
+    Switch()
+    {
+        return {};
+    }
+
 protected:
     friend class TaskPromise;
     template <typename, bool>
     friend class TTaskPromise;
-
-    using CoroutineHandle = std::coroutine_handle<TaskPromise>;
 
     CoroutineHandle handle;
 
@@ -150,6 +181,7 @@ public:
 };
 
 using TaskV = TTask<void>;
+
 
 /** Also acts as task control block. */
 class TaskPromise {
@@ -203,6 +235,7 @@ public:
         PULSE_PANIC("TaskPromise::unhandled_exception");
     }
 };
+
 
 /** @tparam initialSuspend Enables initial suspend when true. Tasks spawned by scheduler typically
  * should have it true so that initial body invocation is done when first switched to this task. In
@@ -284,6 +317,7 @@ public:
         //XXX awaiters
     }
 };
+
 
 Task::Task(CoroutineHandle handle):
     handle(handle)

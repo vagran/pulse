@@ -106,7 +106,6 @@ Task::RunScheduler()
     }
 }
 
-
 void
 Task::RunSome()
 {
@@ -125,4 +124,21 @@ Task::RunSome()
         cs.Exit();
         task.Resume();
     }
+}
+
+bool
+Task::TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
+{
+    Task task(handle);
+    TaskPromise &promise = task.GetPromise();
+    uint8_t pri = promise.priority;
+    CriticalSection cs;
+    if (!readyTasksBitmap) {
+        // Do not suspend calling coroutine since there is no other runnable tasks.
+        return false;
+    }
+    TaskTailedList &list = readyTasks[pri];
+    list.AddLast(etl::move(task));
+    readyTasksBitmap.Set(pri);
+    return true;
 }

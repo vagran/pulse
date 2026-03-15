@@ -1,6 +1,9 @@
 #ifndef COROUTINE_H
 #define COROUTINE_H
 
+#include <etl/concepts.h>
+
+
 /** Stuff from std required for compiler coroutines support. */
 namespace std {
 
@@ -32,6 +35,8 @@ struct coroutine_handle;
 
 template<>
 struct coroutine_handle<void> {
+    void *framePtr;
+
     coroutine_handle():
         framePtr(nullptr)
     {}
@@ -62,15 +67,18 @@ struct coroutine_handle<void> {
     {
         return __builtin_coro_done(framePtr);
     }
-
-protected:
-    void *framePtr;
 };
 
 template<typename Promise>
 struct coroutine_handle: coroutine_handle<void> {
 
     using coroutine_handle<void>::coroutine_handle;
+
+    template <class TFromPromise>
+    requires etl::derived_from<TFromPromise, Promise>
+    coroutine_handle(const coroutine_handle<TFromPromise> &from):
+        coroutine_handle(from.framePtr)
+    {}
 
     Promise &
     promise() const
