@@ -16,11 +16,11 @@ class TaskPromise;
 template <typename TRet, bool initialSuspend>
 class TTaskPromise;
 
-
 template <typename TRet, bool initialSuspend = true>
 class TTask;
 
-class TaskSwitchAwaiter;
+template <typename TRet, bool initialSuspend>
+class TaskAwaiter;
 
 
 /// Smart pointer for coroutine frame.
@@ -82,6 +82,22 @@ public:
     inline Task &
     operator =(Task &&other) noexcept;
 
+    bool
+    operator ==(const Task &other) const
+    {
+        return handle == other.handle;
+    }
+
+    bool
+    operator !=(const Task &other) const
+    {
+        return handle != other.handle;
+    }
+
+    /// Clear associated handle, making this task null.
+    inline void
+    ReleaseHandle();
+
     TPromise &
     GetPromise() const
     {
@@ -101,6 +117,9 @@ public:
 
     void
     Schedule() &&;
+
+    inline bool
+    IsFinished() const;
 
     //XXX Terminate()?
 
@@ -133,18 +152,22 @@ public:
         return {};
     }
 
+    inline TaskAwaiter<void, false>
+    operator co_await() const;
+
 protected:
     friend class TaskPromise;
+
     template <typename, bool>
     friend class TTaskPromise;
+
+    template<typename, bool>
+    friend class TaskAwaiter;
 
     CoroutineHandle handle;
 
     inline
     Task(CoroutineHandle handle);
-
-    inline void
-    ReleaseHandle();
 
     void
     Resume()
@@ -162,6 +185,9 @@ private:
      */
     static void
     SpawnImpl(Task task, Priority priority = LOWEST_PRIORITY);
+
+    bool
+    AwaitResult(Task task) const;
 };
 
 
@@ -178,9 +204,47 @@ public:
         PULSE_ASSERT(handle);
         return reinterpret_cast<TPromise &>(handle.promise());
     }
+
+    inline const TRet &
+    GetResult() const;
+
+    inline TaskAwaiter<TRet, initialSuspend>
+    operator co_await() const;
+};
+
+template <bool initialSuspend>
+class TTask<void, initialSuspend>: public Task {
+public:
+    using TPromise = TTaskPromise<void, initialSuspend>;
+
+    using Task::Task;
+
+    TPromise &
+    GetPromise() const
+    {
+        PULSE_ASSERT(handle);
+        return reinterpret_cast<TPromise &>(handle.promise());
+    }
+
+    inline TaskAwaiter<void, initialSuspend>
+    operator co_await() const;
 };
 
 using TaskV = TTask<void>;
+
+/// Return this type from non-top-level async functions.
+template <typename TRet>
+using Awaitable = TTask<TRet, false>;
+
+namespace details {
+
+inline TaskPromise &
+GetTaskPromise(const Task &task)
+{
+    return task.GetPromise();
+}
+
+} // namespace details
 
 
 /** Also acts as task control block. */
@@ -188,9 +252,13 @@ class TaskPromise {
 public:
     /// Next task when in list, none if last one.
     Task next = nullptr;
+    /// Tasks currently awaiting this task finishing.
+    details::ListWeak<Task, details::GetTaskPromise> resultWaiters;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
-            isRunnable: 1 = 0,//XXX is needed?
+    /// Task currently queued in runnable queue.
+            isRunnable: 1 = 0,
+    /// Task finished and result is available.
             isFinished: 1 = 0;
 
     TaskPromise() = default;
@@ -234,7 +302,17 @@ public:
     {
         PULSE_PANIC("TaskPromise::unhandled_exception");
     }
+
+protected:
+
+    /// Wake up all tasks waiting for this task completion.
+    void
+    NotifyWaiters();
 };
+
+
+using TaskList = List<Task, details::GetTaskPromise>;
+using TaskTailedList = TailedList<Task, details::GetTaskPromise>;
 
 
 /** @tparam initialSuspend Enables initial suspend when true. Tasks spawned by scheduler typically
@@ -255,7 +333,6 @@ public:
     etl::conditional_t<initialSuspend, std::suspend_always, std::suspend_never>
     initial_suspend()
     {
-        //XXX schedule in suspend_always::await_suspend()? priority?
         return {};
     }
 
@@ -271,7 +348,7 @@ public:
     {
         isFinished = 1;
         new (result.data) TRet(std::forward<From>(from));
-        //XXX awaiters
+        NotifyWaiters();
     }
 
     const TRet &
@@ -314,8 +391,66 @@ public:
     return_void()
     {
         isFinished = 1;
-        //XXX awaiters
+        NotifyWaiters();
     }
+};
+
+
+template <typename TRet, bool initialSuspend>
+class TaskAwaiter {
+public:
+    TaskAwaiter(TTask<TRet, initialSuspend> task):
+        task(etl::move(task))
+    {}
+
+    bool
+    await_ready() const
+    {
+        return task.IsFinished();
+    }
+
+    bool
+    await_suspend(Task::CoroutineHandle handle)
+    {
+        return task.AwaitResult(Task(handle));
+    }
+
+    TRet
+    await_resume() const
+    {
+        return task.GetPromise().GetResult();
+    }
+
+private:
+    const TTask<TRet, initialSuspend> task;
+};
+
+
+template <bool initialSuspend>
+class TaskAwaiter<void, initialSuspend> {
+public:
+    TaskAwaiter(TTask<void, initialSuspend> task):
+        task(etl::move(task))
+    {}
+
+    bool
+    await_ready() const
+    {
+        return task.IsFinished();
+    }
+
+    bool
+    await_suspend(Task::CoroutineHandle handle)
+    {
+        return task.AwaitResult(Task(handle));
+    }
+
+    void
+    await_resume() const
+    {}
+
+private:
+    const TTask<void, initialSuspend> task;
 };
 
 
@@ -353,6 +488,19 @@ Task::operator =(Task &&other) noexcept
     return *this;
 }
 
+bool
+Task::IsFinished() const
+{
+    PULSE_ASSERT(handle);
+    return GetPromise().isFinished;
+}
+
+TaskAwaiter<void, false>
+Task::operator co_await() const
+{
+    return TaskAwaiter<void, false>(handle);
+}
+
 void
 Task::ReleaseHandle()
 {
@@ -365,18 +513,26 @@ Task::ReleaseHandle()
 }
 
 
-namespace details {
-
-inline TaskPromise &
-GetTaskPromise(const Task &task)
+template <typename TRet, bool initialSuspend>
+const TRet &
+TTask<TRet, initialSuspend>::GetResult() const
 {
-    return task.GetPromise();
+    return GetPromise().GetResult();
 }
 
-} // namespace details
+template <typename TRet, bool initialSuspend>
+TaskAwaiter<TRet, initialSuspend>
+TTask<TRet, initialSuspend>::operator co_await() const
+{
+    return TaskAwaiter<TRet, initialSuspend>(handle);
+}
 
-using TaskList = List<Task, details::GetTaskPromise>;
-using TaskTailedList = TailedList<Task, details::GetTaskPromise>;
+template <bool initialSuspend>
+TaskAwaiter<void, initialSuspend>
+TTask<void, initialSuspend>::operator co_await() const
+{
+    return TaskAwaiter<void, initialSuspend>(handle);
+}
 
 
 /// For returning from async functions not meant to be spawned as scheduler tasks.
@@ -404,9 +560,9 @@ public:
 } // namespace pulse
 
 // Bind TaskPromise to Task coroutine type.
-template<typename TRet, typename... Args>
-struct std::coroutine_traits<pulse::TTask<TRet>, Args...> {
-    using promise_type = pulse::TTask<TRet>::TPromise;
+template<typename TRet, bool initialSuspend, typename... Args>
+struct std::coroutine_traits<pulse::TTask<TRet, initialSuspend>, Args...> {
+    using promise_type = pulse::TTask<TRet, initialSuspend>::TPromise;
 };
 
 #endif /* TASK_H */

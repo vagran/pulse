@@ -67,11 +67,28 @@ void
 ScheduleTask(Task task)
 {
     TaskPromise &promise = task.GetPromise();
+    PULSE_ASSERT(!promise.isRunnable);
     PULSE_ASSERT(promise.priority < pulseConfig_NUM_TASK_PRIORITIES);
     TaskTailedList &list = readyTasks[promise.priority];
     CriticalSection cs;
     list.AddLast(etl::move(task));
     readyTasksBitmap.Set(promise.priority);
+    promise.isRunnable = 1;
+}
+
+void
+DescheduleTask(const Task &task)
+{
+    TaskPromise &promise = task.GetPromise();
+    PULSE_ASSERT(promise.isRunnable);
+    PULSE_ASSERT(promise.priority < pulseConfig_NUM_TASK_PRIORITIES);
+    TaskTailedList &list = readyTasks[promise.priority];
+    CriticalSection cs;
+    list.Remove(task);
+    if (list.IsEmpty()) {
+        readyTasksBitmap.Clear(promise.priority);
+    }
+    promise.isRunnable = 0;
 }
 
 } // anonymous namespace
@@ -118,9 +135,13 @@ Task::RunSome()
         PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
         TaskTailedList &list = readyTasks[pri];
         Task task = list.PopFirst();
+        TaskPromise &promise PULSE_UNUSED = task.GetPromise();//XXX
+        PULSE_ASSERT(task);
         if (list.IsEmpty()) {
             readyTasksBitmap.Clear(pri);
         }
+        PULSE_ASSERT(task.GetPromise().isRunnable);
+        task.GetPromise().isRunnable = 0;
         cs.Exit();
         task.Resume();
     }
@@ -140,5 +161,43 @@ Task::TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
     TaskTailedList &list = readyTasks[pri];
     list.AddLast(etl::move(task));
     readyTasksBitmap.Set(pri);
+    promise.isRunnable = 1;
     return true;
+}
+
+bool
+Task::AwaitResult(Task task) const
+{
+    PULSE_ASSERT(task.handle.framePtr != handle.framePtr);
+    uint8_t priority = task.GetPromise().priority;
+    TaskPromise &promise = GetPromise();
+    if (promise.isFinished) {
+        return false;
+    }
+    promise.resultWaiters.AddFirst(etl::move(task));
+    if (priority < promise.priority) {
+        // Propagate waiting task higher priority to this task.
+        bool reschedule = promise.isRunnable;
+        if (reschedule) {
+            // Remove it from current queue first.
+            DescheduleTask(*this);
+        }
+        promise.priority = priority;
+        if (reschedule) {
+            ScheduleTask(*this);
+        }
+    }
+    return true;
+}
+
+void
+TaskPromise::NotifyWaiters()
+{
+    while (true) {
+        Task task = resultWaiters.PopFirst();
+        if (!task) {
+            break;
+        }
+        ScheduleTask(etl::move(task));
+    }
 }

@@ -50,6 +50,18 @@ struct coroutine_handle<void> {
         return framePtr != nullptr;
     }
 
+    bool
+    operator ==(const coroutine_handle<void> &other) const
+    {
+        return framePtr == other.framePtr;
+    }
+
+    bool
+    operator !=(const coroutine_handle<void> &other) const
+    {
+        return framePtr != other.framePtr;
+    }
+
     void
     resume() const
     {
