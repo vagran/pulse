@@ -7,6 +7,7 @@
 #include <pulse/coroutine.h>
 #include <pulse/list.h>
 #include <etl/bit.h>
+#include <etl/memory.h>
 
 
 namespace pulse {
@@ -61,6 +62,9 @@ public:
     Task(etl::nullptr_t):
         Task()
     {}
+
+    inline
+    Task(CoroutineHandle handle);
 
     inline
     Task(const Task &other);
@@ -165,9 +169,6 @@ protected:
     friend class TaskAwaiter;
 
     CoroutineHandle handle;
-
-    inline
-    Task(CoroutineHandle handle);
 
     void
     Resume()
@@ -326,7 +327,7 @@ public:
     ~TTaskPromise()
     {
         if (isFinished) {
-            GetResult().~TRet();
+            etl::destroy_at(&GetResult());
         }
     }
 
@@ -358,14 +359,6 @@ public:
         return *reinterpret_cast<const TRet *>(result.data);
     }
 
-    //XXX design yield semantic
-    // template<std::convertible_to<T> From>
-    // std::suspend_always
-    // yield_value(From&& from)
-    // {
-    //     value.emplace(std::forward<From>(from));
-    //     return {};
-    // }
 private:
     struct alignas(TRet) {
         uint8_t data[sizeof(TRet)];
@@ -538,24 +531,6 @@ TTask<void, initialSuspend>::operator co_await() const
 /// For returning from async functions not meant to be spawned as scheduler tasks.
 template <typename TRet>
 using Awaitable = TTask<TRet, false>;
-
-
-template <typename T = void>
-class Awaiter;
-
-template <>
-class Awaiter<void> {
-public:
-    TaskList waitingTasks;
-
-    //XXX
-};
-
-template <typename T>
-class Awaiter: public Awaiter<void> {
-public:
-    //XXX
-};
 
 } // namespace pulse
 

@@ -5,6 +5,28 @@
 #include <pulse/defs.h>
 
 
+/** pulseConfig_ENABLE_TIMER
+ * Enable timer functionality.
+ */
+#ifndef pulseConfig_ENABLE_TIMER
+#   define pulseConfig_ENABLE_TIMER 1
+#endif
+
+/*
+ * pulseConfig_TICK_FREQ
+ * pulseConfig_TICK_FREQ must be defined in order to use timer API. Should be equal to system tick
+ * frequency.
+ */
+
+ /** pulseConfig_MAX_TIMERS
+  * Maximal number of simultaneously scheduled timers. This includes active Timer::Delay() and
+  * Timer::WaitUntil() calls.
+  */
+ #ifndef pulseConfig_MAX_TIMERS
+#   define pulseConfig_MAX_TIMERS 16
+ #endif
+
+
 /* pulseConfig_MALLOC_GRANULARITY
  * Allocation block size is always multiple of this number of bytes. Must be power of two. This also
  * is alignment value for all allocated blocks.

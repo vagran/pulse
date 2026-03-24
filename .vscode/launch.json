@@ -38,5 +38,24 @@
             }
         ],
         "miDebuggerPath": "/usr/bin/gdb",
+    }, {
+        "name": "Single unit test",
+        "type": "cppdbg",
+        "request": "launch",
+        "program": "${workspaceFolder}/build/pulse_test",
+        "args": ["'[single]'"],
+        "stopAtEntry": false,
+        "cwd": "${workspaceFolder}",
+        "environment": [],
+        "externalConsole": false,
+        "MIMode": "gdb",
+        "setupCommands": [
+            {
+                "description": "Enable pretty-printing for gdb",
+                "text": "-enable-pretty-printing",
+                "ignoreFailures": true
+            }
+        ],
+        "miDebuggerPath": "/usr/bin/gdb",
     }]
 }

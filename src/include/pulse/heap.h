@@ -3,12 +3,13 @@
 
 #include <pulse/details/common.h>
 #include <etl/concepts.h>
+#include <etl/memory.h>
 
 
 namespace pulse {
 
 template <typename F, typename T>
-concept HeapComparator = requires(F f, const T& a, const T& b) {
+concept HeapComparator = requires(F f, const T &a, const T &b) {
     { f(a, b) } -> std::convertible_to<bool>;
 };
 
@@ -30,10 +31,25 @@ public:
         return size;
     }
 
+    bool
+    IsEmpty() const
+    {
+        return size == 0;
+    }
+
     /** @return True if inserted, false if capacity exceeded. */
     template <typename U>
     bool
     Insert(U &&item);
+
+    /** Reference to top item. Valid only if not empty. Caller should not change the returned item
+     * ordering.
+     */
+    T &
+    Top()
+    {
+        return Item(0);
+    }
 
     /** Reference to top item. Valid only if not empty. */
     const T &
@@ -96,7 +112,7 @@ requires HeapComparator<decltype(IsHigher), T>
 Heap<T, IsHigher, capacity>::~Heap()
 {
     for (size_t i = 0; i < size; i++) {
-        Item(i).~T();
+        etl::destroy_at(&Item(i));
     }
 }
 
@@ -168,7 +184,7 @@ Heap<T, IsHigher, capacity>::PopTop()
 {
     size_t lastIdx = size - 1;
     Item(0) = etl::move(Item(lastIdx));
-    Item(lastIdx).~T();
+    etl::destroy_at(&Item(lastIdx));
     size--;
     SiftDown(0);
 }

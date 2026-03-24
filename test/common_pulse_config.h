@@ -1,6 +1,8 @@
 #ifndef COMMON_PULSE_CONFIG_H
 #define COMMON_PULSE_CONFIG_H
 
+#define pulseConfig_TICK_FREQ 100
+
 // Validate locking.
 extern "C" void TestMallocLock();
 extern "C" void TestMallocUnlock();

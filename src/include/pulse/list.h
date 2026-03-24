@@ -24,8 +24,15 @@ concept ListItemAccessor = requires(TPtr ptr) {
     GetListItem(ptr).next = ptr;
 };
 
+template<typename TPtr>
+auto &
+GetDefaultListItem(TPtr ptr)
+{
+    return *ptr;
+}
+
 // Singly-linked list. Weak constraints version for using in TaskPromise.
-template <typename TPtr, auto GetListItem>
+template <typename TPtr, auto GetListItem = GetDefaultListItem<TPtr>>
 requires ListItemAccessorWeak<TPtr, GetListItem>
 struct ListWeak {
     TPtr head = TPtr();
@@ -70,7 +77,7 @@ ListWeak<TPtr, GetListItem>::PopFirst()
 
 
 // Singly-linked list.
-template <typename TPtr, auto GetListItem>
+template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
 requires details::ListItemAccessor<TPtr, GetListItem>
 using List = details::ListWeak<TPtr, GetListItem>;
 

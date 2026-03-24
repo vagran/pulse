@@ -9,6 +9,11 @@
             "command": "build/pulse_test"
         },
         {
+            "label": "Run single unit test",
+            "type": "shell",
+            "command": "build/pulse_test '[single]'"
+        },
+        {
             "label": "Run unit tests (Valgrind)",
             "type": "shell",
             "command": "valgrind --leak-check=full build/pulse_test"

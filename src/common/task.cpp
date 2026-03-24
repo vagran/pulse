@@ -1,5 +1,6 @@
 #include <pulse/task.h>
 #include <pulse/port.h>
+#include <pulse/timer.h>
 
 #include <etl/limits.h>
 #include <etl/utility.h>
@@ -127,6 +128,7 @@ void
 Task::RunSome()
 {
     while (true) {
+        details::CheckTimers();
         CriticalSection cs;
         if (!readyTasksBitmap) {
             break;
@@ -135,7 +137,6 @@ Task::RunSome()
         PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
         TaskTailedList &list = readyTasks[pri];
         Task task = list.PopFirst();
-        TaskPromise &promise PULSE_UNUSED = task.GetPromise();//XXX
         PULSE_ASSERT(task);
         if (list.IsEmpty()) {
             readyTasksBitmap.Clear(pri);
