@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/heap.h>
+#include <set>
+
 
 using namespace pulse;
 
@@ -132,18 +134,29 @@ TEST_CASE("Interleaved")
 namespace {
 
 struct Tracker {
-    static int constructed;
-    static int destroyed;
+    static int constructed,
+               destroyed,
+               optionalDestroyed;
 
     std::optional<int> value;
+    size_t index = 42;
 
     Tracker(int v) : value(v) { constructed++; }
     Tracker(const Tracker& o) : value(o.value) { constructed++; }
-    Tracker(Tracker&& o) noexcept : value(std::move(o.value)) { constructed++; }
+
+    Tracker(Tracker&& o) noexcept:
+        value(o.value)
+    {
+        o.value = std::nullopt;
+        constructed++;
+    }
 
     Tracker &
     operator =(const Tracker &other)
     {
+        if (value) {
+            optionalDestroyed++;
+        }
         value = other.value;
         return *this;
     }
@@ -151,11 +164,21 @@ struct Tracker {
     Tracker &
     operator =(Tracker &&other) noexcept
     {
-        value = std::move(other.value);
+        if (value) {
+            optionalDestroyed++;
+        }
+        value = other.value;
+        other.value = std::nullopt;
         return *this;
     }
 
-    ~Tracker() { destroyed++; }
+    ~Tracker()
+    {
+        destroyed++;
+        if (value) {
+            optionalDestroyed++;
+        }
+    }
 
     bool operator >(const Tracker& other) const
     {
@@ -165,10 +188,19 @@ struct Tracker {
 
 int Tracker::constructed = 0;
 int Tracker::destroyed = 0;
+int Tracker::optionalDestroyed = 0;
 
-static constexpr auto TrackerCmp = [](const Tracker& a, const Tracker& b) {
-    return a.value > b.value;
+static bool
+TrackerCmp(const Tracker& a, const Tracker& b)
+{
+    return *a.value > *b.value;
 };
+
+static void
+TrackerSetIndex(Tracker &t, size_t index)
+{
+    t.index = index;
+}
 
 } // anonymous namespace
 
@@ -176,30 +208,81 @@ TEST_CASE("Lifetime")
 {
     Tracker::constructed = 0;
     Tracker::destroyed = 0;
+    Tracker::optionalDestroyed = 0;
+
+    constexpr size_t N = 10;
 
     {
-        Heap<Tracker, TrackerCmp, 8> h;
+        Heap<Tracker, TrackerCmp, N, TrackerSetIndex> h;
 
-        h.Insert(Tracker(1));
-        h.Insert(Tracker(2));
-        h.Insert(Tracker(3));
+        for (int i = 0; i < N; i++) {
+            REQUIRE(h.Insert(i));
+        }
 
-        while (h.Size() > 0)
+        for (int i = N - 1; i >= 0; --i) {
+            REQUIRE(*h.Top().value == i);
+            REQUIRE(h.Top().index == 0);
             h.PopTop();
+        }
     }
 
-    assert(Tracker::constructed == Tracker::destroyed);
+    REQUIRE(Tracker::constructed == Tracker::destroyed);
+    REQUIRE(Tracker::optionalDestroyed == N);
+}
+
+TEST_CASE("Remove")
+{
+    Tracker::constructed = 0;
+    Tracker::destroyed = 0;
+    Tracker::optionalDestroyed = 0;
+
+    constexpr size_t N = 20;
+
+    {
+        Heap<Tracker, TrackerCmp, N, TrackerSetIndex> h;
+
+        for (int i = 0; i < N; i++) {
+            REQUIRE(h.Insert(i));
+        }
+
+        std::vector<int> removedIdx{3, 17, 5, 15, 10};
+        std::set<int> removed{};
+        for (int idx: removedIdx) {
+            Tracker &t = h.Item(idx);
+            REQUIRE(idx == t.index);
+            removed.emplace(*t.value);
+            h.Remove(idx);
+        }
+        REQUIRE(h.Size() == N - removed.size());
+
+        for (int idx = 0; idx < h.Size(); idx++) {
+            REQUIRE(idx == h.Item(idx).index);
+        }
+
+        for (int i = N - 1; i >= 0; --i) {
+            if (removed.contains(i)) {
+                continue;
+            }
+            REQUIRE(*h.Top().value == i);
+            REQUIRE(h.Top().index == 0);
+            h.PopTop();
+        }
+    }
+
+    REQUIRE(Tracker::constructed == Tracker::destroyed);
+    REQUIRE(Tracker::optionalDestroyed == N);
 }
 
 TEST_CASE("Stress")
 {
     Heap<int, MaxHeapCmp, 128> h;
 
-    for (int i = 0; i < 128; ++i)
-        assert(h.Insert(i));
+    for (int i = 0; i < 128; ++i) {
+        REQUIRE(h.Insert(i));
+    }
 
     for (int i = 127; i >= 0; --i) {
-        assert(h.Top() == i);
+        REQUIRE(h.Top() == i);
         h.PopTop();
     }
 }

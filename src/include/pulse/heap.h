@@ -8,13 +8,29 @@
 
 namespace pulse {
 
-template <typename F, typename T>
+template <typename T, typename F>
 concept HeapComparator = requires(F f, const T &a, const T &b) {
-    { f(a, b) } -> std::convertible_to<bool>;
+    { f(a, b) } -> etl::convertible_to<bool>;
 };
 
-template <typename T, auto IsHigher, size_t capacity>
-requires HeapComparator<decltype(IsHigher), T>
+template <typename T, typename F>
+concept HeapItemSetIndex = requires(F f, T &item, size_t index) {
+    { f(item, index) } -> etl::same_as<void>;
+};
+
+namespace details {
+
+template <typename T>
+inline void
+DefaultHeapItemSetIndex(T &, size_t)
+{}
+
+} // namespace details
+
+template <typename T, auto IsHigher, size_t capacity,
+          auto ItemSetIndex = details::DefaultHeapItemSetIndex<T>>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
 class Heap {
 public:
     ~Heap();
@@ -35,6 +51,20 @@ public:
     IsEmpty() const
     {
         return size == 0;
+    }
+
+    T &
+    Item(size_t idx)
+    {
+        PULSE_ASSERT(idx < size);
+        return *reinterpret_cast<T *>(&data.buf[sizeof(T) * idx]);
+    }
+
+    const T &
+    Item(size_t idx) const
+    {
+        PULSE_ASSERT(idx < size);
+        return *reinterpret_cast<const T *>(&data.buf[sizeof(T) * idx]);
     }
 
     /** @return True if inserted, false if capacity exceeded. */
@@ -61,26 +91,16 @@ public:
     void
     PopTop();
 
+    /** Remove item from the specified position. */
+    void
+    Remove(size_t index);
+
 private:
     struct alignas(T) {
         uint8_t buf[sizeof(T) * capacity];
     } data;
 
     size_t size = 0;
-
-    T &
-    Item(size_t idx)
-    {
-        PULSE_ASSERT(idx < size);
-        return *reinterpret_cast<T *>(&data.buf[sizeof(T) * idx]);
-    }
-
-    const T &
-    Item(size_t idx) const
-    {
-        PULSE_ASSERT(idx < size);
-        return *reinterpret_cast<const T *>(&data.buf[sizeof(T) * idx]);
-    }
 
     static constexpr size_t
     GetLChildIdx(size_t parentIdx)
@@ -97,6 +117,7 @@ private:
     static constexpr size_t
     GetParentIdx(size_t childIdx)
     {
+        PULSE_ASSERT(childIdx > 0);
         return (childIdx - 1) / 2;
     }
 
@@ -107,19 +128,21 @@ private:
     SiftDown(size_t idx);
 };
 
-template <typename T, auto IsHigher, size_t capacity>
-requires HeapComparator<decltype(IsHigher), T>
-Heap<T, IsHigher, capacity>::~Heap()
+template <typename T, auto IsHigher, size_t capacity, auto ItemSetIndex>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
+Heap<T, IsHigher, capacity, ItemSetIndex>::~Heap()
 {
     for (size_t i = 0; i < size; i++) {
         etl::destroy_at(&Item(i));
     }
 }
 
-template <typename T, auto IsHigher, size_t capacity>
-requires HeapComparator<decltype(IsHigher), T>
+template <typename T, auto IsHigher, size_t capacity, auto ItemSetIndex>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
 void
-Heap<T, IsHigher, capacity>::SiftUp(size_t idx)
+Heap<T, IsHigher, capacity, ItemSetIndex>::SiftUp(size_t idx)
 {
     while (idx > 0) {
         size_t parentIdx = GetParentIdx(idx);
@@ -127,6 +150,8 @@ Heap<T, IsHigher, capacity>::SiftUp(size_t idx)
         T &parent = Item(parentIdx);
         if (IsHigher(item, parent)) {
             etl::swap(item, parent);
+            ItemSetIndex(item, idx);
+            ItemSetIndex(parent, parentIdx);
             idx = parentIdx;
         } else {
             break;
@@ -134,10 +159,11 @@ Heap<T, IsHigher, capacity>::SiftUp(size_t idx)
     }
 }
 
-template <typename T, auto IsHigher, size_t capacity>
-requires HeapComparator<decltype(IsHigher), T>
+template <typename T, auto IsHigher, size_t capacity, auto ItemSetIndex>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
 void
-Heap<T, IsHigher, capacity>::SiftDown(size_t idx)
+Heap<T, IsHigher, capacity, ItemSetIndex>::SiftDown(size_t idx)
 {
     while (true) {
         size_t lChildIdx = GetLChildIdx(idx);
@@ -146,47 +172,86 @@ Heap<T, IsHigher, capacity>::SiftDown(size_t idx)
             break;
         }
         size_t rChildIdx = GetRChildIdx(idx);
-        size_t best = idx;
-        if (IsHigher(Item(lChildIdx), Item(best))) {
-            best = lChildIdx;
+        size_t bestIdx = idx;
+        if (IsHigher(Item(lChildIdx), Item(bestIdx))) {
+            bestIdx = lChildIdx;
         }
-        if (rChildIdx < size && IsHigher(Item(rChildIdx), Item(best))) {
-            best = rChildIdx;
+        if (rChildIdx < size && IsHigher(Item(rChildIdx), Item(bestIdx))) {
+            bestIdx = rChildIdx;
         }
-        if (best == idx) {
+        if (bestIdx == idx) {
             break;
         }
-        etl::swap(Item(idx), Item(best));
-        idx = best;
+        T &item = Item(idx);
+        T &bestItem = Item(bestIdx);
+        etl::swap(item, bestItem);
+        ItemSetIndex(item, idx);
+        ItemSetIndex(bestItem, bestIdx);
+        idx = bestIdx;
     }
 }
 
-template <typename T, auto IsHigher, size_t capacity>
-requires HeapComparator<decltype(IsHigher), T>
+template <typename T, auto IsHigher, size_t capacity, auto ItemSetIndex>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
 template <typename U>
 bool
-Heap<T, IsHigher, capacity>::Insert(U &&item)
+Heap<T, IsHigher, capacity, ItemSetIndex>::Insert(U &&item)
 {
     if (size == capacity) {
         return false;
     }
     size_t idx = size;
     size++;
-    new (&Item(idx)) T(etl::forward<U>(item));
+    T &_item = Item(idx);
+    new (&_item) T(etl::forward<U>(item));
+    ItemSetIndex(_item, idx);
     SiftUp(idx);
     return true;
 }
 
-template <typename T, auto IsHigher, size_t capacity>
-requires HeapComparator<decltype(IsHigher), T>
+template <typename T, auto IsHigher, size_t capacity, auto ItemSetIndex>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
 void
-Heap<T, IsHigher, capacity>::PopTop()
+Heap<T, IsHigher, capacity, ItemSetIndex>::PopTop()
 {
     size_t lastIdx = size - 1;
-    Item(0) = etl::move(Item(lastIdx));
-    etl::destroy_at(&Item(lastIdx));
+    T &lastItem = Item(lastIdx);
+    if (lastIdx != 0) {
+        Item(0) = etl::move(lastItem);
+        ItemSetIndex(Item(0), 0);
+    }
+    etl::destroy_at(&lastItem);
     size--;
     SiftDown(0);
+}
+
+template <typename T, auto IsHigher, size_t capacity, auto ItemSetIndex>
+requires HeapComparator<T, decltype(IsHigher)> &&
+         HeapItemSetIndex<T, decltype(ItemSetIndex)>
+void
+Heap<T, IsHigher, capacity, ItemSetIndex>::Remove(size_t index)
+{
+    PULSE_ASSERT(index < size);
+    size_t lastIdx = size - 1;
+    T &lastItem = Item(lastIdx);
+    if (index == lastIdx) {
+        etl::destroy_at(&lastItem);
+        size--;
+        return;
+    }
+    T &item = Item(index);
+    bool requiresSiftUp = IsHigher(lastItem, item);
+    item = etl::move(lastItem);
+    ItemSetIndex(item, index);
+    etl::destroy_at(&lastItem);
+    size--;
+    if (requiresSiftUp) {
+        SiftUp(index);
+    } else {
+        SiftDown(index);
+    }
 }
 
 } // namespace pulse
