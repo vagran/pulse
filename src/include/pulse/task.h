@@ -51,9 +51,15 @@ public:
         bool
         await_suspend(Task::CoroutineHandle handle);
 
-        void
+        /// @return True if task was switched, false if immediately returned to calling task.
+        bool
         await_resume() const
-        {}
+        {
+            return switched;
+        }
+
+    private:
+        bool switched = false;
     };
 
 
@@ -145,7 +151,8 @@ public:
     static void
     RunSome();
 
-    /** Switch to other runnable task if any.
+    /** Switch to other runnable task if any. `co_await` returns true if task was switched, false if
+     * immediately returned to calling task.
      * @code
      * co_await Task::Switch();
      * @endcode
@@ -155,6 +162,9 @@ public:
     {
         return {};
     }
+
+    inline TaskAwaiter<void, false>
+    Wait() const;
 
     inline TaskAwaiter<void, false>
     operator co_await() const;
@@ -210,6 +220,9 @@ public:
     GetResult() const;
 
     inline TaskAwaiter<TRet, initialSuspend>
+    Wait() const;
+
+    inline TaskAwaiter<TRet, initialSuspend>
     operator co_await() const;
 };
 
@@ -226,6 +239,9 @@ public:
         PULSE_ASSERT(handle);
         return reinterpret_cast<TPromise &>(handle.promise());
     }
+
+    inline TaskAwaiter<void, initialSuspend>
+    Wait() const;
 
     inline TaskAwaiter<void, initialSuspend>
     operator co_await() const;
@@ -489,9 +505,15 @@ Task::IsFinished() const
 }
 
 TaskAwaiter<void, false>
-Task::operator co_await() const
+Task::Wait() const
 {
     return TaskAwaiter<void, false>(handle);
+}
+
+TaskAwaiter<void, false>
+Task::operator co_await() const
+{
+    return Wait();
 }
 
 void
@@ -515,16 +537,30 @@ TTask<TRet, initialSuspend>::GetResult() const
 
 template <typename TRet, bool initialSuspend>
 TaskAwaiter<TRet, initialSuspend>
-TTask<TRet, initialSuspend>::operator co_await() const
+TTask<TRet, initialSuspend>::Wait() const
 {
     return TaskAwaiter<TRet, initialSuspend>(handle);
+}
+
+template <typename TRet, bool initialSuspend>
+TaskAwaiter<TRet, initialSuspend>
+TTask<TRet, initialSuspend>::operator co_await() const
+{
+    return Wait();
+}
+
+template <bool initialSuspend>
+TaskAwaiter<void, initialSuspend>
+TTask<void, initialSuspend>::Wait() const
+{
+    return TaskAwaiter<void, initialSuspend>(handle);
 }
 
 template <bool initialSuspend>
 TaskAwaiter<void, initialSuspend>
 TTask<void, initialSuspend>::operator co_await() const
 {
-    return TaskAwaiter<void, initialSuspend>(handle);
+    return Wait();
 }
 
 

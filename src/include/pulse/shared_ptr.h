@@ -138,6 +138,11 @@ public:
         return *this;
     }
 
+    ~SharedPtr()
+    {
+        Reset();
+    }
+
     void
     Reset()
     {
@@ -156,13 +161,13 @@ public:
     }
 
     T &
-    operator *()
+    operator *() const
     {
         return *ptr;
     }
 
     T *
-    operator ->()
+    operator ->() const
     {
         return ptr;
     }

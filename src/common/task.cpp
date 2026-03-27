@@ -164,6 +164,7 @@ Task::TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
     list.AddLast(etl::move(task));
     readyTasksBitmap.Set(pri);
     promise.isRunnable = 1;
+    switched = true;
     return true;
 }
 

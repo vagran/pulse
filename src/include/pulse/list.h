@@ -37,6 +37,16 @@ requires ListItemAccessorWeak<TPtr, GetListItem>
 struct ListWeak {
     TPtr head = TPtr();
 
+    ListWeak() = default;
+
+    ListWeak(const ListWeak &other) = delete;
+
+    ListWeak(ListWeak &&other) noexcept:
+        head(etl::move(other.head))
+    {
+        other.head = TPtr();
+    }
+
     void
     AddFirst(TPtr item);
 
@@ -88,6 +98,18 @@ requires details::ListItemAccessor<TPtr, GetListItem>
 struct TailedList {
     TPtr head = TPtr(),
          tail = TPtr();
+
+    TailedList() = default;
+
+    TailedList(const TailedList &other) = delete;
+
+    TailedList(TailedList &&other) noexcept:
+        head(etl::move(other.head)),
+        tail(etl::move(other.tail))
+    {
+        other.head = TPtr();
+        other.tail = TPtr();
+    }
 
     bool
     IsEmpty() const

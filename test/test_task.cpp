@@ -165,7 +165,7 @@ TEST_CASE("Priority propagation")
         {
             CheckResult(5, "T3:3");
             results.push_back("T1:1");
-            co_await Task::Switch();
+            REQUIRE(!co_await Task::Switch());
             CheckResult(6, "T1:1");
             results.push_back("T1:2");
         }
@@ -174,11 +174,11 @@ TEST_CASE("Priority propagation")
         T2()
         {
             CheckResult(1, "T3:1");
-            results.push_back("T1:1");
-            co_await Task::Switch();
+            results.push_back("T2:1");
+            REQUIRE(!co_await Task::Switch());
             // Should not suspend
-            CheckResult(2, "T1:1");
-            results.push_back("T1:2");
+            CheckResult(2, "T2:1");
+            results.push_back("T2:2");
         }
 
         static TaskV
@@ -188,9 +188,9 @@ TEST_CASE("Priority propagation")
             results.push_back("T3:1");
             // t2 will raise priority on this point
             co_await t2;
-            CheckResult(3, "T1:2");
+            CheckResult(3, "T2:2");
             results.push_back("T3:2");
-            co_await Task::Switch();
+            REQUIRE(!co_await Task::Switch());
             CheckResult(4, "T3:2");
             results.push_back("T3:3");
         }

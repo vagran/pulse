@@ -19,6 +19,11 @@
             "command": "valgrind --leak-check=full build/pulse_test"
         },
         {
+            "label": "Run single unit test (Valgrind)",
+            "type": "shell",
+            "command": "valgrind --leak-check=full build/pulse_test '[single]'"
+        },
+        {
             "label": "Run malloc unit tests",
             "type": "shell",
             "command": "cmake --build build --target run_malloc_tests -j 16"

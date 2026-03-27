@@ -19,6 +19,12 @@ namespace pulse {
 class DelayAwaiter;
 class TimerAwaiter;
 
+namespace details {
+
+struct TimerEntry;
+
+} // namespace details
+
 class Timer {
 public:
     using TickCount = uint32_t;
@@ -56,7 +62,7 @@ private:
 public:
     using Handle = SharedPtr<Timer, SharedPtrTrait>;
 
-    Timer();
+    Timer() = default;
 
     /** Start timer expiring at the specified time. */
     Timer(TickCount expiresAt);
@@ -66,7 +72,9 @@ public:
 
     Timer(const Timer &) = delete;
 
-    /** Transfer state from another timer which becomes unset. */
+    /** Transfer state from another timer which becomes cancelled (all waiters are cancelled as
+     * well).
+     */
     Timer(Timer &&other) noexcept;
 
     /** Create new timer instance. */
@@ -74,7 +82,6 @@ public:
     static Timer::Handle
     Create(Args&&... args);
 
-    //XXX cancel, check ref counter
     ~Timer();
 
     /** Set expiration time relative to current time. Previous delay is cancelled if set.
@@ -89,12 +96,19 @@ public:
     int
     ExpiresAfter(Duration delay);
 
-    /** Wait until timer is fired.
+    /** Wait until timer is fired. Timer state is checked when co_await is applied to the returned
+     * value. So if the timer was expired and set again between Wait() and co_await, it will waits
+     * for newly set interval.
+     * @note It could be implemented so that it is bound to state at the Wait() call moment, but
+     * this would require dynamic allocation for shared awaiter object.
      * @return True if timer fired, false if cancelled. False is also returned immediately if timer
      * is not set.
      */
-    TimerAwaiter
+    inline TimerAwaiter
     Wait();
+
+    inline TimerAwaiter
+    operator co_await();
 
     /** Cancel current delay if any.
      * @return Number of cancelled waiters.
@@ -137,10 +151,40 @@ public:
     WaitUntil(TickCount time);
 
 private:
-    details::ListWeak<TimerAwaiter *> awaiters;
+    friend struct details::TimerEntry;
+    friend class TimerAwaiter;
+
+    TaskList waiters;
+    // Index in heap when scheduled.
+    SizedUint<etl::bit_width(static_cast<uintmax_t>(pulseConfig_MAX_TIMERS))> heapIdx;
     uint8_t refCounter = 0;
-    bool dynamicAlloc = false;
+    uint8_t dynamicAlloc:1 = 0,
+    /// Currently scheduled in timers ring.
+            isScheduled:1 = 0,
+    /// Was set and fired.
+            isFired:1 = 0,
+    /// Was set and cancelled.
+            isCanceled:1 = 0,
+    /// Previous interval was expired.
+            isPrevFired:1 = 0;
+
+    bool
+    IsReady() const
+    {
+        return isFired || isCanceled;
+    }
+
+    void
+    Schedule(TickCount time);
+
+    void
+    Fire();
+
+    /// @return Number of queued tasks.
+    int
+    ScheduleTasks();
 };
+
 
 class DelayAwaiter {
 public:
@@ -157,11 +201,28 @@ public:
     {}
 };
 
+
 class TimerAwaiter {
 public:
-    TimerAwaiter *next = nullptr;
-    //XXX
+    bool
+    await_ready() const;
+
+    bool
+    await_suspend(Task::CoroutineHandle handle);
+
+    bool
+    await_resume() const;
+
+private:
+    friend class Timer;
+
+    Timer::Handle timer;
+
+    TimerAwaiter(Timer::Handle timer):
+        timer(etl::move(timer))
+    {}
 };
+
 
 namespace details {
 
@@ -173,6 +234,7 @@ CheckTimers();
 
 } // namespace details
 
+
 template <typename... Args>
 Timer::Handle
 Timer::Create(Args&&... args)
@@ -181,7 +243,7 @@ Timer::Create(Args&&... args)
     if (!p) {
         return nullptr;
     }
-    p->dynamicAlloc = true;
+    p->dynamicAlloc = 1;
     return p;
 }
 
@@ -195,6 +257,24 @@ DelayAwaiter
 Timer::WaitUntil(TickCount time)
 {
     return DelayAwaiter{time};
+}
+
+TimerAwaiter
+Timer::Wait()
+{
+    return TimerAwaiter(Timer::Handle(this));
+}
+
+TimerAwaiter
+Timer::operator co_await()
+{
+    return Wait();
+}
+
+inline TimerAwaiter
+operator co_await(const Timer::Handle &timer)
+{
+    return timer->Wait();
 }
 
 } // namespace pulse
