@@ -21,9 +21,96 @@ static_assert(pulseConfig_MAX_TIMERS > 0,
 
 
 struct pulse::details::TimerEntry {
-    //XXX do not use etl::variant due to big overhead
-    etl::variant<etl::monostate, Task, Timer::Handle> data;
+    // Do not use etl::variant due to big overhead (size_t and function pointer).
+    struct alignas(Task) alignas(Timer::Handle) {
+        uint8_t data[etl::max(sizeof(Task), sizeof(Timer::Handle))];
+    } data;
     TickCount time;
+    // True if `data` holds Timer::Handle.
+    uint8_t isTimer = false,
+    // True if `data` holds Task.
+            isTask = false;
+
+    TimerEntry()
+    {}
+
+    TimerEntry(const TimerEntry &) = delete;
+
+    TimerEntry(TimerEntry &&other) noexcept:
+        time(other.time)
+    {
+        if (other.isTimer) {
+            CreateTimer(etl::move(other.GetTimer()));
+        } else if (other.isTask) {
+            CreateTask(etl::move(other.GetTask()));
+        }
+        other.Destroy();
+    }
+
+    TimerEntry(Task task, TickCount time):
+        time(time)
+    {
+        CreateTask(etl::move(task));
+    }
+
+    TimerEntry(Timer::Handle timer, TickCount time):
+        time(time)
+    {
+        CreateTimer(etl::move(timer));
+    }
+
+    ~TimerEntry()
+    {
+        Destroy();
+    }
+
+    TimerEntry &
+    operator =(TimerEntry &&other) noexcept
+    {
+        time = other.time;
+        Destroy();
+        if (other.isTimer) {
+            CreateTimer(etl::move(other.GetTimer()));
+        } else if (other.isTask) {
+            CreateTask(etl::move(other.GetTask()));
+        }
+        other.Destroy();
+        return *this;
+    }
+
+    Task &
+    GetTask()
+    {
+        PULSE_ASSERT(isTask);
+        return *reinterpret_cast<Task *>(data.data);
+    }
+
+    Timer::Handle &
+    GetTimer()
+    {
+        PULSE_ASSERT(isTimer);
+        return *reinterpret_cast<Timer::Handle *>(data.data);
+    }
+
+    template <typename... T>
+    Task &
+    CreateTask(T&& ...args)
+    {
+        Destroy();
+        new (data.data) Task(etl::forward<T>(args)...);
+        isTask = 1;
+        return GetTask();
+    }
+
+    template <typename... T>
+    Timer::Handle &
+    CreateTimer(T&& ...args)
+    {
+        Destroy();
+        new (data.data) Timer::Handle(etl::forward<T>(args)...);
+        isTimer = 1;
+        return GetTimer();
+    }
 
     void
     Fire();
@@ -31,8 +118,8 @@ struct pulse::details::TimerEntry {
     void
     ReplaceTimer(Timer::Handle timer)
     {
-        PULSE_ASSERT(etl::holds_alternative<Timer::Handle>(data));
-        etl::get<Timer::Handle>(data) = etl::move(timer);
+        PULSE_ASSERT(isTimer);
+        CreateTimer(etl::move(timer));
     }
 
     static bool
@@ -44,8 +131,21 @@ struct pulse::details::TimerEntry {
     static void
     SetIndex(TimerEntry &e, size_t index)
     {
-        if (etl::holds_alternative<Timer::Handle>(e.data)) {
-            etl::get<Timer::Handle>(e.data)->heapIdx = index;
+        if (e.isTimer) {
+            e.GetTimer()->heapIdx = index;
+        }
+    }
+
+private:
+    void
+    Destroy()
+    {
+        if (isTimer) {
+            etl::destroy_at(&GetTimer());
+            isTimer = 0;
+        } else if (isTask) {
+            etl::destroy_at(&GetTask());
+            isTask = 0;
         }
     }
 };
@@ -61,7 +161,7 @@ Heap<TimerEntry, details::TimerEntry::IsBefore, pulseConfig_MAX_TIMERS,
 void
 ScheduleTask(Task task, TickCount time)
 {
-    if (!timers.Insert(TimerEntry{etl::move(task), time})) {
+    if (!timers.Insert(TimerEntry(etl::move(task), time))) {
         PULSE_PANIC("Out of timers capacity");
     }
 }
@@ -69,7 +169,7 @@ ScheduleTask(Task task, TickCount time)
 void
 ScheduleTimer(Timer::Handle timer, TickCount time)
 {
-    if (!timers.Insert(TimerEntry{etl::move(timer), time})) {
+    if (!timers.Insert(TimerEntry(etl::move(timer), time))) {
         PULSE_PANIC("Out of timers capacity");
     }
 }
@@ -79,14 +179,14 @@ ScheduleTimer(Timer::Handle timer, TickCount time)
 void
 TimerEntry::Fire()
 {
-    if (etl::holds_alternative<Task>(data)) {
-        etl::get<Task>(data).Schedule();
-    } else if (etl::holds_alternative<Timer::Handle>(data)) {
-        etl::get<Timer::Handle>(data)->Fire();
+    if (isTimer) {
+        GetTimer()->Fire();
+    } else if (isTask) {
+         GetTask().Schedule();
     } else {
         PULSE_PANIC("Empty timer entry");
     }
-    data.emplace<0>();
+    Destroy();
 }
 
 TickCount
@@ -250,7 +350,6 @@ TimerAwaiter::await_suspend(Task::CoroutineHandle handle)
     t.waiters.AddFirst(handle);
     return true;
 }
-
 
 bool
 TimerAwaiter::await_resume() const
