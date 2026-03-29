@@ -9,21 +9,21 @@
 extern "C" {
 #endif
 
-/** pulsePort_DisableIsr
- * Either macro or function to disable ISRs.
+/** pulsePort_DisableInterrupts
+ * Either macro or function to disable interrupts.
  */
-#ifndef pulsePort_DisableIsr
+#ifndef pulsePort_DisableInterrupts
 void
-pulsePort_DisableIsr();
+pulsePort_DisableInterrupts();
 #endif
 
 
-/** pulsePort_EnableIsr
- * Either macro or function to enable ISRs.
+/** pulsePort_EnableInterrupts
+ * Either macro or function to enable interrupts.
  */
-#ifndef pulsePort_EnableIsr
+#ifndef pulsePort_EnableInterrupts
 void
-pulsePort_EnableIsr();
+pulsePort_EnableInterrupts();
 #endif
 
 /** pulsePort_EnterCriticalSection
@@ -59,18 +59,18 @@ pulsePort_Sleep();
 namespace pulse {
 
 /** Helper class to disable ISRs in this class instance scope. */
-class IsrGuard {
+class InterruptsGuard {
 public:
     bool acquired = true;
 
-    IsrGuard(const IsrGuard &) = delete;
+    InterruptsGuard(const InterruptsGuard &) = delete;
 
-    IsrGuard()
+    InterruptsGuard()
     {
-        pulsePort_DisableIsr();
+        pulsePort_DisableInterrupts();
     }
 
-    ~IsrGuard()
+    ~InterruptsGuard()
     {
         Exit();
     }
@@ -79,7 +79,7 @@ public:
     Exit()
     {
         if (acquired) {
-            pulsePort_EnableIsr();
+            pulsePort_EnableInterrupts();
             acquired = false;
         }
     }
@@ -90,7 +90,7 @@ class CriticalSection {
 public:
     bool acquired = true;
 
-    CriticalSection(const IsrGuard &) = delete;
+    CriticalSection(const CriticalSection &) = delete;
 
     CriticalSection()
     {

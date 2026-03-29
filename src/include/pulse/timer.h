@@ -1,10 +1,13 @@
 #ifndef TIMER_H
 #define TIMER_H
 
+#ifdef __cplusplus
+
 #include <pulse/details/common.h>
-#include <pulse/details/default_config.h>
+#include <pulse/config.h>
 #include <pulse/shared_ptr.h>
 #include <pulse/task.h>
+#include <pulse/compare.h>
 #include <etl/chrono.h>
 
 
@@ -278,5 +281,16 @@ operator co_await(const Timer::Handle &timer)
 }
 
 } // namespace pulse
+
+extern "C" void
+PulseTimerTick();
+
+#else // __cplusplus
+
+// Equivalent for pulse::Timer::Tick() for C.
+void
+PulseTimerTick();
+
+#endif // __cplusplus
 
 #endif /* TIMER_H */

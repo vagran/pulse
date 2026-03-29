@@ -1,7 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <pulse/details/default_config.h>
+#include <pulse/config.h>
 #include <etl/type_traits.h>
 #include <etl/limits.h>
 #include <etl/concepts.h>

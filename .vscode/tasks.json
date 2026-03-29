@@ -31,12 +31,12 @@
         {
             "label": "Upload firmware",
             "type": "shell",
-            "command": "st-flash write ${workspaceFolder}/build/firmware.bin 0x08000000"
+            "command": "st-flash --connect-under-reset write ${workspaceFolder}/build/firmware.bin 0x08000000"
         },
         {
             "label": "Reset MCU",
             "type": "shell",
-            "command": "st-flash reset"
+            "command": "st-flash --connect-under-reset reset"
         }
     ]
 }

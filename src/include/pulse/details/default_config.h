@@ -135,12 +135,9 @@
 #endif
 
 
-/** pulseConfig_ENABLE_ISR_TASKS
- * Tasks with TasK::ISR_PRIORITY are resumed instantly in ISR context if enabled.
+/** pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY
+ * Highest interrupt priority at which system calls can be made.
  */
-#ifndef pulseConfig_ENABLE_ISR_TASKS
-#   define pulseConfig_ENABLE_ISR_TASKS 0
-#endif
 
 
 #endif /* DEFAULT_CONFIG_H */

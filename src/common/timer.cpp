@@ -1,4 +1,4 @@
-#include <pulse/details/default_config.h>
+#include <pulse/config.h>
 
 #ifdef pulseConfig_ENABLE_TIMER
 
@@ -358,6 +358,12 @@ TimerAwaiter::await_resume() const
         return timer->isPrevFired;
     }
     return timer->isFired;
+}
+
+void
+PulseTimerTick()
+{
+    Timer::Tick();
 }
 
 #endif // pulseConfig_ENABLE_TIMER

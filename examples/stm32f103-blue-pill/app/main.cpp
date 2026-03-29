@@ -1,13 +1,19 @@
 #include <stm32f1xx_hal.h>
 #include <stm32f103xb.h>
 
+#include <pulse/task.h>
+#include <pulse/timer.h>
+
+
+using namespace pulse;
+
 
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
 
-//XXX
+
 extern "C" void
-Panic()
+Panic(const char *msg)
 {
     for(;;);
 }
@@ -31,7 +37,7 @@ SystemClock_Config(void)
     RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
     RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
     if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
-        Panic();
+        Panic("HAL_RCC_OscConfig failed");
     }
     /** Initializes the CPU, AHB and APB buses clocks
      */
@@ -43,7 +49,7 @@ SystemClock_Config(void)
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
     if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK) {
-        Panic();
+        Panic("HAL_RCC_ClockConfig failed");
     }
 }
 
@@ -68,18 +74,18 @@ InitLed(void)
     HAL_GPIO_Init(LED_GPIO_Port, &init);
 }
 
+static TaskV
+BlinkTask()
+{
+    while (true) {
+        co_await Timer::Delay(etl::chrono::seconds(1));
+        HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+    }
+}
+
 } /* anonymous namespace */
 
-#ifdef __clang__
-extern "C" void
-_init()
-{}
-#endif
-
 extern "C" int
-main();
-
-int
 main()
 {
     HAL_Init();
@@ -87,8 +93,21 @@ main()
 
     InitLed();
 
-	while (true) {
-		HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-		HAL_Delay(500);
-	}
+    Task::Spawn(BlinkTask());
+
+    Task::RunScheduler();
+
+    Panic("Scheduler exited");
+    return 0;
 }
+
+
+#ifdef __clang__
+extern "C" void
+_init()
+{}
+
+extern "C" void
+_fini(void)
+{}
+#endif // __clang__

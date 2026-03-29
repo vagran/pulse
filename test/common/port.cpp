@@ -9,12 +9,12 @@ int csNesting = 0;
 } // anonymous namespace
 
 void
-pulsePort_DisableIsr()
+pulsePort_DisableInterrupt()
 {}
 
 
 void
-pulsePort_EnableIsr()
+pulsePort_EnableInterrupts()
 {}
 
 

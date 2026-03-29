@@ -970,7 +970,7 @@ operator delete(void *ptr) noexcept
 }
 
 void
-operator delete(void *ptr, std::size_t) noexcept
+operator delete(void *ptr, size_t) noexcept
 {
     pulse_free(ptr);
 }
@@ -982,7 +982,7 @@ operator delete[](void *ptr) noexcept
 }
 
 void operator
-delete[](void* ptr, std::size_t) noexcept
+delete[](void* ptr, size_t) noexcept
 {
     pulse_free(ptr);
 }

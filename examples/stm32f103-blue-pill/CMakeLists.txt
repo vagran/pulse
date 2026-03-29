@@ -53,6 +53,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:-Wno-un
 
 add_subdirectory("${CMAKE_SOURCE_DIR}/../../modules/etl" "${CMAKE_BINARY_DIR}/etl")
 
+set(PULSE_PORT ARM_CM3)
 add_subdirectory("${CMAKE_SOURCE_DIR}/../../src" "${CMAKE_BINARY_DIR}/pulse")
 target_link_libraries(${PROJECT_NAME} PRIVATE pulse::pulse)
 

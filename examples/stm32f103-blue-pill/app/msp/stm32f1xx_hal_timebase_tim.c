@@ -1,4 +1,5 @@
 #include <stm32f1xx_hal.h>
+#include <pulse/timer.h>
 
 
 TIM_HandleTypeDef TimHandle;
@@ -116,6 +117,7 @@ void
 HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     HAL_IncTick();
+    PulseTimerTick();
 }
 
 /**

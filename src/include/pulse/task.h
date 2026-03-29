@@ -2,7 +2,7 @@
 #define TASK_H
 
 #include <stdint.h>
-#include <pulse/details/default_config.h>
+#include <pulse/config.h>
 #include <pulse/details/common.h>
 #include <pulse/coroutine.h>
 #include <pulse/list.h>
@@ -364,7 +364,7 @@ public:
     return_value(From&& from)
     {
         isFinished = 1;
-        new (result.data) TRet(std::forward<From>(from));
+        new (result.data) TRet(etl::forward<From>(from));
         NotifyWaiters();
     }
 

@@ -1,7 +1,7 @@
 #ifndef MALLOC_H
 #define MALLOC_H
 
-#include <pulse/details/default_config.h>
+#include <pulse/config.h>
 #include <stddef.h>
 #include <stdint.h>
 

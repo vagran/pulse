@@ -119,7 +119,7 @@ Task::RunScheduler()
 {
     while (true) {
         RunSome();
-        pulsePort_EnableIsr();
+        pulsePort_EnableInterrupts();
         pulsePort_Sleep();
     }
 }
