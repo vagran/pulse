@@ -230,9 +230,9 @@ private:
 namespace details {
 
 /** Fire all ready timers if any. Called by scheduler.
- * @return True if some timers fired.
+ * @return Time left until next timer. Maximal representable value if no timers.
  */
-bool
+Timer::TickCount
 CheckTimers();
 
 } // namespace details

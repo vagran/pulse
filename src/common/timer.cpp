@@ -304,20 +304,18 @@ Timer::ScheduleTasks()
     return n;
 }
 
-bool
+TickCount
 details::CheckTimers()
 {
-    bool fired = false;
     while (!timers.IsEmpty()) {
         TimerEntry &e = timers.Top();
         if (Timer::IsAfter(e.time, curTime)) {
-            break;
+            return e.time - curTime;
         }
-        fired = true;
         e.Fire();
         timers.PopTop();
     }
-    return fired;
+    return etl::numeric_limits<TickCount>::max();
 }
 
 bool

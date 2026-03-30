@@ -55,7 +55,9 @@ pulsePort_SetBASEPRI(uint32_t newMaskValue)
 }
 
 
-#define pulsePort_DisableInterrupts     pulsePort_RaiseBASEPRI
-#define pulsePort_EnableInterrupts()    pulsePort_SetBASEPRI(0)
+#define pulsePort_DisableInterrupts             pulsePort_RaiseBASEPRI
+#define pulsePort_EnableInterrupts()            pulsePort_SetBASEPRI(0)
+#define pulsePort_GetAndDisableInterrupts()     pulsePort_GetAndRaiseBASEPRI()
+#define pulsePort_SetInterrupts(state)          pulsePort_SetBASEPRI(state)
 
 #endif /* PULSE_PORT_H */

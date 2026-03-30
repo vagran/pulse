@@ -1,6 +1,8 @@
 #ifndef COMPARE_H
 #define COMPARE_H
 
+#if !__has_include(<compare>)
+
 // Required for using <=> operator, which is used in ETL classes.
 namespace std {
 
@@ -27,5 +29,6 @@ inline constexpr strong_ordering strong_ordering::greater{1};
 
 } // namespace std
 
+#endif // !__has_include(<compare>)
 
 #endif /* COMPARE_H */

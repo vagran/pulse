@@ -26,6 +26,26 @@ void
 pulsePort_EnableInterrupts();
 #endif
 
+
+/** pulsePort_GetAndDisableInterrupts
+ * Either macro or function to get current interrupts state and disable them.
+ */
+#ifndef pulsePort_GetAndDisableInterrupts
+unsigned
+pulsePort_GetAndDisableInterrupts();
+#endif
+
+
+/** pulsePort_SetInterrupts
+ * Either macro or function to restore interrupts state to one returned by
+ * pulsePort_GetAndDisableInterrupts().
+ */
+#ifndef pulsePort_SetInterrupts
+unsigned
+pulsePort_SetInterrupts(unsigned state);
+#endif
+
+
 /** pulsePort_EnterCriticalSection
  * Either macro or function to enter scheduler critical section.
  */
@@ -61,13 +81,22 @@ namespace pulse {
 /** Helper class to disable ISRs in this class instance scope. */
 class InterruptsGuard {
 public:
-    bool acquired = true;
+    bool acquired = false;
+    unsigned state;
 
     InterruptsGuard(const InterruptsGuard &) = delete;
 
     InterruptsGuard()
     {
-        pulsePort_DisableInterrupts();
+        state = pulsePort_GetAndDisableInterrupts();
+        acquired = true;
+    }
+
+    InterruptsGuard(InterruptsGuard &&other):
+        acquired(other.acquired),
+        state(other.state)
+    {
+        other.acquired = false;
     }
 
     ~InterruptsGuard()
@@ -79,7 +108,7 @@ public:
     Exit()
     {
         if (acquired) {
-            pulsePort_EnableInterrupts();
+            pulsePort_SetInterrupts(state);
             acquired = false;
         }
     }
@@ -95,6 +124,12 @@ public:
     CriticalSection()
     {
         pulsePort_EnterCriticalSection();
+    }
+
+    CriticalSection(CriticalSection &&other):
+        acquired(other.acquired)
+    {
+        other.acquired = false;
     }
 
     ~CriticalSection()

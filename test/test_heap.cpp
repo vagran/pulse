@@ -19,14 +19,14 @@ TEST_CASE("Insert top max-heap")
 {
     Heap<int, MaxHeapCmp, 16> h;
 
-    assert(h.Insert(1));
-    assert(h.Top() == 1);
+    REQUIRE(h.Insert(1));
+    REQUIRE(h.Top() == 1);
 
-    assert(h.Insert(5));
-    assert(h.Top() == 5);
+    REQUIRE(h.Insert(5));
+    REQUIRE(h.Top() == 5);
 
-    assert(h.Insert(3));
-    assert(h.Top() == 5);
+    REQUIRE(h.Insert(3));
+    REQUIRE(h.Top() == 5);
 }
 
 
@@ -41,11 +41,11 @@ TEST_CASE("PopOrder_MaxHeap")
     int expected[] = {6, 5, 4, 3, 2, 1};
 
     for (int e : expected) {
-        assert(h.Top() == e);
+        REQUIRE(h.Top() == e);
         h.PopTop();
     }
 
-    assert(h.Size() == 0);
+    REQUIRE(h.Size() == 0);
 }
 
 
@@ -60,7 +60,7 @@ TEST_CASE("PopOrder_MinHeap")
     int expected[] = {1, 2, 3, 4, 5, 6};
 
     for (int e : expected) {
-        assert(h.Top() == e);
+        REQUIRE(h.Top() == e);
         h.PopTop();
     }
 }
@@ -70,12 +70,12 @@ TEST_CASE("Capacity")
 {
     Heap<int, MaxHeapCmp, 3> h;
 
-    assert(h.Insert(1));
-    assert(h.Insert(2));
-    assert(h.Insert(3));
-    assert(!h.Insert(4)); // must fail
+    REQUIRE(h.Insert(1));
+    REQUIRE(h.Insert(2));
+    REQUIRE(h.Insert(3));
+    REQUIRE(!h.Insert(4)); // must fail
 
-    assert(h.Size() == 3);
+    REQUIRE(h.Size() == 3);
 }
 
 
@@ -84,10 +84,10 @@ TEST_CASE("SingleElement")
     Heap<int, MaxHeapCmp, 4> h;
 
     h.Insert(42);
-    assert(h.Top() == 42);
+    REQUIRE(h.Top() == 42);
 
     h.PopTop();
-    assert(h.Size() == 0);
+    REQUIRE(h.Size() == 0);
 }
 
 
@@ -99,16 +99,16 @@ TEST_CASE("Duplicates")
     h.Insert(5);
     h.Insert(5);
 
-    assert(h.Top() == 5);
+    REQUIRE(h.Top() == 5);
 
     h.PopTop();
-    assert(h.Top() == 5);
+    REQUIRE(h.Top() == 5);
 
     h.PopTop();
-    assert(h.Top() == 5);
+    REQUIRE(h.Top() == 5);
 
     h.PopTop();
-    assert(h.Size() == 0);
+    REQUIRE(h.Size() == 0);
 }
 
 
@@ -118,16 +118,16 @@ TEST_CASE("Interleaved")
 
     h.Insert(3);
     h.Insert(10);
-    assert(h.Top() == 10);
+    REQUIRE(h.Top() == 10);
 
     h.PopTop();
-    assert(h.Top() == 3);
+    REQUIRE(h.Top() == 3);
 
     h.Insert(8);
-    assert(h.Top() == 8);
+    REQUIRE(h.Top() == 8);
 
     h.Insert(15);
-    assert(h.Top() == 15);
+    REQUIRE(h.Top() == 15);
 }
 
 

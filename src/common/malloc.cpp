@@ -538,7 +538,7 @@ FreeBlock(BlockHeader *block)
         BlockHeader *next = block->GetNext();
         if (next->isFree()) {
             uint8_t *endAddr = next->GetEndAddress();
-            if (endAddr - block->data <= MAX_ALLOC_SIZE) {
+            if (static_cast<size_t>(endAddr - block->data) <= MAX_ALLOC_SIZE) {
                 // Merge with the next block
                 StatsUnfree(next);
                 next->GetFreeBlock().Unlink(freeList);
@@ -551,7 +551,7 @@ FreeBlock(BlockHeader *block)
         BlockHeader *prev = block->GetPrev();
         if (prev->isFree()) {
             uint8_t *endAddr = block->GetEndAddress();
-            if (endAddr - prev->data <= MAX_ALLOC_SIZE) {
+            if (static_cast<size_t>(endAddr - prev->data) <= MAX_ALLOC_SIZE) {
                 // Merge with the previous block
                 StatsUnfree(prev);
                 prev->GetFreeBlock().Unlink(freeList);
@@ -704,12 +704,12 @@ pulse_realloc(void *ptr, size_t newSize)
         next = block->GetNext();
         if (next->isFree()) {
             nextEndAddr = next->GetEndAddress();
-            if (nextEndAddr - block->data > MAX_ALLOC_SIZE) {
+            if (static_cast<size_t>(nextEndAddr - block->data) > MAX_ALLOC_SIZE) {
                 // Disable merging with next if too big resulted block
                 nextEndAddr = nullptr;
             } else {
                 // Require previous block only if still not enough
-                wantPrev = nextEndAddr - block->data < newSize;
+                wantPrev = static_cast<size_t>(nextEndAddr - block->data) < newSize;
             }
         }
     }
@@ -829,7 +829,7 @@ pulse_add_heap_region(void *region, size_t size)
 
     while (addr < end) {
         BlockHeader *block = reinterpret_cast<BlockHeader *>(addr);
-        if (end - block->data < MIN_ALLOC_SIZE) {
+        if (static_cast<size_t>(end - block->data) < MIN_ALLOC_SIZE) {
             break;
         }
         if (prevBlock) {
