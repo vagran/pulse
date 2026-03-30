@@ -1,0 +1,155 @@
+#ifndef TOKEN_QUEUE_H
+#define TOKEN_QUEUE_H
+
+#include <pulse/task.h>
+#include <pulse/port.h>
+
+
+namespace pulse {
+
+template <etl::integral TCounter>
+class TokenQueueAwaiter;
+
+
+/**
+ * @brief A coroutine-friendly token queue for asynchronous producer-consumer synchronization.
+ *
+ * TokenQueue allows producers to push tokens (from ISRs or regular code) and consumers to
+ * asynchronously wait for tokens using co_await. Each token has an associated value that is
+ * returned to the awaiter. The queue has a maximum capacity - excess tokens are discarded
+ * if not consumed by awaiters.
+ *
+ * @tparam TCounter Integral type for token values, defaults to size_t.
+ */
+template <etl::integral TCounter = size_t>
+class TokenQueue {
+public:
+    /**
+     * @param initialValue Initial token value returned for the first awaiter.
+     * @param maxTokens Maximal number of pending tokens. Excessive tokens are discarded if not
+     *  consumed by awaiters.
+     */
+    TokenQueue(TCounter initialValue = 0, TCounter maxTokens = 1):
+        maxTokens(maxTokens),
+        value(initialValue)
+    {}
+
+    TokenQueue(const TokenQueue &) = delete;
+
+    /** Push the specified number of tokens into the queue. Can be called from ISR. */
+    void
+    Push(TCounter n = 1);
+
+    /** Wait for next token. co_await returns received token value. */
+    TokenQueueAwaiter<TCounter>
+    Take();
+
+    TokenQueueAwaiter<TCounter>
+    operator co_await();
+
+private:
+    friend class TokenQueueAwaiter<TCounter>;
+
+    TailedList<TokenQueueAwaiter<TCounter> *> waiters;
+    const TCounter maxTokens;
+    TCounter value, numTokens = 0;
+};
+
+
+template <etl::integral TCounter>
+class TokenQueueAwaiter {
+public:
+    TokenQueueAwaiter<TCounter> *next = nullptr;
+
+    TokenQueueAwaiter(TokenQueue<TCounter> &queue):
+        queue(queue)
+    {}
+
+    bool
+    await_ready();
+
+    bool
+    await_suspend(Task::CoroutineHandle handle);
+
+    TCounter
+    await_resume() const
+    {
+        return result;
+    }
+
+private:
+    friend class TokenQueue<TCounter>;
+
+    TokenQueue<TCounter> &queue;
+    TCounter result;
+    Task task;
+};
+
+
+template <etl::integral TCounter>
+void
+TokenQueue<TCounter>::Push(TCounter n)
+{
+    CriticalSection cs;
+    if (numTokens + n > maxTokens) {
+        n = maxTokens - numTokens;
+    }
+    if (n == 0) {
+        return;
+    }
+    numTokens += n;
+    value += n;
+    while (!waiters.IsEmpty() && numTokens) {
+        TokenQueueAwaiter<TCounter> *w = waiters.PopFirst();
+        w->result = value - numTokens;
+        numTokens--;
+        w->task.Schedule();
+    }
+}
+
+template <etl::integral TCounter>
+TokenQueueAwaiter<TCounter>
+TokenQueue<TCounter>::Take()
+{
+    return TokenQueueAwaiter<TCounter>(*this);
+}
+
+template <etl::integral TCounter>
+TokenQueueAwaiter<TCounter>
+TokenQueue<TCounter>::operator co_await()
+{
+    return TokenQueueAwaiter<TCounter>(*this);
+}
+
+
+template <etl::integral TCounter>
+bool
+TokenQueueAwaiter<TCounter>::await_ready()
+{
+    CriticalSection cs;
+    if (queue.numTokens == 0) {
+        return false;
+    }
+    result = queue.value - queue.numTokens;
+    queue.numTokens--;
+    return true;
+}
+
+template <etl::integral TCounter>
+bool
+TokenQueueAwaiter<TCounter>::await_suspend(Task::CoroutineHandle handle)
+{
+    CriticalSection cs;
+    if (queue.numTokens == 0) {
+        task = handle;
+        queue.waiters.AddLast(this);
+        return true;
+    }
+    result = queue.value - queue.numTokens;
+    queue.numTokens--;
+    return false;
+}
+
+} // namespace pulse
+
+#endif /* TOKEN_QUEUE_H */

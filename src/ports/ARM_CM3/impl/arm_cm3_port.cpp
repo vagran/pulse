@@ -1,6 +1,5 @@
 #include <pulse/port.h>
 #include <pulse/details/common.h>
-#include <cmsis_gcc.h>
 
 
 namespace {

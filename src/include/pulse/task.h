@@ -121,7 +121,9 @@ public:
         return handle;
     }
 
-    /** Enqueue this task into ready tasks queue according to its current priority. */
+    /** Enqueue this task into ready tasks queue according to its current priority. Can be called
+     * from ISR.
+     */
     void
     Schedule() const &;
 

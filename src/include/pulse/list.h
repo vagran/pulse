@@ -93,7 +93,7 @@ using List = details::ListWeak<TPtr, GetListItem>;
 
 
 // Singly-linked list with tail pointer.
-template <typename TPtr, auto GetListItem>
+template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
 requires details::ListItemAccessor<TPtr, GetListItem>
 struct TailedList {
     TPtr head = TPtr(),

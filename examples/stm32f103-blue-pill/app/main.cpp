@@ -3,6 +3,7 @@
 
 #include <pulse/task.h>
 #include <pulse/timer.h>
+#include <pulse/port.h>
 
 
 using namespace pulse;
@@ -15,6 +16,7 @@ using namespace pulse;
 extern "C" void
 Panic(const char *msg)
 {
+    pulsePort_DisableInterrupts();
     for(;;);
 }
 
