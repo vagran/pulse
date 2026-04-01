@@ -29,7 +29,7 @@ public:
      * @param maxTokens Maximal number of pending tokens. Excessive tokens are discarded if not
      *  consumed by awaiters.
      */
-    TokenQueue(TCounter initialValue = 0, TCounter maxTokens = 1):
+    TokenQueue(TCounter maxTokens = 1, TCounter initialValue = 0):
         maxTokens(maxTokens),
         value(initialValue)
     {}
@@ -91,19 +91,23 @@ void
 TokenQueue<TCounter>::Push(TCounter n)
 {
     CriticalSection cs;
-    if (numTokens + n > maxTokens) {
-        n = maxTokens - numTokens;
-    }
-    if (n == 0) {
-        return;
-    }
-    numTokens += n;
-    value += n;
-    while (!waiters.IsEmpty() && numTokens) {
+
+    while (!waiters.IsEmpty() && (numTokens || n)) {
         TokenQueueAwaiter<TCounter> *w = waiters.PopFirst();
         w->result = value - numTokens;
-        numTokens--;
+        if (numTokens) {
+            numTokens--;
+        } else {
+            n--;
+            value++;
+        }
         w->task.Schedule();
+    }
+    value += n;
+    if (numTokens + n >= maxTokens) {
+        numTokens = maxTokens;
+    } else {
+        numTokens += n;
     }
 }
 
