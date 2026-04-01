@@ -4,6 +4,7 @@
 #include <pulse/task.h>
 #include <pulse/timer.h>
 #include <pulse/port.h>
+#include <pulse/token_queue.h>
 
 
 using namespace pulse;
@@ -12,8 +13,11 @@ using namespace pulse;
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
 
+#define BUTTON_Pin GPIO_PIN_14
+#define BUTTON_GPIO_Port GPIOC
 
-extern "C" void
+
+void
 Panic(const char *msg)
 {
     pulsePort_DisableInterrupts();
@@ -22,7 +26,7 @@ Panic(const char *msg)
 
 namespace {
 
-static void
+void
 SystemClock_Config(void)
 {
     RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -55,7 +59,7 @@ SystemClock_Config(void)
     }
 }
 
-static void
+void
 InitLed(void)
 {
     GPIO_InitTypeDef init = {0};
@@ -76,16 +80,64 @@ InitLed(void)
     HAL_GPIO_Init(LED_GPIO_Port, &init);
 }
 
-static TaskV
+void
+InitButton()
+{
+    GPIO_InitTypeDef init = {0};
+
+    init.Pin = BUTTON_Pin;
+    init.Mode = GPIO_MODE_IT_FALLING;
+    init.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(BUTTON_GPIO_Port, &init);
+
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+}
+
+Timer blinkTimer;
+int blinkInterval = 0;
+TokenQueue buttonEvents;
+
+TaskV
 BlinkTask()
 {
     while (true) {
-        co_await Timer::Delay(etl::chrono::seconds(1));
+        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(500 << blinkInterval));
+        co_await blinkTimer;
         HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
     }
 }
 
+TaskV
+ButtonTask()
+{
+    while (true) {
+        co_await buttonEvents;
+        //XXX suppress jitter
+        blinkInterval++;
+        if (blinkInterval > 2) {
+            blinkInterval = 0;
+        }
+        blinkTimer.Cancel();
+    }
+}
+
 } /* anonymous namespace */
+
+extern "C" void
+EXTI15_10_IRQHandler()
+{
+    HAL_GPIO_EXTI_IRQHandler(BUTTON_Pin);
+}
+
+void
+HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == BUTTON_Pin) {
+        buttonEvents.Push();
+    }
+}
 
 extern "C" int
 main()
@@ -94,8 +146,10 @@ main()
     SystemClock_Config();
 
     InitLed();
+    InitButton();
 
     Task::Spawn(BlinkTask());
+    Task::Spawn(ButtonTask());
 
     Task::RunScheduler();
 

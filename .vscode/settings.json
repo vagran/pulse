@@ -1,14 +1,33 @@
 {
     // "cmake.parallelJobs": 1,
-    "cmake.sourceDirectory": "${workspaceFolder}/test",
-    // "cmake.sourceDirectory": "${workspaceFolder}/examples/stm32f103-blue-pill",
+    // "cmake.sourceDirectory": "${workspaceFolder}/test",
+    "cmake.sourceDirectory": "${workspaceFolder}/examples/stm32f103-blue-pill",
     "cmake.configureArgs": [
         // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-gcc-toolchain.cmake"
-        // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-clang-toolchain.cmake"
+        "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-clang-toolchain.cmake"
     ],
     "cSpell.words": [
+        "AHBCLK",
         "coro",
         "Deschedule",
-        "MALLOC"
+        "EXTI",
+        "GPIOA",
+        "GPIOC",
+        "GPIOD",
+        "HCLK",
+        "IWDG",
+        "MALLOC",
+        "NVIC",
+        "OSCILLATORTYPE",
+        "PCCARD",
+        "PCLK",
+        "PLLCLK",
+        "PLLMUL",
+        "PLLSOURCE",
+        "SMARTCARD",
+        "SYSCLK",
+        "SYSCLKSOURCE",
+        "USART",
+        "WWDG"
     ]
 }

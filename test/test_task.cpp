@@ -29,7 +29,7 @@ CheckResult(const std::vector<std::string> &expectedResult)
 
 } // anonymous namespace
 
-TEST_CASE("Basic")
+TEST_CASE("Basic tasks")
 {
     struct Tasks {
 
