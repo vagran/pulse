@@ -164,6 +164,6 @@ _init()
 {}
 
 extern "C" void
-_fini(void)
+_fini()
 {}
 #endif // __clang__

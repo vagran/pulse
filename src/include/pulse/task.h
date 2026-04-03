@@ -20,7 +20,7 @@ class TTaskPromise;
 template <typename TRet, bool initialSuspend = true>
 class TTask;
 
-template <typename TRet, bool initialSuspend>
+template <typename TRet>
 class TaskAwaiter;
 
 
@@ -133,11 +133,9 @@ public:
     inline bool
     IsFinished() const;
 
-    //XXX Terminate()?
-
-    template <typename TRet, bool initialSuspend>
-    static TTask<TRet, initialSuspend>
-    Spawn(TTask<TRet, initialSuspend> task, Priority priority = LOWEST_PRIORITY)
+    template <typename TRet>
+    static TTask<TRet, true>
+    Spawn(TTask<TRet, true> task, Priority priority = LOWEST_PRIORITY)
     {
         SpawnImpl(task, priority);
         return etl::move(task);
@@ -165,10 +163,10 @@ public:
         return {};
     }
 
-    inline TaskAwaiter<void, false>
+    inline TaskAwaiter<void>
     Wait() const;
 
-    inline TaskAwaiter<void, false>
+    inline TaskAwaiter<void>
     operator co_await() const;
 
 protected:
@@ -177,7 +175,7 @@ protected:
     template <typename, bool>
     friend class TTaskPromise;
 
-    template<typename, bool>
+    template<typename>
     friend class TaskAwaiter;
 
     CoroutineHandle handle;
@@ -221,10 +219,10 @@ public:
     inline const TRet &
     GetResult() const;
 
-    inline TaskAwaiter<TRet, initialSuspend>
+    inline TaskAwaiter<TRet>
     Wait() const;
 
-    inline TaskAwaiter<TRet, initialSuspend>
+    inline TaskAwaiter<TRet>
     operator co_await() const;
 };
 
@@ -242,10 +240,10 @@ public:
         return reinterpret_cast<TPromise &>(handle.promise());
     }
 
-    inline TaskAwaiter<void, initialSuspend>
+    inline TaskAwaiter<void>
     Wait() const;
 
-    inline TaskAwaiter<void, initialSuspend>
+    inline TaskAwaiter<void>
     operator co_await() const;
 };
 
@@ -407,11 +405,13 @@ public:
 };
 
 
-template <typename TRet, bool initialSuspend>
+template <typename TRet>
 class TaskAwaiter {
 public:
+    template <bool initialSuspend>
     TaskAwaiter(TTask<TRet, initialSuspend> task):
-        task(etl::move(task))
+        task(etl::move(task)),
+        initialSuspend(initialSuspend)
     {}
 
     bool
@@ -429,18 +429,23 @@ public:
     TRet
     await_resume() const
     {
-        return task.GetPromise().GetResult();
+        if (initialSuspend) {
+            return TTask<TRet, true>(task.handle).GetPromise().GetResult();
+        } else {
+            return TTask<TRet, false>(task.handle).GetPromise().GetResult();
+        }
     }
 
 private:
-    const TTask<TRet, initialSuspend> task;
+    const Task task;
+    const bool initialSuspend;
 };
 
 
-template <bool initialSuspend>
-class TaskAwaiter<void, initialSuspend> {
+template <>
+class TaskAwaiter<void> {
 public:
-    TaskAwaiter(TTask<void, initialSuspend> task):
+    TaskAwaiter(Task task):
         task(etl::move(task))
     {}
 
@@ -461,7 +466,7 @@ public:
     {}
 
 private:
-    const TTask<void, initialSuspend> task;
+    const Task task;
 };
 
 
@@ -506,13 +511,13 @@ Task::IsFinished() const
     return GetPromise().isFinished;
 }
 
-TaskAwaiter<void, false>
+TaskAwaiter<void>
 Task::Wait() const
 {
-    return TaskAwaiter<void, false>(handle);
+    return TaskAwaiter<void>(handle);
 }
 
-TaskAwaiter<void, false>
+TaskAwaiter<void>
 Task::operator co_await() const
 {
     return Wait();
@@ -538,28 +543,28 @@ TTask<TRet, initialSuspend>::GetResult() const
 }
 
 template <typename TRet, bool initialSuspend>
-TaskAwaiter<TRet, initialSuspend>
+TaskAwaiter<TRet>
 TTask<TRet, initialSuspend>::Wait() const
 {
-    return TaskAwaiter<TRet, initialSuspend>(handle);
+    return TaskAwaiter<TRet>(*this);
 }
 
 template <typename TRet, bool initialSuspend>
-TaskAwaiter<TRet, initialSuspend>
+TaskAwaiter<TRet>
 TTask<TRet, initialSuspend>::operator co_await() const
 {
     return Wait();
 }
 
 template <bool initialSuspend>
-TaskAwaiter<void, initialSuspend>
+TaskAwaiter<void>
 TTask<void, initialSuspend>::Wait() const
 {
-    return TaskAwaiter<void, initialSuspend>(handle);
+    return TaskAwaiter<void>(handle);
 }
 
 template <bool initialSuspend>
-TaskAwaiter<void, initialSuspend>
+TaskAwaiter<void>
 TTask<void, initialSuspend>::operator co_await() const
 {
     return Wait();
