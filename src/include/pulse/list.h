@@ -52,6 +52,10 @@ struct ListWeak {
 
     TPtr
     PopFirst();
+
+    /// @return True if found and removed, false if not found.
+    bool
+    Remove(const TPtr &item);
 };
 
 template <typename TPtr, auto GetListItem>
@@ -81,6 +85,31 @@ ListWeak<TPtr, GetListItem>::PopFirst()
         li.next = TPtr();
     }
     return etl::move(res);
+}
+
+template <typename TPtr, auto GetListItem>
+requires ListItemAccessorWeak<TPtr, GetListItem>
+bool
+ListWeak<TPtr, GetListItem>::Remove(const TPtr &item)
+{
+    TPtr p = head;
+    TPtr prev = TPtr();
+    while (p) {
+        auto &li = GetListItem(p);
+        if (p == item) {
+            if (prev) {
+                auto &prevLi = GetListItem(prev);
+                prevLi.next = li.next;
+            } else {
+                head = li.next;
+            }
+            li.next = TPtr();
+            return true;
+        }
+        prev = p;
+        p = li.next;
+    }
+    return false;
 }
 
 } // namespace details
@@ -127,8 +156,8 @@ struct TailedList {
     TPtr
     PopFirst();
 
-    // Item must be present in the list.
-    void
+    /// @return True if found and removed, false if not found.
+    bool
     Remove(const TPtr &item);
 };
 
@@ -184,7 +213,7 @@ TailedList<TPtr, GetListItem>::PopFirst()
 
 template <typename TPtr, auto GetListItem>
 requires details::ListItemAccessor<TPtr, GetListItem>
-void
+bool
 TailedList<TPtr, GetListItem>::Remove(const TPtr &item)
 {
     TPtr p = head;
@@ -202,12 +231,12 @@ TailedList<TPtr, GetListItem>::Remove(const TPtr &item)
                 tail = prev;
             }
             li.next = TPtr();
-            return;
+            return true;
         }
         prev = p;
         p = li.next;
     }
-    PULSE_ASSERT(false);
+    return false;
 }
 
 } // namespace pulse

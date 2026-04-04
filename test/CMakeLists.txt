@@ -8,7 +8,7 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
-    add_definitions(-DDEBUG)
+    add_compile_definitions(DEBUG)
 endif()
 
 add_compile_options(-Werror -Wall)
@@ -24,6 +24,9 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/../modules/etl" "${CMAKE_BINARY_DIR}/etl")
 add_subdirectory("${CMAKE_SOURCE_DIR}/../src" "${CMAKE_BINARY_DIR}/pulse")
 
 add_executable(${PROJECT_NAME} ${SOURCES})
+
+# Prevent conflict between ETL and STL.
+add_compile_definitions(ETL_FORCE_STD_INITIALIZER_LIST=1)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE Catch2::Catch2WithMain etl::etl pulse::pulse)
 

@@ -8,6 +8,7 @@
 #include <pulse/list.h>
 #include <etl/bit.h>
 #include <etl/memory.h>
+#include <etl/span.h>
 
 
 namespace pulse {
@@ -22,6 +23,10 @@ class TTask;
 
 template <typename TRet>
 class TaskAwaiter;
+
+class AllTasksAwaiter;
+
+class AnyTaskAwaiter;
 
 
 /// Smart pointer for coroutine frame.
@@ -133,6 +138,9 @@ public:
     inline bool
     IsFinished() const;
 
+    void
+    SetPriority(Priority priority);
+
     template <typename TRet>
     static TTask<TRet, true>
     Spawn(TTask<TRet, true> task, Priority priority = LOWEST_PRIORITY)
@@ -168,6 +176,25 @@ public:
 
     inline TaskAwaiter<void>
     operator co_await() const;
+
+    /** Wait when all of the provided tasks complete. Uses dynamic allocation for tasks list.
+     */
+    static inline AllTasksAwaiter
+    WhenAll(const etl::span<Task> &tasks);
+
+    /* Wait when any of the provided tasks completes. `co_await` returns index of the first
+     * completed task. Uses dynamic allocation for tasks list.
+     */
+    static inline AnyTaskAwaiter
+    WhenAny(const etl::span<Task> &tasks);
+
+    template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
+    static AllTasksAwaiter
+    WhenAll(T task, Args... tasks);
+
+    template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
+    static AnyTaskAwaiter
+    WhenAny(T task, Args... tasks);
 
 protected:
     friend class TaskPromise;
@@ -470,6 +497,81 @@ private:
 };
 
 
+namespace details {
+
+class MultipleTasksAwaiter {
+protected:
+    struct Entry {
+        Task target, handler;
+    };
+
+    etl::unique_ptr<Entry[]> tasks;
+    Task waiter;
+    const size_t numTasks;
+
+    MultipleTasksAwaiter(const etl::span<Task> &tasks);
+
+    ~MultipleTasksAwaiter()
+    {
+        Finish();
+    }
+
+    void
+    Finish();
+};
+
+} // namespace details
+
+
+class AllTasksAwaiter: public details::MultipleTasksAwaiter {
+public:
+    AllTasksAwaiter(const etl::span<Task> &tasks);
+
+    bool
+    await_ready() const
+    {
+        return numLeft == 0;
+    }
+
+    bool
+    await_suspend(Task::CoroutineHandle handle);
+
+    void
+    await_resume() const
+    {}
+
+private:
+    size_t numLeft;
+};
+
+
+class AnyTaskAwaiter: public details::MultipleTasksAwaiter  {
+public:
+    AnyTaskAwaiter(const etl::span<Task> &tasks);
+
+    bool
+    await_ready() const
+    {
+        return result != NONE;
+    }
+
+    bool
+    await_suspend(Task::CoroutineHandle handle);
+
+    /// @return First completed task index.
+    size_t
+    await_resume() const
+    {
+        return result;
+    }
+
+private:
+    static constexpr size_t NONE = etl::numeric_limits<size_t>::max();
+
+    size_t result = NONE;
+};
+
+
 Task::Task(CoroutineHandle handle):
     handle(handle)
 {
@@ -521,6 +623,34 @@ TaskAwaiter<void>
 Task::operator co_await() const
 {
     return Wait();
+}
+
+AllTasksAwaiter
+Task::WhenAll(const etl::span<Task> &tasks)
+{
+    return AllTasksAwaiter(tasks);
+}
+
+AnyTaskAwaiter
+Task::WhenAny(const etl::span<Task> &tasks)
+{
+    return AnyTaskAwaiter(tasks);
+}
+
+template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
+AllTasksAwaiter
+Task::WhenAll(T task, Args... tasks)
+{
+    Task _tasks[] = {task, tasks...};
+    return WhenAll(etl::span<Task, sizeof...(Args) + 1>(_tasks));
+}
+
+template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
+AnyTaskAwaiter
+Task::WhenAny(T task, Args... tasks)
+{
+    Task _tasks[] = {task, tasks...};
+    return WhenAny(etl::span<Task, sizeof...(Args) + 1>(_tasks));
 }
 
 void

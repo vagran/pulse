@@ -18,7 +18,7 @@ extern "C" void Panic(const char *msg);
     } \
 } while (false)
 
-#define pulseConfig_PANIC(msg) Panic(msg)
+#define pulseConfig_PANIC(msg)                      Panic(msg)
 
 #define pulseConfig_MALLOC_STATS                    1
 

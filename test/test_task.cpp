@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/task.h>
+#include <pulse/token_queue.h>
 #include <iostream>
 
 
@@ -207,4 +208,296 @@ TEST_CASE("Priority propagation")
     Task::RunSome();
 
     CheckResult(7, "T1:2");
+}
+
+
+TEST_CASE("WhenAll") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(5, "T1:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            co_await Task::WhenAll(t1, t2);
+            CheckResult(6, "T2:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2)
+        {
+            CheckResult(3, "T3:1");
+            results.push_back("T4:1");
+            q1.Push();
+            q2.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1, q2;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2));
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+
+    Task::RunSome();
+
+    CheckResult(7, "T3:2");
+}
+
+
+TEST_CASE("WhenAll - completed") {
+    struct Tasks {
+        static TaskV
+        T1()
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_return;
+        }
+
+        static TaskV
+        T2()
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_return;
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            co_await Task::WhenAll(t1, t2);
+            results.push_back("T3:2");
+        }
+    };
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1());
+
+    auto t2 = Task::Spawn(Tasks::T2());
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2));
+
+    Task::RunSome();
+
+    CheckResult(4, "T3:2");
+}
+
+
+TEST_CASE("WhenAll - priority") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            CheckResult(1, "T3:1");
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(5, "T5:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(2, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(7, "T4:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T3:1");
+            co_await Task::WhenAll(t1, t2);
+            CheckResult(8, "T2:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2, TokenQueue<> &q5)
+        {
+            CheckResult(3, "T2:1");
+            results.push_back("T4:1");
+            q1.Push();
+            co_await Task::Switch();
+            CheckResult(6, "T1:2");
+            results.push_back("T4:2");
+            q2.Push();
+            q5.Push();
+            co_return;
+        }
+
+        static TaskV
+        T5(TokenQueue<> &q)
+        {
+            CheckResult(4, "T4:1");
+            results.push_back("T5:1");
+            co_await q;
+            CheckResult(9, "T3:2");
+            results.push_back("T5:2");
+        }
+    };
+
+    TokenQueue<> q1, q2, q5;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2), 0);
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2, q5));
+
+    auto t5 = Task::Spawn(Tasks::T5(q5));
+
+    Task::RunSome();
+
+    CheckResult(10, "T5:2");
+}
+
+
+TEST_CASE("WhenAny") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            CheckResult(1, "T3:1");
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(2, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(7, "T4:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T3:1");
+            co_await Task::WhenAny(t1, t2);
+            CheckResult(5, "T1:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2)
+        {
+            CheckResult(3, "T2:1");
+            results.push_back("T4:1");
+            q1.Push();
+            co_await Task::Switch();
+            CheckResult(6, "T3:2");
+            results.push_back("T4:2");
+            q2.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1, q2;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2), 0);
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+
+    Task::RunSome();
+
+    CheckResult(8, "T2:2");
+}
+
+
+TEST_CASE("WhenAny - completed") {
+    struct Tasks {
+        static TaskV
+        T1()
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_return;
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(4, "T3:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2, TokenQueue<> &q)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            co_await Task::WhenAny(t1, t2);
+            CheckResult(3, "T3:1");
+            results.push_back("T3:2");
+            q.Push();
+        }
+    };
+
+    TokenQueue<> q;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1());
+
+    auto t2 = Task::Spawn(Tasks::T2(q));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2, q));
+
+    Task::RunSome();
+
+    CheckResult(5, "T2:2");
 }
