@@ -8,8 +8,6 @@
 #define pulseConfig_MALLOC_GRANULARITY              8
 #define pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE     2
 
-#define pulseConfig_HEAP_SIZE                       (1024 * 1024)
-
 #ifdef __cplusplus
 extern "C"
 #endif
@@ -21,7 +19,7 @@ void Panic(const char *msg);
     } \
 } while (false)
 
-#define pulseConfig_PANIC(msg) Panic(msg)
+#define pulseConfig_PANIC(msg)                      Panic(msg)
 
 #define pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY  191
 

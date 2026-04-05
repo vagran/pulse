@@ -1,6 +1,7 @@
 #include <stm32f1xx_hal.h>
 #include <stm32f103xb.h>
 
+#include <pulse/malloc.h>
 #include <pulse/task.h>
 #include <pulse/timer.h>
 #include <pulse/port.h>
@@ -25,6 +26,8 @@ Panic(const char *msg)
 }
 
 namespace {
+
+MallocUnit heap[16 * 1024 / sizeof(MallocUnit)];
 
 void
 SystemClock_Config(void)
@@ -64,17 +67,15 @@ InitLed(void)
 {
     GPIO_InitTypeDef init = {0};
 
-    /* GPIO Ports Clock Enable */
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOD_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
 
-    /* Configure GPIO pin Output Level */
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+    // Initially off (active low)
+    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
 
-    /*Configure GPIO pin : LED_Pin */
     init.Pin = LED_Pin;
-    init.Mode = GPIO_MODE_OUTPUT_PP;
+    init.Mode = GPIO_MODE_OUTPUT_OD;
     init.Pull = GPIO_NOPULL;
     init.Speed = GPIO_SPEED_FREQ_LOW;
     HAL_GPIO_Init(LED_GPIO_Port, &init);
@@ -95,28 +96,105 @@ InitButton()
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
+void
+LedOn()
+{
+    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+}
+
+void
+LedOff()
+{
+    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+}
+
+void
+LedToggle()
+{
+    HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+}
+
+bool
+IsButtonPressed()
+{
+    // Active low.
+    return HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET;
+}
+
 Timer blinkTimer;
 int blinkInterval = 0;
 TokenQueue buttonEvents;
 
+Awaitable<void>
+ConfirmSwitch(int interval)
+{
+    LedOff();
+    co_await Timer::Delay(etl::chrono::milliseconds(200));
+    for (int i = 0; i <= interval; i++) {
+        LedOn();
+        co_await Timer::Delay(etl::chrono::milliseconds(100));
+        LedOff();
+        co_await Timer::Delay(etl::chrono::milliseconds(200));
+    }
+    co_await Timer::Delay(etl::chrono::milliseconds(300));
+}
+
 TaskV
 BlinkTask()
 {
+    int interval = blinkInterval;
+
     while (true) {
-        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(500 << blinkInterval));
-        co_await blinkTimer;
-        HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+        if (interval != blinkInterval) {
+            interval = blinkInterval;
+            co_await ConfirmSwitch(interval);
+            continue;
+        }
+        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << interval));
+        if (!co_await blinkTimer) {
+            // Timer cancelled, so interval is definitely changed
+            interval = blinkInterval;
+            co_await ConfirmSwitch(interval);
+        } else {
+            LedToggle();
+        }
     }
 }
 
 TaskV
 ButtonTask()
 {
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(200);
+    Timer jitterTimer;
+
     while (true) {
         co_await buttonEvents;
-        //XXX suppress jitter
+        // Suppress jitter - wait until active level is stable for a long period.
+        bool pressed = false;
+        while (true) {
+            jitterTimer.ExpiresAfter(JITTER_DELAY);
+            //XXX cancel needed for awaiters
+            size_t idx = co_await Task::WhenAny(buttonEvents, jitterTimer);
+            if (idx == 0) {
+                // Button pressed again, restart anti-jitter delay
+                continue;
+            }
+            // Anti-jitter delay expired with no new presses. Check if button was not released
+            // before delay expired.
+            if (!IsButtonPressed()) {
+                break;
+            }
+            pressed = true;
+            break;
+        }
+
+        if (!pressed) {
+            // Ignore too short press
+            continue;
+        }
+
         blinkInterval++;
-        if (blinkInterval > 2) {
+        if (blinkInterval > 3) {
             blinkInterval = 0;
         }
         blinkTimer.Cancel();
@@ -142,6 +220,8 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 extern "C" int
 main()
 {
+    pulse_add_heap_region(heap, sizeof(heap));
+
     HAL_Init();
     SystemClock_Config();
 
