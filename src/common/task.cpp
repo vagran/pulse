@@ -212,6 +212,7 @@ Task::AwaitResult(Task task) const
     return true;
 }
 
+
 void
 TaskPromise::NotifyWaiters()
 {
@@ -224,18 +225,10 @@ TaskPromise::NotifyWaiters()
     }
 }
 
-details::MultipleTasksAwaiter::MultipleTasksAwaiter(const etl::span<Task> &tasks):
-    tasks(new Entry[tasks.size()]),
-    numTasks(tasks.size())
-{}
 
 void
-details::MultipleTasksAwaiter::Finish()
+details::MultipleTasksAwaiterBase::Finish(Entry *tasks, size_t numTasks)
 {
-    if (!tasks) {
-        return;
-    }
-
     for (size_t i = 0; i < numTasks; i++) {
         Entry &e = tasks[i];
         if (e.target) {
@@ -254,105 +247,4 @@ details::MultipleTasksAwaiter::Finish()
             }
         }
     }
-    tasks.reset();
-}
-
-AllTasksAwaiter::AllTasksAwaiter(const etl::span<Task> &tasks):
-    details::MultipleTasksAwaiter(tasks),
-    numLeft(tasks.size())
-{
-    auto handler = [this](size_t index) -> Awaitable<void> {
-        Entry &e = this->tasks[index];
-
-        co_await e.target;
-
-        e.target.ReleaseHandle();
-        e.handler.ReleaseHandle();
-
-        numLeft--;
-        if (numLeft == 0 && waiter) {
-            waiter.Schedule();
-        }
-    };
-
-    for (size_t i = 0; i < numTasks; i++) {
-        Entry &e = this->tasks[i];
-        e.target = tasks[i];
-        auto h = handler(i);
-        if (e.target) {
-            // If was not instantly released in handler.
-            e.handler = h;
-        }
-    }
-}
-
-bool
-AllTasksAwaiter::await_suspend(Task::CoroutineHandle handle)
-{
-    if (numLeft == 0) {
-        return false;
-    }
-
-    waiter = handle;
-    // Handlers should have the same priority as waiter.
-    Task::Priority pri = waiter.GetPromise().priority;
-    for (size_t i = 0; i < numTasks; i++) {
-        Entry &e = this->tasks[i];
-        e.handler.SetPriority(pri);
-    }
-
-    return true;
-}
-
-AnyTaskAwaiter::AnyTaskAwaiter(const etl::span<Task> &tasks):
-    details::MultipleTasksAwaiter(tasks)
-{
-    auto handler = [this](size_t index) -> Awaitable<void> {
-        Entry &e = this->tasks[index];
-
-        co_await e.target;
-
-        e.target.ReleaseHandle();
-        e.handler.ReleaseHandle();
-
-        if (result != NONE) {
-            co_return;
-        }
-        result = index;
-        if (waiter) {
-            waiter.Schedule();
-        }
-    };
-
-    for (size_t i = 0; i < numTasks; i++) {
-        Entry &e = this->tasks[i];
-        e.target = tasks[i];
-        auto h = handler(i);
-        if (e.target) {
-            // If was not instantly released in handler.
-            e.handler = h;
-        } else {
-            PULSE_ASSERT(result != NONE);
-            Finish();
-            break;
-        }
-    }
-}
-
-bool
-AnyTaskAwaiter::await_suspend(Task::CoroutineHandle handle)
-{
-    if (result != NONE) {
-        return false;
-    }
-    waiter = handle;
-
-    // Handlers should have the same priority as waiter.
-    Task::Priority pri = waiter.GetPromise().priority;
-    for (size_t i = 0; i < numTasks; i++) {
-        Entry &e = this->tasks[i];
-        e.handler.SetPriority(pri);
-    }
-
-    return true;
 }

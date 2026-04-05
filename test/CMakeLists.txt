@@ -49,7 +49,6 @@ endfunction()
 
 
 # Variations for malloc test
-# XXX make proper combinations
 set(MALLOC_CONFIG_LIST [=[
 [
     ["M_GRAN=16", "M_BSZ=1", "M_FIT=1"],

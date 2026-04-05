@@ -24,8 +24,10 @@ class TTask;
 template <typename TRet>
 class TaskAwaiter;
 
+template <size_t NumTasks = etl::dynamic_extent>
 class AllTasksAwaiter;
 
+template <size_t NumTasks = etl::dynamic_extent>
 class AnyTaskAwaiter;
 
 
@@ -177,23 +179,27 @@ public:
     inline TaskAwaiter<void>
     operator co_await() const;
 
-    /** Wait when all of the provided tasks complete. Uses dynamic allocation for tasks list.
+    /** Wait when all of the provided tasks complete. Uses dynamic allocation for tasks list if
+     * `NumTasks` is `etl::dynamic_extent`.
      */
-    static inline AllTasksAwaiter
-    WhenAll(const etl::span<Task> &tasks);
+    template<size_t NumTasks = etl::dynamic_extent>
+    static inline AllTasksAwaiter<NumTasks>
+    WhenAll(const etl::span<Task, NumTasks> &tasks);
 
     /* Wait when any of the provided tasks completes. `co_await` returns index of the first
-     * completed task. Uses dynamic allocation for tasks list.
+     * completed task. Uses dynamic allocation for tasks list if `NumTasks` is
+     * `etl::dynamic_extent`.
      */
-    static inline AnyTaskAwaiter
-    WhenAny(const etl::span<Task> &tasks);
+    template<size_t NumTasks = etl::dynamic_extent>
+    static inline AnyTaskAwaiter<NumTasks>
+    WhenAny(const etl::span<Task, NumTasks> &tasks);
 
     template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-    static AllTasksAwaiter
+    static AllTasksAwaiter<sizeof...(Args) + 1>
     WhenAll(T task, Args... tasks);
 
     template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-    static AnyTaskAwaiter
+    static AnyTaskAwaiter<sizeof...(Args) + 1>
     WhenAny(T task, Args... tasks);
 
 protected:
@@ -499,17 +505,28 @@ private:
 
 namespace details {
 
-class MultipleTasksAwaiter {
+class MultipleTasksAwaiterBase {
 protected:
     struct Entry {
         Task target, handler;
     };
 
-    etl::unique_ptr<Entry[]> tasks;
     Task waiter;
-    const size_t numTasks;
 
-    MultipleTasksAwaiter(const etl::span<Task> &tasks);
+    static void
+    Finish(Entry *tasks, size_t numTasks);
+};
+
+
+template <size_t NumTasks = etl::dynamic_extent>
+class MultipleTasksAwaiter: protected MultipleTasksAwaiterBase {
+protected:
+    etl::array<Entry, NumTasks> tasks;
+    static constexpr size_t numTasks = NumTasks;
+    bool isFinished = false;
+
+    MultipleTasksAwaiter(const etl::span<Task, NumTasks> &)
+    {}
 
     ~MultipleTasksAwaiter()
     {
@@ -517,15 +534,48 @@ protected:
     }
 
     void
-    Finish();
+    Finish()
+    {
+        if (!isFinished) {
+            MultipleTasksAwaiterBase::Finish(tasks.data(), numTasks);
+            isFinished = true;
+        }
+    }
+};
+
+template <>
+class MultipleTasksAwaiter<etl::dynamic_extent>: protected MultipleTasksAwaiterBase {
+protected:
+    etl::unique_ptr<Entry[]> tasks;
+    const size_t numTasks;
+
+    MultipleTasksAwaiter(const etl::span<Task, etl::dynamic_extent> &tasks):
+        tasks(new Entry[tasks.size()]),
+        numTasks(tasks.size())
+    {}
+
+    ~MultipleTasksAwaiter()
+    {
+        Finish();
+    }
+
+    void
+    Finish()
+    {
+        if (tasks) {
+            MultipleTasksAwaiterBase::Finish(tasks.get(), numTasks);
+            tasks.reset();
+        }
+    }
 };
 
 } // namespace details
 
 
-class AllTasksAwaiter: public details::MultipleTasksAwaiter {
+template <size_t NumTasks>
+class AllTasksAwaiter: public details::MultipleTasksAwaiter<NumTasks> {
 public:
-    AllTasksAwaiter(const etl::span<Task> &tasks);
+    AllTasksAwaiter(const etl::span<Task, NumTasks> &tasks);
 
     bool
     await_ready() const
@@ -541,13 +591,17 @@ public:
     {}
 
 private:
+    using Base = details::MultipleTasksAwaiter<NumTasks>;
+    using Entry = Base::Entry;
+
     size_t numLeft;
 };
 
 
-class AnyTaskAwaiter: public details::MultipleTasksAwaiter  {
+template <size_t NumTasks>
+class AnyTaskAwaiter: public details::MultipleTasksAwaiter<NumTasks>  {
 public:
-    AnyTaskAwaiter(const etl::span<Task> &tasks);
+    AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks);
 
     bool
     await_ready() const
@@ -566,6 +620,9 @@ public:
     }
 
 private:
+    using Base = details::MultipleTasksAwaiter<NumTasks>;
+    using Entry = Base::Entry;
+
     static constexpr size_t NONE = etl::numeric_limits<size_t>::max();
 
     size_t result = NONE;
@@ -625,20 +682,22 @@ Task::operator co_await() const
     return Wait();
 }
 
-AllTasksAwaiter
-Task::WhenAll(const etl::span<Task> &tasks)
+template<size_t NumTasks>
+AllTasksAwaiter<NumTasks>
+Task::WhenAll(const etl::span<Task, NumTasks> &tasks)
 {
     return AllTasksAwaiter(tasks);
 }
 
-AnyTaskAwaiter
-Task::WhenAny(const etl::span<Task> &tasks)
+template<size_t NumTasks>
+AnyTaskAwaiter<NumTasks>
+Task::WhenAny(const etl::span<Task, NumTasks> &tasks)
 {
     return AnyTaskAwaiter(tasks);
 }
 
 template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-AllTasksAwaiter
+AllTasksAwaiter<sizeof...(Args) + 1>
 Task::WhenAll(T task, Args... tasks)
 {
     Task _tasks[] = {task, tasks...};
@@ -646,7 +705,7 @@ Task::WhenAll(T task, Args... tasks)
 }
 
 template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-AnyTaskAwaiter
+AnyTaskAwaiter<sizeof...(Args) + 1>
 Task::WhenAny(T task, Args... tasks)
 {
     Task _tasks[] = {task, tasks...};
@@ -704,6 +763,112 @@ TTask<void, initialSuspend>::operator co_await() const
 /// For returning from async functions not meant to be spawned as scheduler tasks.
 template <typename TRet>
 using Awaitable = TTask<TRet, false>;
+
+
+template <size_t NumTasks>
+AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &tasks):
+    details::MultipleTasksAwaiter<NumTasks>(tasks),
+    numLeft(Base::numTasks)
+{
+    auto handler = [this](size_t index) -> Awaitable<void> {
+        Entry &e = this->tasks[index];
+
+        co_await e.target;
+
+        e.target.ReleaseHandle();
+        e.handler.ReleaseHandle();
+
+        numLeft--;
+        if (numLeft == 0 && Base::waiter) {
+            Base::waiter.Schedule();
+        }
+    };
+
+    for (size_t i = 0; i < Base::numTasks; i++) {
+        Entry &e = this->tasks[i];
+        e.target = tasks[i];
+        auto h = handler(i);
+        if (e.target) {
+            // If was not instantly released in handler.
+            e.handler = h;
+        }
+    }
+}
+
+template <size_t NumTasks>
+bool
+AllTasksAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
+{
+    if (numLeft == 0) {
+        return false;
+    }
+
+    Base::waiter = handle;
+    // Handlers should have the same priority as waiter.
+    Task::Priority pri = Base::waiter.GetPromise().priority;
+    for (size_t i = 0; i < Base::numTasks; i++) {
+        Entry &e = this->tasks[i];
+        e.handler.SetPriority(pri);
+    }
+
+    return true;
+}
+
+template <size_t NumTasks>
+AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks):
+    details::MultipleTasksAwaiter<NumTasks>(tasks)
+{
+    auto handler = [this](size_t index) -> Awaitable<void> {
+        Entry &e = this->tasks[index];
+
+        co_await e.target;
+
+        e.target.ReleaseHandle();
+        e.handler.ReleaseHandle();
+
+        if (result != NONE) {
+            co_return;
+        }
+        result = index;
+        if (Base::waiter) {
+            Base::waiter.Schedule();
+        }
+    };
+
+    for (size_t i = 0; i < Base::numTasks; i++) {
+        Entry &e = this->tasks[i];
+        e.target = tasks[i];
+        auto h = handler(i);
+        if (e.target) {
+            // If was not instantly released in handler.
+            e.handler = h;
+        } else {
+            PULSE_ASSERT(result != NONE);
+            Base::Finish();
+            break;
+        }
+    }
+}
+
+template <size_t NumTasks>
+bool
+AnyTaskAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
+{
+    if (result != NONE) {
+        return false;
+    }
+    Base::waiter = handle;
+
+    // Handlers should have the same priority as waiter.
+    Task::Priority pri = Base::waiter.GetPromise().priority;
+    for (size_t i = 0; i < Base::numTasks; i++) {
+        Entry &e = this->tasks[i];
+        e.handler.SetPriority(pri);
+    }
+
+    return true;
+}
+
 
 } // namespace pulse
 
