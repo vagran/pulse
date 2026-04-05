@@ -21,6 +21,13 @@ class TTaskPromise;
 template <typename TRet, bool initialSuspend = true>
 class TTask;
 
+/// Task returning void result.
+using TaskV = TTask<void>;
+
+/// Return this type from non-top-level async functions not meant to be spawned as scheduler tasks.
+template <typename TRet>
+using Awaitable = TTask<TRet, false>;
+
 template <typename TRet>
 class TaskAwaiter;
 
@@ -194,13 +201,27 @@ public:
     static inline AnyTaskAwaiter<NumTasks>
     WhenAny(const etl::span<Task, NumTasks> &tasks);
 
-    template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-    static AllTasksAwaiter<sizeof...(Args) + 1>
-    WhenAll(T task, Args... tasks);
+    /** Wait when all of the provided tasks complete. Arguments may either be tasks or any awaiter
+     * objects. Awaiter objects should have lifetime at least until return awaiter is resumed.
+     */
+    template <class T1, class T2, class... Args>
+    static AllTasksAwaiter<sizeof...(Args) + 2>
+    WhenAll(T1 &&task1, T2 &&task2, Args &&... tasks);
 
-    template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-    static AnyTaskAwaiter<sizeof...(Args) + 1>
-    WhenAny(T task, Args... tasks);
+    /** Wait when any of the provided tasks completes. Arguments may either be tasks or any awaiter
+     * objects. Awaiter objects should have lifetime at least until return awaiter is resumed.
+     */
+    template <class T1, class T2, class... Args>
+    static AnyTaskAwaiter<sizeof...(Args) + 2>
+    WhenAny(T1 &&task1, T2 &&task2, Args &&... tasks);
+
+    /** Helper to wrap awaiters into task. Can also accept Task or TTask and return it as is.
+     * Passed awaiter lifetime should be at least until the returned task is finished (awaiter
+     * resumes).
+     */
+    template <class T>
+    static inline Task
+    Make(T &&obj);
 
 protected:
     friend class TaskPromise;
@@ -280,11 +301,6 @@ public:
     operator co_await() const;
 };
 
-using TaskV = TTask<void>;
-
-/// Return this type from non-top-level async functions.
-template <typename TRet>
-using Awaitable = TTask<TRet, false>;
 
 namespace details {
 
@@ -511,6 +527,13 @@ protected:
         Task target, handler;
     };
 
+    MultipleTasksAwaiterBase() = default;
+
+    // Cannot copy or move awaiter since it has callbacks in tasks wait list installed in the
+    // constructor, which are bound to this instance.
+    MultipleTasksAwaiterBase(const MultipleTasksAwaiterBase &) = delete;
+    MultipleTasksAwaiterBase(MultipleTasksAwaiterBase &&) = delete;
+
     Task waiter;
 
     static void
@@ -628,6 +651,7 @@ private:
     size_t result = NONE;
 };
 
+// /////////////////////////////////////////////////////////////////////////////////////////////////
 
 Task::Task(CoroutineHandle handle):
     handle(handle)
@@ -696,20 +720,63 @@ Task::WhenAny(const etl::span<Task, NumTasks> &tasks)
     return AnyTaskAwaiter(tasks);
 }
 
-template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-AllTasksAwaiter<sizeof...(Args) + 1>
-Task::WhenAll(T task, Args... tasks)
+template <class T1, class T2, class... Args>
+AllTasksAwaiter<sizeof...(Args) + 2>
+Task::WhenAll(T1 &&task1, T2 &&task2, Args &&... tasks)
 {
-    Task _tasks[] = {task, tasks...};
-    return WhenAll(etl::span<Task, sizeof...(Args) + 1>(_tasks));
+    Task _tasks[] = {
+        Task::Make(etl::forward<T1>(task1)),
+        Task::Make(etl::forward<T2>(task2)),
+        Task::Make(etl::forward<Args>(tasks))...
+    };
+    return WhenAll(etl::span<Task, sizeof...(Args) + 2>(_tasks));
 }
 
-template <etl::derived_from<Task> T, etl::derived_from<Task>... Args>
-AnyTaskAwaiter<sizeof...(Args) + 1>
-Task::WhenAny(T task, Args... tasks)
+template <class T1, class T2, class... Args>
+AnyTaskAwaiter<sizeof...(Args) + 2>
+Task::WhenAny(T1 &&task1, T2 &&task2, Args &&... tasks)
 {
-    Task _tasks[] = {task, tasks...};
-    return WhenAny(etl::span<Task, sizeof...(Args) + 1>(_tasks));
+    Task _tasks[] = {
+        Task::Make(etl::forward<T1>(task1)),
+        Task::Make(etl::forward<T2>(task2)),
+        Task::Make(etl::forward<Args>(tasks))...
+    };
+    return WhenAny(etl::span<Task, sizeof...(Args) + 2>(_tasks));
+}
+
+namespace details {
+
+template <class T>
+struct AwaitableWrapper {
+    static inline Awaitable<void>
+    MakeTask(const T &obj)
+    {
+        // Passed awater lifetime should not be less than the task completion, so assuming it is
+        // safe. `await_suspend()` requires non-const reference in most cases.
+        co_await const_cast<T &>(obj);
+    }
+};
+
+template <typename T>
+concept TaskType = etl::derived_from<T, Task>;
+
+template <TaskType T>
+struct AwaitableWrapper<T> {
+    template <class U>
+    static inline Task
+    MakeTask(U &&obj)
+    {
+        return etl::forward<U>(obj);
+    }
+};
+
+} // namespace details
+
+template <class T>
+Task
+Task::Make(T &&obj)
+{
+    return details::AwaitableWrapper<etl::remove_cvref_t<T>>::MakeTask(etl::forward<T>(obj));
 }
 
 void
@@ -758,11 +825,6 @@ TTask<void, initialSuspend>::operator co_await() const
 {
     return Wait();
 }
-
-
-/// For returning from async functions not meant to be spawned as scheduler tasks.
-template <typename TRet>
-using Awaitable = TTask<TRet, false>;
 
 
 template <size_t NumTasks>

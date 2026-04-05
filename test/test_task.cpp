@@ -238,7 +238,8 @@ TEST_CASE("WhenAll") {
         {
             CheckResult(2, "T2:1");
             results.push_back("T3:1");
-            co_await Task::WhenAll(t1, t2);
+            // Check awaiter passing.
+            co_await Task::WhenAll(t1, t2.Wait());
             CheckResult(6, "T2:2");
             results.push_back("T3:2");
         }
@@ -418,7 +419,8 @@ TEST_CASE("WhenAny") {
         {
             REQUIRE(results.empty());
             results.push_back("T3:1");
-            co_await Task::WhenAny(t1, t2);
+            // Check awaiter passing.
+            co_await Task::WhenAny(t1, t2.Wait());
             CheckResult(5, "T1:2");
             results.push_back("T3:2");
         }
