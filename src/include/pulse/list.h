@@ -31,9 +31,12 @@ GetDefaultListItem(TPtr ptr)
     return *ptr;
 }
 
-// Singly-linked list. Weak constraints version for using in TaskPromise.
-template <typename TPtr, auto GetListItem = GetDefaultListItem<TPtr>>
-requires ListItemAccessorWeak<TPtr, GetListItem>
+} // namespace details
+
+
+// Singly-linked list. Weak constraints version for using when *TPtr is not yet fully defined.
+template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
+requires details::ListItemAccessorWeak<TPtr, GetListItem>
 struct ListWeak {
     TPtr head = TPtr();
 
@@ -59,7 +62,7 @@ struct ListWeak {
 };
 
 template <typename TPtr, auto GetListItem>
-requires ListItemAccessorWeak<TPtr, GetListItem>
+requires details::ListItemAccessorWeak<TPtr, GetListItem>
 void
 ListWeak<TPtr, GetListItem>::AddFirst(TPtr item)
 {
@@ -74,7 +77,7 @@ ListWeak<TPtr, GetListItem>::AddFirst(TPtr item)
 }
 
 template <typename TPtr, auto GetListItem>
-requires ListItemAccessorWeak<TPtr, GetListItem>
+requires details::ListItemAccessorWeak<TPtr, GetListItem>
 TPtr
 ListWeak<TPtr, GetListItem>::PopFirst()
 {
@@ -88,7 +91,7 @@ ListWeak<TPtr, GetListItem>::PopFirst()
 }
 
 template <typename TPtr, auto GetListItem>
-requires ListItemAccessorWeak<TPtr, GetListItem>
+requires details::ListItemAccessorWeak<TPtr, GetListItem>
 bool
 ListWeak<TPtr, GetListItem>::Remove(const TPtr &item)
 {
@@ -112,13 +115,11 @@ ListWeak<TPtr, GetListItem>::Remove(const TPtr &item)
     return false;
 }
 
-} // namespace details
-
 
 // Singly-linked list.
 template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
 requires details::ListItemAccessor<TPtr, GetListItem>
-using List = details::ListWeak<TPtr, GetListItem>;
+using List = ListWeak<TPtr, GetListItem>;
 
 
 // Singly-linked list with tail pointer.

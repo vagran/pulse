@@ -319,7 +319,7 @@ public:
     /// Next task when in list, none if last one.
     Task next = nullptr;
     /// Tasks currently awaiting this task finishing.
-    details::ListWeak<Task, details::GetTaskPromise> resultWaiters;
+    ListWeak<Task, details::GetTaskPromise> resultWaiters;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
     /// Task currently queued in runnable queue.
@@ -751,7 +751,7 @@ struct AwaitableWrapper {
     static inline Awaitable<void>
     MakeTask(const T &obj)
     {
-        // Passed awater lifetime should not be less than the task completion, so assuming it is
+        // Passed awater lifetime should not end before the task completion, so assuming it is
         // safe. `await_suspend()` requires non-const reference in most cases.
         co_await const_cast<T &>(obj);
     }
