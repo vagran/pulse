@@ -296,7 +296,7 @@ TEST_CASE("WhenAll - completed") {
         {
             CheckResult(2, "T2:1");
             results.push_back("T3:1");
-            co_await Task::WhenAll(t1, t2);
+            co_await Task::WhenAll(t1, t2.Wait());
             results.push_back("T3:2");
         }
     };
@@ -342,6 +342,7 @@ TEST_CASE("WhenAll - priority") {
         {
             REQUIRE(results.empty());
             results.push_back("T3:1");
+            // Cannot use t.Wait() here since priority is not propagated to awaitable wrapper task.
             co_await Task::WhenAll(t1, t2);
             CheckResult(8, "T2:2");
             results.push_back("T3:2");
@@ -482,7 +483,7 @@ TEST_CASE("WhenAny - completed") {
         {
             CheckResult(2, "T2:1");
             results.push_back("T3:1");
-            co_await Task::WhenAny(t1, t2);
+            co_await Task::WhenAny(t1, t2.Wait());
             CheckResult(3, "T3:1");
             results.push_back("T3:2");
             q.Push();
