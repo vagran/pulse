@@ -204,6 +204,18 @@ struct TailedList {
     /// @return True if found and removed, false if not found.
     bool
     Remove(const TPtr &item);
+
+    details::ListIterator<TPtr, GetListItem>
+    begin() const
+    {
+        return {head};
+    }
+
+    details::ListIterator<TPtr, GetListItem>
+    end() const
+    {
+        return {TPtr()};
+    }
 };
 
 template <typename TPtr, auto GetListItem>
