@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/task.h>
 #include <pulse/token_queue.h>
+#include <pulse/timer.h>
 #include <iostream>
 
 
@@ -211,7 +212,8 @@ TEST_CASE("Priority propagation")
 }
 
 
-TEST_CASE("WhenAll") {
+TEST_CASE("WhenAll")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -273,7 +275,8 @@ TEST_CASE("WhenAll") {
 }
 
 
-TEST_CASE("WhenAll - mixed task/awaiter") {
+TEST_CASE("WhenAll - mixed task/awaiter")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -335,7 +338,8 @@ TEST_CASE("WhenAll - mixed task/awaiter") {
 }
 
 
-TEST_CASE("WhenAll - awaiters") {
+TEST_CASE("WhenAll - awaiters")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -397,7 +401,8 @@ TEST_CASE("WhenAll - awaiters") {
 }
 
 
-TEST_CASE("WhenAll - completed") {
+TEST_CASE("WhenAll - completed")
+{
     struct Tasks {
         static TaskV
         T1()
@@ -439,7 +444,8 @@ TEST_CASE("WhenAll - completed") {
 }
 
 
-TEST_CASE("WhenAll - priority") {
+TEST_CASE("WhenAll - priority")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -517,7 +523,8 @@ TEST_CASE("WhenAll - priority") {
 }
 
 
-TEST_CASE("WhenAny") {
+TEST_CASE("WhenAny")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -582,7 +589,8 @@ TEST_CASE("WhenAny") {
 }
 
 
-TEST_CASE("WhenAny - mixed task/awaiters") {
+TEST_CASE("WhenAny - mixed task/awaiters")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -647,7 +655,8 @@ TEST_CASE("WhenAny - mixed task/awaiters") {
 }
 
 
-TEST_CASE("WhenAny - awaiters") {
+TEST_CASE("WhenAny - awaiters")
+{
     struct Tasks {
         static TaskV
         T1(TokenQueue<> &q)
@@ -708,7 +717,8 @@ TEST_CASE("WhenAny - awaiters") {
 }
 
 
-TEST_CASE("WhenAny - completed") {
+TEST_CASE("WhenAny - completed")
+{
     struct Tasks {
         static TaskV
         T1()
@@ -753,4 +763,47 @@ TEST_CASE("WhenAny - completed") {
     Task::RunSome();
 
     CheckResult(5, "T2:2");
+}
+
+
+TEST_CASE("WhenAny - stress")
+{
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            Timer timer;
+
+            while (true) {
+                timer.ExpiresAfter(10);
+                size_t idx = co_await Task::WhenAny(q, timer);
+                REQUIRE(idx == 0);
+                if (q.Peek() >= 1000) {
+                    break;
+                }
+            }
+
+            timer.Cancel();
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            for (int i = 0; i < 1010; i++) {
+                q.Push();
+                co_await Task::Switch();
+            }
+        }
+    };
+
+    TokenQueue<> q;
+
+    auto t1 = Task::Spawn(Tasks::T1(q));
+
+    auto t2 = Task::Spawn(Tasks::T2(q));
+
+    Task::RunSome();
+
+    REQUIRE(t1.IsFinished());
+    REQUIRE(t2.IsFinished());
 }

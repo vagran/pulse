@@ -3,6 +3,7 @@
 
 #include <pulse/task.h>
 #include <pulse/port.h>
+#include <etl/optional.h>
 
 
 namespace pulse {
@@ -46,6 +47,9 @@ public:
     TokenQueueAwaiter<TCounter>
     Take();
 
+    TCounter
+    Peek() const;
+
     TokenQueueAwaiter<TCounter>
     operator co_await();
 
@@ -81,6 +85,13 @@ public:
     TCounter
     await_resume() const
     {
+        return *result;
+    }
+
+    /** @return Obtained token value, nullopt if not ready. */
+    etl::optional<TCounter>
+    GetResult() const
+    {
         return result;
     }
 
@@ -88,7 +99,7 @@ private:
     friend class TokenQueue<TCounter>;
 
     TokenQueue<TCounter> &queue;
-    TCounter result;
+    etl::optional<TCounter> result;
     Task task;
 };
 
@@ -137,6 +148,14 @@ TokenQueueAwaiter<TCounter>
 TokenQueue<TCounter>::Take()
 {
     return TokenQueueAwaiter<TCounter>(*this);
+}
+
+template <etl::integral TCounter>
+TCounter
+TokenQueue<TCounter>::Peek() const
+{
+    CriticalSection cs;
+    return value - numTokens;
 }
 
 template <etl::integral TCounter>

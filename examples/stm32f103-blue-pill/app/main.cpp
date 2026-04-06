@@ -217,7 +217,7 @@ HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     }
 }
 
-extern "C" int
+int
 main()
 {
     pulse_add_heap_region(heap, sizeof(heap));
