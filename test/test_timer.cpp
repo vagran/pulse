@@ -298,6 +298,8 @@ TEST_CASE("Cancel timer on re-schedule")
     };
 
     TestTimer({TestEntry{MakeDelay1, 2, true}, TestEntry{MakeDelay2, 2}});
+
+    timer1->Cancel();
 }
 
 

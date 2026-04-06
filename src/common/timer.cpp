@@ -238,6 +238,12 @@ Timer::Timer(Timer &&other) noexcept:
 Timer::~Timer()
 {
     PULSE_ASSERT(refCounter == 0);
+    if (state == SCHEDULED) {
+        // May be called from Heap destructor when in unit tests. In this case it should not be
+        // removed from timers ring. Reference counter is zero so there is definitely no external
+        // links to this instance.
+        state = INITIAL;
+    }
     CancelImpl(true);
 }
 
