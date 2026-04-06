@@ -101,6 +101,14 @@
 #endif
 
 
+/** pulseConfig_MALLOC_FAILED_PANIC
+ * Allow panic if pulse_malloc() or pulse_realloc() fails to allocate memory.
+ */
+#ifndef pulseConfig_MALLOC_FAILED_PANIC
+#   define pulseConfig_MALLOC_FAILED_PANIC 0
+#endif
+
+
 /* pulseConfig_ASSERT
  * Takes condition to check. May apply some action if condition fails.
  */

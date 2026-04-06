@@ -23,4 +23,6 @@ void Panic(const char *msg);
 
 #define pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY  191
 
+#define pulseConfig_MALLOC_FAILED_PANIC             1
+
 #endif /* PULSE_CONFIG_H */

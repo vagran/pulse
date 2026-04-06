@@ -619,6 +619,12 @@ DebugRegisterHeapRegion(void *region, size_t size)
 
 #endif // pulseConfig_MALLOC_DEBUG
 
+#if pulseConfig_MALLOC_FAILED_PANIC
+#define ALLOC_FAIL(msg)     PULSE_PANIC(msg)
+#else
+#define ALLOC_FAIL(msg)
+#endif
+
 } // anonymous namespace
 
 
@@ -637,6 +643,7 @@ pulse_malloc(size_t size)
     BlockHeader *block = AllocateBlock(size);
 
     if (!block) {
+        ALLOC_FAIL("malloc failed");
         return nullptr;
     }
     return block->data;
@@ -669,6 +676,7 @@ pulse_realloc(void *ptr, size_t newSize)
     }
 
     if (newSize > MAX_ALLOC_SIZE) {
+        ALLOC_FAIL("realloc failed");
         return nullptr;
     }
     if (newSize < MIN_ALLOC_SIZE) {
@@ -750,6 +758,7 @@ pulse_realloc(void *ptr, size_t newSize)
         // No merging, try allocating new block and move there.
         BlockHeader *newBlock = AllocateBlock(newSize);
         if (!newBlock) {
+            ALLOC_FAIL("realloc failed");
             return nullptr;
         }
         memcpy(newBlock->data, block->data, curSize);
