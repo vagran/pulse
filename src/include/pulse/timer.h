@@ -117,7 +117,10 @@ public:
      * @return Number of cancelled waiters.
      */
     int
-    Cancel();
+    Cancel()
+    {
+        return CancelImpl(false);
+    }
 
     static constexpr bool
     IsBefore(TickCount t1, TickCount t2)
@@ -157,24 +160,38 @@ private:
     friend struct details::TimerEntry;
     friend class TimerAwaiter;
 
-    TaskList waiters;
+    template <typename TPtr, auto GetListItem>
+    requires details::ListItemAccessorWeak<TPtr, GetListItem>
+    friend class ListIterator;
+
+    enum State: uint8_t {
+        INITIAL,
+        SCHEDULED,
+        FIRED,
+        CANCELLED
+    };
+
+    ListWeak<TimerAwaiter *> waiters;
     // Index in heap when scheduled.
     SizedUint<etl::bit_width(static_cast<uintmax_t>(pulseConfig_MAX_TIMERS))> heapIdx;
     uint8_t refCounter = 0;
     uint8_t dynamicAlloc:1 = 0,
-    /// Currently scheduled in timers ring.
-            isScheduled:1 = 0,
-    /// Was set and fired.
-            isFired:1 = 0,
-    /// Was set and cancelled.
-            isCanceled:1 = 0,
-    /// Previous interval was expired.
-            isPrevFired:1 = 0;
+            state: 2 = INITIAL;
+
+    /** @param force Cancel waiters in INITIAL state if true. */
+    int
+    CancelImpl(bool force);
+
+    State
+    GetState() const
+    {
+        return static_cast<State>(state);
+    }
 
     bool
     IsReady() const
     {
-        return isFired || isCanceled;
+        return state == FIRED || state == CANCELLED;
     }
 
     void
@@ -183,9 +200,9 @@ private:
     void
     Fire();
 
-    /// @return Number of queued tasks.
+    /// @return Number of affected awaiters.
     int
-    ScheduleTasks();
+    ScheduleAwaiters();
 };
 
 
@@ -207,6 +224,10 @@ public:
 
 class TimerAwaiter {
 public:
+    TimerAwaiter *next = nullptr;
+    
+    ~TimerAwaiter();
+
     bool
     await_ready() const;
 
@@ -219,11 +240,21 @@ public:
 private:
     friend class Timer;
 
-    Timer::Handle timer;
+    enum class State: uint8_t {
+        SCHEDULED,
+        FIRED,
+        CANCELLED
+    };
 
-    TimerAwaiter(Timer::Handle timer):
-        timer(etl::move(timer))
-    {}
+    Timer::Handle timer;
+    Task waiter;
+    State state;
+
+    TimerAwaiter() = delete;
+    TimerAwaiter(const TimerAwaiter &) = delete;
+    TimerAwaiter(TimerAwaiter &&) = delete;
+
+    TimerAwaiter(Timer::Handle timer);
 };
 
 

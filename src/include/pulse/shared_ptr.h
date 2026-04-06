@@ -160,6 +160,11 @@ public:
         etl::swap(ptr, other.ptr);
     }
 
+    operator bool() const
+    {
+        return ptr;
+    }
+
     T &
     operator *() const
     {

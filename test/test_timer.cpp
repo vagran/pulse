@@ -325,7 +325,6 @@ TEST_CASE("Move waited timer")
     Timer timer2(2);
     std::optional<Timer> timer3;
 
-
     auto MakeDelay1 = [&timer1]() -> Awaitable<bool> {
         co_return co_await timer1;
     };
@@ -337,7 +336,7 @@ TEST_CASE("Move waited timer")
         co_return co_await timer3->Wait();
     };
 
-    TestTimer({TestEntry{MakeDelay1, 2, true}, TestEntry{MakeDelay2, 10}});
+    TestTimer({TestEntry{MakeDelay1, 10}, TestEntry{MakeDelay2, 10}});
 }
 
 

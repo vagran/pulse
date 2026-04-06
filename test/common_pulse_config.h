@@ -14,7 +14,7 @@ extern "C" void Panic(const char *msg);
 
 #define pulseConfig_ASSERT(x) do { \
     if (!(x)) { \
-        Panic("pulseConfig_ASSERT failed: " PULSE_STR(x)); \
+        Panic("pulseConfig_ASSERT failed [" __FILE__ ":" PULSE_STR(__LINE__) "]: " PULSE_STR(x)); \
     } \
 } while (false)
 

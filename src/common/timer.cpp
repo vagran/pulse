@@ -182,7 +182,7 @@ TimerEntry::Fire()
     if (isTimer) {
         GetTimer()->Fire();
     } else if (isTask) {
-         GetTask().Schedule();
+        GetTask().Schedule();
     } else {
         PULSE_PANIC("Empty timer entry");
     }
@@ -222,27 +222,23 @@ Timer::Timer(Duration expiresAfter):
 {}
 
 Timer::Timer(Timer &&other) noexcept:
+    waiters(etl::move(other.waiters)),
     heapIdx(other.heapIdx),
-    isScheduled(other.isScheduled),
-    isFired(other.isFired),
-    isCanceled(other.isCanceled),
-    isPrevFired(other.isPrevFired)
+    state(other.state)
 {
-    if (other.isScheduled) {
+    if (state == State::SCHEDULED) {
         timers.Item(heapIdx).ReplaceTimer(this);
+        for (auto waiter: waiters) {
+            waiter->timer = this;
+        }
     }
-    other.isScheduled = 0;
-    other.isFired = 0;
-    other.isCanceled = 1;
-    other.isPrevFired = 0;
-    // Cancel any waiters on source timer
-    other.ScheduleTasks();
+    other.state = State::INITIAL;
 }
 
 Timer::~Timer()
 {
     PULSE_ASSERT(refCounter == 0);
-    Cancel();
+    CancelImpl(true);
 }
 
 int
@@ -260,46 +256,50 @@ Timer::ExpiresAfter(Duration delay)
 }
 
 int
-Timer::Cancel()
+Timer::CancelImpl(bool force)
 {
-    if (isScheduled) {
-        timers.Remove(heapIdx);
-        isScheduled = 0;
+    State state = GetState();
+    if ((!force && state != SCHEDULED) || (force && state != SCHEDULED && state != INITIAL)) {
+        return 0;
     }
-    isCanceled = 1;
-    return ScheduleTasks();
+    if (state == SCHEDULED) {
+        timers.Remove(heapIdx);
+    }
+    this->state = CANCELLED;
+    return ScheduleAwaiters();
 }
 
 void
 Timer::Schedule(TickCount time)
 {
-    PULSE_ASSERT(!isScheduled);
-    isScheduled = 1;
-    isPrevFired = isFired;
-    isFired = 0;
-    isCanceled = 0;
+    PULSE_ASSERT(state != SCHEDULED);
+    state = SCHEDULED;
     ScheduleTimer(this, time);
 }
 
 void
 Timer::Fire()
 {
-    isScheduled = 0;
-    isFired = 1;
-    ScheduleTasks();
+    state = FIRED;
+    ScheduleAwaiters();
 }
 
 int
-Timer::ScheduleTasks()
+Timer::ScheduleAwaiters()
 {
+    State state = GetState();
+    PULSE_ASSERT(state == FIRED || state == CANCELLED);
     int n = 0;
     while (true) {
-        Task task = waiters.PopFirst();
-        if (!task) {
+        TimerAwaiter *awaiter = waiters.PopFirst();
+        if (!awaiter) {
             break;
         }
+        PULSE_ASSERT(awaiter->waiter);
         n++;
-        task.Schedule();
+        awaiter->state = state == FIRED ?
+            TimerAwaiter::State::FIRED : TimerAwaiter::State::CANCELLED;
+        awaiter->waiter.Schedule();
     }
     return n;
 }
@@ -327,35 +327,55 @@ DelayAwaiter::await_ready() const
 void
 DelayAwaiter::await_suspend(Task::CoroutineHandle handle)
 {
-    ScheduleTask(Task(handle), time);
+    ScheduleTask(handle, time);
+}
+
+TimerAwaiter::TimerAwaiter(Timer::Handle timer):
+    timer(etl::move(timer))
+{
+    auto ts = this->timer->GetState();
+    switch (ts) {
+    case Timer::State::FIRED:
+        state = State::FIRED;
+        break;
+    case Timer::State::CANCELLED:
+        state = State::CANCELLED;
+        break;
+    default:
+        state = State::SCHEDULED;
+        this->timer->waiters.AddFirst(this);
+        break;
+    }
+}
+
+TimerAwaiter::~TimerAwaiter()
+{
+    if (state == State::SCHEDULED) {
+        timer->waiters.Remove(this);
+    }
 }
 
 bool
 TimerAwaiter::await_ready() const
 {
-    return timer->IsReady();
+    return state != State::SCHEDULED;
 }
 
 bool
 TimerAwaiter::await_suspend(Task::CoroutineHandle handle)
 {
-    Timer &t = *timer;
-    // Timers fired from scheduler, not from ISR when just time is incremented, so it is safe to
-    // check without critical section.
-    if (t.IsReady()) {
+    if (state != State::SCHEDULED) {
         return false;
     }
-    t.waiters.AddFirst(handle);
+    waiter = handle;
     return true;
 }
 
 bool
 TimerAwaiter::await_resume() const
 {
-    if (timer->isScheduled) {
-        return timer->isPrevFired;
-    }
-    return timer->isFired;
+    PULSE_ASSERT(state != State::SCHEDULED);
+    return state == State::FIRED;
 }
 
 void

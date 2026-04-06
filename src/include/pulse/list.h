@@ -31,6 +31,38 @@ GetDefaultListItem(TPtr ptr)
     return *ptr;
 }
 
+template <typename TPtr, auto GetListItem>
+requires details::ListItemAccessorWeak<TPtr, GetListItem>
+class ListIterator {
+public:
+    ListIterator(TPtr item):
+        curItem(item)
+    {}
+
+    bool
+    operator ==(const ListIterator<TPtr, GetListItem> &other) const
+    {
+        return curItem == other.curItem;
+    }
+
+    void
+    operator ++()
+    {
+        if (curItem) {
+            curItem = GetListItem(curItem).next;
+        }
+    }
+
+    TPtr
+    operator *() const
+    {
+        return curItem;
+    }
+
+private:
+    TPtr curItem;
+};
+
 } // namespace details
 
 
@@ -59,6 +91,18 @@ struct ListWeak {
     /// @return True if found and removed, false if not found.
     bool
     Remove(const TPtr &item);
+
+    details::ListIterator<TPtr, GetListItem>
+    begin() const
+    {
+        return {head};
+    }
+
+    details::ListIterator<TPtr, GetListItem>
+    end() const
+    {
+        return {TPtr()};
+    }
 };
 
 template <typename TPtr, auto GetListItem>
