@@ -36,6 +36,8 @@ public:
 
     TokenQueue(const TokenQueue &) = delete;
 
+    ~TokenQueue();
+
     /** Push the specified number of tokens into the queue. Can be called from ISR. */
     void
     Push(TCounter n = 1);
@@ -61,9 +63,14 @@ class TokenQueueAwaiter {
 public:
     TokenQueueAwaiter<TCounter> *next = nullptr;
 
+    TokenQueueAwaiter(const TokenQueueAwaiter &) = delete;
+    TokenQueueAwaiter(TokenQueueAwaiter &&) = delete;
+
     TokenQueueAwaiter(TokenQueue<TCounter> &queue):
         queue(queue)
     {}
+
+    ~TokenQueueAwaiter();
 
     bool
     await_ready();
@@ -87,6 +94,19 @@ private:
 
 
 template <etl::integral TCounter>
+TokenQueue<TCounter>::~TokenQueue()
+{
+    // Cannot use iterator since item->next may become invalid if waiter destructed.
+    TokenQueueAwaiter<TCounter> *next = waiters.head;
+    while (next) {
+        auto waiter = next;
+        next = waiter->next;
+        Task task = etl::move(waiter->task);
+        waiter->task.ReleaseHandle();
+    }
+}
+
+template <etl::integral TCounter>
 void
 TokenQueue<TCounter>::Push(TCounter n)
 {
@@ -102,6 +122,7 @@ TokenQueue<TCounter>::Push(TCounter n)
             value++;
         }
         w->task.Schedule();
+        w->task.ReleaseHandle();
     }
     value += n;
     if (numTokens + n >= maxTokens) {
@@ -125,6 +146,14 @@ TokenQueue<TCounter>::operator co_await()
     return TokenQueueAwaiter<TCounter>(*this);
 }
 
+
+template <etl::integral TCounter>
+TokenQueueAwaiter<TCounter>::~TokenQueueAwaiter()
+{
+    if (task) {
+        queue.waiters.Remove(this);
+    }
+}
 
 template <etl::integral TCounter>
 bool

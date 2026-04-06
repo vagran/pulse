@@ -62,3 +62,26 @@ TEST_CASE("Token queue overflow")
 
     REQUIRE(t3.IsFinished());
 }
+
+
+TEST_CASE("WhenAny with TokenQueue", "[single]")
+{
+    TokenQueue<> q1, q2;
+
+    auto Task1 = [&]() -> TTask<int> {
+        co_return co_await Task::WhenAny(q1, q2);
+        // q2 awaiter is never resumed. It should not leak which should be visible by Valgrind.
+    };
+
+    auto Task2 = [&](TTask<int> t1) -> TaskV {
+        q2.Push();
+        REQUIRE(co_await t1 == 1);
+    };
+
+    auto t1 = Task::Spawn(Task1());
+    auto t2 = Task::Spawn(Task2(t1));
+
+    Task::RunSome();
+
+    REQUIRE(t2.IsFinished());
+}

@@ -783,10 +783,14 @@ void
 Task::ReleaseHandle()
 {
     if (handle) {
+        auto h = handle;
         if (GetPromise().ReleaseRef()) {
-            handle.destroy();
+            // Change state first to make iti visible to coroutine frame destructors
+            handle = CoroutineHandle();
+            h.destroy();
+        } else {
+            handle = CoroutineHandle();
         }
-        handle = CoroutineHandle();
     }
 }
 
@@ -852,7 +856,7 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &task
         auto h = handler(i);
         if (e.target) {
             // If was not instantly released in handler.
-            e.handler = h;
+            e.handler = etl::move(h);
         }
     }
 }
@@ -903,7 +907,7 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks)
         auto h = handler(i);
         if (e.target) {
             // If was not instantly released in handler.
-            e.handler = h;
+            e.handler = etl::move(h);
         } else {
             PULSE_ASSERT(result != NONE);
             Base::Finish();
