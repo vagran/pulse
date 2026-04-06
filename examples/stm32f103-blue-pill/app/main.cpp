@@ -123,20 +123,20 @@ IsButtonPressed()
 
 Timer blinkTimer;
 int blinkInterval = 0;
-TokenQueue buttonEvents;
+TokenQueue buttonEvents(5);
 
 Awaitable<void>
 ConfirmSwitch(int interval)
 {
     LedOff();
-    co_await Timer::Delay(etl::chrono::milliseconds(200));
+    co_await Timer::Delay(etl::chrono::milliseconds(500));
     for (int i = 0; i <= interval; i++) {
         LedOn();
         co_await Timer::Delay(etl::chrono::milliseconds(100));
         LedOff();
         co_await Timer::Delay(etl::chrono::milliseconds(200));
     }
-    co_await Timer::Delay(etl::chrono::milliseconds(300));
+    co_await Timer::Delay(etl::chrono::milliseconds(500));
 }
 
 TaskV
@@ -155,6 +155,7 @@ BlinkTask()
             // Timer cancelled, so interval is definitely changed
             interval = blinkInterval;
             co_await ConfirmSwitch(interval);
+            LedOn();
         } else {
             LedToggle();
         }
@@ -173,7 +174,6 @@ ButtonTask()
         bool pressed = false;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            //XXX cancel needed for awaiters
             size_t idx = co_await Task::WhenAny(buttonEvents, jitterTimer);
             if (idx == 0) {
                 // Button pressed again, restart anti-jitter delay
