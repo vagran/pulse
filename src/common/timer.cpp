@@ -305,6 +305,7 @@ Timer::ScheduleAwaiters()
         n++;
         awaiter->state = state == FIRED ?
             TimerAwaiter::State::FIRED : TimerAwaiter::State::CANCELLED;
+        awaiter->timer.Reset();
         awaiter->waiter.Schedule();
     }
     return n;
@@ -336,10 +337,9 @@ DelayAwaiter::await_suspend(Task::CoroutineHandle handle)
     ScheduleTask(handle, time);
 }
 
-TimerAwaiter::TimerAwaiter(Timer::Handle timer):
-    timer(etl::move(timer))
+TimerAwaiter::TimerAwaiter(Timer::Handle timer)
 {
-    auto ts = this->timer->GetState();
+    auto ts = timer->GetState();
     switch (ts) {
     case Timer::State::FIRED:
         state = State::FIRED;
@@ -349,7 +349,8 @@ TimerAwaiter::TimerAwaiter(Timer::Handle timer):
         break;
     default:
         state = State::SCHEDULED;
-        this->timer->waiters.AddFirst(this);
+        timer->waiters.AddFirst(this);
+        this->timer = etl::move(timer);
         break;
     }
 }
@@ -357,6 +358,7 @@ TimerAwaiter::TimerAwaiter(Timer::Handle timer):
 TimerAwaiter::~TimerAwaiter()
 {
     if (state == State::SCHEDULED) {
+        PULSE_ASSERT(timer);
         timer->waiters.Remove(this);
     }
 }

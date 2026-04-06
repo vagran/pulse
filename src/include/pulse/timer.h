@@ -251,6 +251,7 @@ private:
         CANCELLED
     };
 
+    // Set to null when completes
     Timer::Handle timer;
     Task waiter;
     State state;
