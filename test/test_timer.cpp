@@ -353,7 +353,7 @@ TEST_CASE("Move time forward")
         co_return co_await timer1;
     };
 
-    auto MakeDelay2 = [timer1, timer2]() -> Awaitable<bool> {
+    auto MakeDelay2 = [timer2]() -> Awaitable<bool> {
         bool ret = co_await timer2;
         REQUIRE(Timer::GetTime() == 2);
         Timer::SetTime(20);
@@ -361,4 +361,24 @@ TEST_CASE("Move time forward")
     };
 
     TestTimer({TestEntry{MakeDelay1, 20}, TestEntry{MakeDelay2, 20}});
+}
+
+
+TEST_CASE("Timer non-resumed awaiter clean up")
+{
+    Timer::SetTime(0);
+
+    auto timer1 = Timer::Create(10);
+    auto timer2 = Timer::Create(2);
+
+    auto MakeDelay = [timer1, timer2]() -> Awaitable<bool> {
+        auto awaitable = timer2->Wait();
+        size_t idx = co_await Task::WhenAny(timer1, awaitable);
+        REQUIRE(idx == 1);
+        co_return *awaitable.GetResult();
+    };
+
+    TestTimer({TestEntry{MakeDelay, 2}});
+
+    timer1->Cancel();
 }

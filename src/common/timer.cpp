@@ -384,6 +384,15 @@ TimerAwaiter::await_resume() const
     return state == State::FIRED;
 }
 
+etl::optional<bool>
+TimerAwaiter::GetResult() const
+{
+    if (state == State::SCHEDULED) {
+        return etl::nullopt;
+    }
+    return state == State::FIRED;
+}
+
 void
 PulseTimerTick()
 {

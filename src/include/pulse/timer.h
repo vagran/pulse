@@ -9,6 +9,7 @@
 #include <pulse/task.h>
 #include <pulse/compare.h>
 #include <etl/chrono.h>
+#include <etl/optional.h>
 
 
 #ifndef pulseConfig_TICK_FREQ
@@ -225,7 +226,7 @@ public:
 class TimerAwaiter {
 public:
     TimerAwaiter *next = nullptr;
-    
+
     ~TimerAwaiter();
 
     bool
@@ -236,6 +237,10 @@ public:
 
     bool
     await_resume() const;
+
+    /** @return True if fired, false if cancelled, nullopt if not ready. */
+    etl::optional<bool>
+    GetResult() const;
 
 private:
     friend class Timer;
