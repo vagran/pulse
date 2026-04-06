@@ -17,7 +17,7 @@ include_directories(${CMAKE_SOURCE_DIR})
 
 file(GLOB SOURCES "*.cpp" "common/*.cpp")
 
-find_package(Catch2 REQUIRED)
+find_package(Catch2 3 REQUIRED)
 
 add_subdirectory("${CMAKE_SOURCE_DIR}/../modules/etl" "${CMAKE_BINARY_DIR}/etl")
 

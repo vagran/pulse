@@ -215,7 +215,7 @@ TEST_CASE("Lifetime")
     {
         Heap<Tracker, TrackerCmp, N, TrackerSetIndex> h;
 
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             REQUIRE(h.Insert(i));
         }
 
@@ -241,13 +241,13 @@ TEST_CASE("Remove")
     {
         Heap<Tracker, TrackerCmp, N, TrackerSetIndex> h;
 
-        for (int i = 0; i < N; i++) {
+        for (size_t i = 0; i < N; i++) {
             REQUIRE(h.Insert(i));
         }
 
-        std::vector<int> removedIdx{3, 17, 5, 15, 10};
-        std::set<int> removed{};
-        for (int idx: removedIdx) {
+        std::vector<size_t> removedIdx{3, 17, 5, 15, 10};
+        std::set<size_t> removed{};
+        for (size_t idx: removedIdx) {
             Tracker &t = h.Item(idx);
             REQUIRE(idx == t.index);
             removed.emplace(*t.value);
@@ -255,7 +255,7 @@ TEST_CASE("Remove")
         }
         REQUIRE(h.Size() == N - removed.size());
 
-        for (int idx = 0; idx < h.Size(); idx++) {
+        for (size_t idx = 0; idx < h.Size(); idx++) {
             REQUIRE(idx == h.Item(idx).index);
         }
 

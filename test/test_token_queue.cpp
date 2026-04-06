@@ -64,7 +64,7 @@ TEST_CASE("Token queue overflow")
 }
 
 
-TEST_CASE("WhenAny with TokenQueue", "[single]")
+TEST_CASE("WhenAny with TokenQueue")
 {
     TokenQueue<> q1, q2;
 

@@ -239,7 +239,131 @@ TEST_CASE("WhenAll") {
             CheckResult(2, "T2:1");
             results.push_back("T3:1");
             // Check awaiter passing.
+            co_await Task::WhenAll(t1, t2);
+            CheckResult(6, "T2:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2)
+        {
+            CheckResult(3, "T3:1");
+            results.push_back("T4:1");
+            q1.Push();
+            q2.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1, q2;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2));
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+
+    Task::RunSome();
+
+    CheckResult(7, "T3:2");
+}
+
+
+TEST_CASE("WhenAll - mixed task/awaiter") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(5, "T1:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            // Check awaiter passing.
             co_await Task::WhenAll(t1, t2.Wait());
+            CheckResult(6, "T2:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2)
+        {
+            CheckResult(3, "T3:1");
+            results.push_back("T4:1");
+            q1.Push();
+            q2.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1, q2;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2));
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+
+    Task::RunSome();
+
+    CheckResult(7, "T3:2");
+}
+
+
+TEST_CASE("WhenAll - awaiters") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(5, "T1:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            // Check awaiter passing.
+            co_await Task::WhenAll(t1.Wait(), t2.Wait());
             CheckResult(6, "T2:2");
             results.push_back("T3:2");
         }
@@ -421,6 +545,71 @@ TEST_CASE("WhenAny") {
             REQUIRE(results.empty());
             results.push_back("T3:1");
             // Check awaiter passing.
+            co_await Task::WhenAny(t1, t2);
+            CheckResult(5, "T1:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2)
+        {
+            CheckResult(3, "T2:1");
+            results.push_back("T4:1");
+            q1.Push();
+            co_await Task::Switch();
+            CheckResult(6, "T3:2");
+            results.push_back("T4:2");
+            q2.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1, q2;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2), 0);
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+
+    Task::RunSome();
+
+    CheckResult(8, "T2:2");
+}
+
+
+TEST_CASE("WhenAny - mixed task/awaiters") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            CheckResult(1, "T3:1");
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(2, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(7, "T4:2");
+            results.push_back("T2:2");
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T3:1");
+            // Check awaiter passing.
             co_await Task::WhenAny(t1, t2.Wait());
             CheckResult(5, "T1:2");
             results.push_back("T3:2");
@@ -455,6 +644,67 @@ TEST_CASE("WhenAny") {
     Task::RunSome();
 
     CheckResult(8, "T2:2");
+}
+
+
+TEST_CASE("WhenAny - awaiters") {
+    struct Tasks {
+        static TaskV
+        T1(TokenQueue<> &q)
+        {
+            CheckResult(1, "T3:1");
+            results.push_back("T1:1");
+            co_await q;
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(2, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            // should not be reached
+            FAIL();
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T3:1");
+            // Check awaiter passing.
+            co_await Task::WhenAny(t1.Wait(), t2.Wait());
+            CheckResult(5, "T1:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1)
+        {
+            CheckResult(3, "T2:1");
+            results.push_back("T4:1");
+            q1.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1, q2;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2), 0);
+
+    auto t4 = Task::Spawn(Tasks::T4(q1));
+
+    Task::RunSome();
+
+    CheckResult(6, "T3:2");
 }
 
 

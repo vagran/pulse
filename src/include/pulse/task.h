@@ -615,7 +615,7 @@ public:
 
 private:
     using Base = details::MultipleTasksAwaiter<NumTasks>;
-    using Entry = Base::Entry;
+    using Entry = typename Base::Entry;
 
     size_t numLeft;
 };
@@ -644,7 +644,7 @@ public:
 
 private:
     using Base = details::MultipleTasksAwaiter<NumTasks>;
-    using Entry = Base::Entry;
+    using Entry = typename Base::Entry;
 
     static constexpr size_t NONE = etl::numeric_limits<size_t>::max();
 
@@ -836,24 +836,28 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &task
     details::MultipleTasksAwaiter<NumTasks>(tasks),
     numLeft(Base::numTasks)
 {
-    auto handler = [this](size_t index) -> Awaitable<void> {
-        Entry &e = this->tasks[index];
+    // It is observed that just capturing `this` by value (like `[this]`) may not work in GCC for
+    // some reason - captured `this` value is not preserved across suspension point. At the same
+    // time it works flawlessly in Clang. So use workaround here with `self` variable.
+    auto handler = [](size_t index, decltype(this) self) -> Awaitable<void> {
+        Entry &e = self->tasks[index];
 
         co_await e.target;
 
         e.target.ReleaseHandle();
         e.handler.ReleaseHandle();
 
-        numLeft--;
-        if (numLeft == 0 && Base::waiter) {
-            Base::waiter.Schedule();
+        self->numLeft--;
+        if (self->numLeft == 0 && self->waiter) {
+            self->waiter.Schedule();
         }
     };
 
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
         e.target = tasks[i];
-        auto h = handler(i);
+        PULSE_ASSERT(e.target);
+        auto h = handler(i, this);
         if (e.target) {
             // If was not instantly released in handler.
             e.handler = etl::move(h);
@@ -884,27 +888,31 @@ template <size_t NumTasks>
 AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks):
     details::MultipleTasksAwaiter<NumTasks>(tasks)
 {
-    auto handler = [this](size_t index) -> Awaitable<void> {
-        Entry &e = this->tasks[index];
+    // It is observed that just capturing `this` by value (like `[this]`) may not work in GCC for
+    // some reason - captured `this` value is not preserved across suspension point. At the same
+    // time it works flawlessly in Clang. So use workaround here with `self` variable.
+    auto handler = [](size_t index, decltype(this) self) -> Awaitable<void> {
+        Entry &e = self->tasks[index];
 
         co_await e.target;
 
         e.target.ReleaseHandle();
         e.handler.ReleaseHandle();
 
-        if (result != NONE) {
+        if (self->result != NONE) {
             co_return;
         }
-        result = index;
-        if (Base::waiter) {
-            Base::waiter.Schedule();
+        self->result = index;
+        if (self->waiter) {
+            self->waiter.Schedule();
         }
     };
 
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
         e.target = tasks[i];
-        auto h = handler(i);
+        PULSE_ASSERT(e.target);
+        auto h = handler(i, this);
         if (e.target) {
             // If was not instantly released in handler.
             e.handler = etl::move(h);
@@ -941,7 +949,7 @@ AnyTaskAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
 // Bind TaskPromise to Task coroutine type.
 template<typename TRet, bool initialSuspend, typename... Args>
 struct std::coroutine_traits<pulse::TTask<TRet, initialSuspend>, Args...> {
-    using promise_type = pulse::TTask<TRet, initialSuspend>::TPromise;
+    using promise_type = typename pulse::TTask<TRet, initialSuspend>::TPromise;
 };
 
 #endif /* TASK_H */

@@ -16,7 +16,7 @@ struct coroutine_traits_base
 template<class R, class... Args>
 requires requires { typename R::promise_type; }
 struct coroutine_traits_base <R, Args...> {
-    using promise_type = R::promise_type;
+    using promise_type = typename R::promise_type;
 };
 
 } // namespace details
@@ -78,6 +78,12 @@ struct coroutine_handle<void> {
     done() const
     {
         return __builtin_coro_done(framePtr);
+    }
+
+    constexpr void *
+    address() const noexcept
+    {
+        return framePtr;
     }
 };
 
