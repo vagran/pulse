@@ -9,6 +9,7 @@
 #include <etl/bit.h>
 #include <etl/memory.h>
 #include <etl/span.h>
+#include <etl/invoke.h>
 
 
 namespace pulse {
@@ -36,6 +37,28 @@ class AllTasksAwaiter;
 
 template <size_t NumTasks = etl::dynamic_extent>
 class AnyTaskAwaiter;
+
+
+namespace details {
+
+/// Function suitable for spawning tasks.
+template <typename F, typename TRet, typename... Args>
+concept AsyncTaskFunction = etl::is_invocable_r_v<TTask<TRet>, F, Args...>;
+
+template <typename T>
+struct TaskTraits {
+    static constexpr bool isTask = false;
+};
+
+template <typename TRet_, bool initialSuspend_>
+struct TaskTraits<TTask<TRet_, initialSuspend_>> {
+    static constexpr bool isTask = true;
+
+    using TRet = TRet_;
+    static constexpr bool initialSuspend = initialSuspend_;
+};
+
+} // namespace details
 
 
 /// Smart pointer for coroutine frame.
@@ -135,9 +158,7 @@ public:
         return handle;
     }
 
-    /** Enqueue this task into ready tasks queue according to its current priority. Can be called
-     * from ISR.
-     */
+    /** Enqueue this task into ready tasks queue according to its current priority. */
     void
     Schedule() const &;
 
@@ -154,6 +175,76 @@ public:
     static TTask<TRet, true>
     Spawn(TTask<TRet, true> task, Priority priority = LOWEST_PRIORITY)
     {
+        SpawnImpl(task, priority);
+        return etl::move(task);
+    }
+
+    /** Spawn new task by providing task function.
+     * @return Created task.
+     */
+    template <typename F, typename... Args>
+    requires details::AsyncTaskFunction<F,
+        typename details::TaskTraits<etl::invoke_result_t<F, Args...>>::TRet, Args...>
+    static auto
+    Spawn(F &&func, Args &&... args)
+    {
+        auto task = etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+        SpawnImpl(task, LOWEST_PRIORITY);
+        return etl::move(task);
+    }
+
+    /** Spawn new task by providing task function.
+     * @return Created task.
+     */
+    template <typename F, typename... Args>
+    requires details::AsyncTaskFunction<F,
+        typename details::TaskTraits<etl::invoke_result_t<F, Args...>>::TRet, Args...>
+    static auto
+    Spawn(F &&func, Priority priority, Args &&... args)
+    {
+        auto task = etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+        SpawnImpl(task, priority);
+        return etl::move(task);
+    }
+
+    /** Spawn new task by providing synchronous function. The function is called when task is run by
+     * the scheduler. Can be used to defer the call, e.g. from ISR.
+     * @return Created task.
+     */
+    template <typename F, typename... Args>
+    requires etl::is_invocable_v<F, Args...> &&
+        (!details::TaskTraits<etl::invoke_result_t<F, Args...>>::isTask)
+    static auto
+    Spawn(F &&func, Args &&... args)
+    {
+        using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
+
+        auto taskFunc = [](F &&func, Args &&... args) -> TTask<TRet> {
+            co_return etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+        };
+
+        auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
+        SpawnImpl(task, LOWEST_PRIORITY);
+        return etl::move(task);
+    }
+
+    /** Spawn new task by providing synchronous function. The function is called when task is run by
+     * the scheduler. Can be used to defer the call, e.g. from ISR.
+     * @return Created task.
+     */
+    template <typename F, typename... Args>
+    requires etl::is_invocable_v<F, Args...> &&
+        (!details::TaskTraits<etl::invoke_result_t<F, Args...>>::isTask)
+    static auto
+    Spawn(F &&func, Priority priority, Args &&... args)
+    {
+        using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
+
+        auto taskFunc = [](F &&func, Args &&... args) -> TTask<TRet> {
+            co_return etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+        };
+
+        auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
         SpawnImpl(task, priority);
         return etl::move(task);
     }

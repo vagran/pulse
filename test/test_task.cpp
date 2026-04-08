@@ -44,8 +44,6 @@ TEST_CASE("Basic tasks")
 
             CheckResult(3,  "T3:1");
             results.push_back("T1:2");
-
-            co_return;
         }
 
         static TTask<int>
@@ -96,6 +94,42 @@ TEST_CASE("Basic tasks")
     CheckResult(8, "T3:3");
     REQUIRE(t2.GetResult() == 42);
     REQUIRE(t3.GetResult() == "result");
+}
+
+
+TEST_CASE("Spawn by function")
+{
+    struct Tasks {
+        static TTask<int>
+        IntTask()
+        {
+            co_return 42;
+        }
+
+        static TTask<int>
+        IntTaskArg(int arg)
+        {
+            co_return 42 + arg;
+        }
+
+        static int
+        IntFunc()
+        {
+            return 10;
+        }
+    };
+
+    auto t1 = Task::Spawn(Tasks::IntTask);
+    auto t2 = Task::Spawn(Tasks::IntTaskArg, 10);
+    auto t3 = Task::Spawn(Tasks::IntFunc);
+    auto t4 = Task::Spawn([](int a, int b){return a + b;}, 3, 5);
+
+    Task::RunSome();
+
+    REQUIRE(t1.GetResult() == 42);
+    REQUIRE(t2.GetResult() == 52);
+    REQUIRE(t3.GetResult() == 10);
+    REQUIRE(t4.GetResult() == 8);
 }
 
 
