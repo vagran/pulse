@@ -144,7 +144,8 @@
 
 
 /** pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY
- * Highest interrupt priority at which system calls can be made.
+ * Highest interrupt priority at which system calls can be made (those which are allowed to be
+ * called from ISR). Pulse functions should never be called from ISR running on higher priorities.
  */
 
 

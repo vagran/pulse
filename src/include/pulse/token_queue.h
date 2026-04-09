@@ -15,10 +15,9 @@ class TokenQueueAwaiter;
 /**
  * @brief A coroutine-friendly token queue for asynchronous producer-consumer synchronization.
  *
- * TokenQueue allows producers to push tokens (from ISRs or regular code) and consumers to
- * asynchronously wait for tokens using co_await. Each token has an associated value that is
- * returned to the awaiter. The queue has a maximum capacity - excess tokens are discarded
- * if not consumed by awaiters.
+ * TokenQueue allows producers to push tokens and consumers to asynchronously wait for tokens using
+ * co_await. Each token has an associated value that is returned to the awaiter. The queue has a
+ * maximum capacity - excess tokens are discarded if not consumed by awaiters.
  *
  * @tparam TCounter Integral type for token values, defaults to size_t.
  */
@@ -39,7 +38,7 @@ public:
 
     ~TokenQueue();
 
-    /** Push the specified number of tokens into the queue. Can be called from ISR. */
+    /** Push the specified number of tokens into the queue. */
     void
     Push(TCounter n = 1);
 
@@ -132,8 +131,7 @@ TokenQueue<TCounter>::Push(TCounter n)
             n--;
             value++;
         }
-        w->task.Schedule();
-        w->task.ReleaseHandle();
+        etl::move(w->task).Schedule();
     }
     value += n;
     if (numTokens + n >= maxTokens) {
@@ -191,6 +189,9 @@ template <etl::integral TCounter>
 bool
 TokenQueueAwaiter<TCounter>::await_suspend(Task::CoroutineHandle handle)
 {
+    if (result) {
+        return false;
+    }
     CriticalSection cs;
     if (queue.numTokens == 0) {
         task = handle;

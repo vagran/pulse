@@ -25,6 +25,18 @@ Panic(const char *msg)
     for(;;);
 }
 
+void
+MallocLock()
+{
+    pulsePort_EnterCriticalSection();
+}
+
+void
+MallocUnlock()
+{
+    pulsePort_ExitCriticalSection();
+}
+
 namespace {
 
 MallocUnit heap[16 * 1024 / sizeof(MallocUnit)];
@@ -92,7 +104,7 @@ InitButton()
 
     HAL_GPIO_Init(BUTTON_GPIO_Port, &init);
 
-    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 2, 0);
+    HAL_NVIC_SetPriority(EXTI15_10_IRQn, 8, 0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
@@ -213,11 +225,11 @@ void
 HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == BUTTON_Pin) {
-        buttonEvents.Push();
+        Task::Spawn([](){ buttonEvents.Push(); });
     }
 }
 
-int
+extern "C" int
 main()
 {
     pulse_add_heap_region(heap, sizeof(heap));

@@ -146,7 +146,7 @@ public:
     SetTime(TickCount time);
 
     /** Call it (possibly from ISR) for every tick. Should be called with pulseConfig_TICK_FREQ
-     * frequency.
+     * frequency. This call can be made from any priority ISR.
      */
     static void
     Tick();
