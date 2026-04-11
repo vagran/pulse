@@ -1,5 +1,6 @@
 Checks: 'bugprone-*,clang-analyzer-*,concurrency-*,misc-*,
         performance-*,portability-*,
+        -bugprone-easily-swappable-parameters,
         -bugprone-implicit-widening-of-multiplication-result,
         -bugprone-exception-escape,
         -misc-non-private-member-variables-in-classes,

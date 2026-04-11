@@ -100,6 +100,12 @@ private:
     TokenQueue<TCounter> &queue;
     etl::optional<TCounter> result;
     Task task;
+
+    void
+    Wakeup()
+    {
+        etl::move(task).Schedule();
+    }
 };
 
 
@@ -131,7 +137,7 @@ TokenQueue<TCounter>::Push(TCounter n)
             n--;
             value++;
         }
-        etl::move(w->task).Schedule();
+        w->Wakeup();
     }
     value += n;
     if (numTokens + n >= maxTokens) {

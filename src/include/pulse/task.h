@@ -598,7 +598,7 @@ public:
     bool
     await_suspend(Task::CoroutineHandle handle)
     {
-        return task.AwaitResult(Task(handle));
+        return task.AwaitResult(handle);
     }
 
     void

@@ -64,7 +64,7 @@ TEST_CASE("Token queue overflow")
 }
 
 
-TEST_CASE("WhenAny with TokenQueue")
+TEST_CASE("WhenAny with TokenQueue (never resumed)")
 {
     TokenQueue<> q1, q2;
 
@@ -76,6 +76,32 @@ TEST_CASE("WhenAny with TokenQueue")
     auto Task2 = [&](TTask<int> t1) -> TaskV {
         q2.Push();
         REQUIRE(co_await t1 == 1);
+    };
+
+    auto t1 = Task::Spawn(Task1());
+    auto t2 = Task::Spawn(Task2(t1));
+
+    Task::RunSome();
+
+    REQUIRE(t2.IsFinished());
+}
+
+
+TEST_CASE("WhenAny with TokenQueue", "[single]")
+{
+    TokenQueue<> q1, q2;
+
+    auto Task1 = [&]() -> TTask<int> {
+        co_return co_await Task::WhenAny(q1, q2);
+    };
+
+    auto Task2 = [&](TTask<int> t1) -> TaskV {
+        q2.Push();
+        REQUIRE(co_await t1 == 1);
+        // Awaiter on q1 should be removed at this point, so token should be queued and then
+        // immediately returned to co_await.
+        q1.Push();
+        REQUIRE(co_await q1 == 1);
     };
 
     auto t1 = Task::Spawn(Task1());
