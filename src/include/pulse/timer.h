@@ -161,10 +161,6 @@ private:
     friend struct details::TimerEntry;
     friend class TimerAwaiter;
 
-    template <typename TPtr, auto GetListItem>
-    requires details::ListItemAccessorWeak<TPtr, GetListItem>
-    friend class ListIterator;
-
     enum State: uint8_t {
         INITIAL,
         SCHEDULED,
@@ -172,7 +168,7 @@ private:
         CANCELLED
     };
 
-    ListWeak<TimerAwaiter *> waiters;
+    List<TimerAwaiter *> waiters;
     // Index in heap when scheduled.
     SizedUint<etl::bit_width(static_cast<uintmax_t>(pulseConfig_MAX_TIMERS))> heapIdx;
     uint8_t refCounter = 0;

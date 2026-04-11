@@ -8,7 +8,7 @@ namespace pulse {
 namespace details {
 
 template <typename Tr, typename T>
-concept SharedPtrTrait = requires(T& obj) {
+concept SharedPtrTrait = requires(T &obj) {
     // static void AddRef(T &);
     // Adds one reference.
     { Tr::AddRef(obj) } -> etl::same_as<void>;

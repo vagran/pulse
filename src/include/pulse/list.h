@@ -10,29 +10,32 @@ namespace pulse {
 
 namespace details {
 
-// Used for allowing TaskList instantiation in TaskPromise. Full definition fails to compile due to
-// TaskPromise being incomplete type at this point.
-template<typename TPtr, auto GetListItem>
-concept ListItemAccessorWeak = requires(TPtr ptr) {
-    requires etl::is_reference_v<decltype(GetListItem(ptr))>;
+template <typename Tr, typename TPtr>
+concept ListTrait = requires(TPtr &p, const TPtr &pNext) {
+    { Tr::GetNext(p) } -> etl::same_as<TPtr>;
+
+    { Tr::SetNext(p, pNext) } -> etl::same_as<void>;
 };
 
-template<typename TPtr, auto GetListItem>
-concept ListItemAccessor = requires(TPtr ptr) {
-    requires ListItemAccessorWeak<TPtr, GetListItem>;
-    { GetListItem(ptr).next } -> etl::same_as<TPtr &>;
-    GetListItem(ptr).next = ptr;
+template <typename TPtr>
+struct ListDefaultTrait {
+    static TPtr
+    GetNext(const TPtr &p)
+    {
+        return p->next;
+    }
+
+    template <typename TNextPtr>
+    static void
+    SetNext(TPtr &p, TNextPtr &&next)
+    {
+        p->next = etl::forward<TNextPtr>(next);
+    }
 };
 
-template<typename TPtr>
-auto &
-GetDefaultListItem(TPtr ptr)
-{
-    return *ptr;
-}
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessorWeak<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 class ListIterator {
 public:
     ListIterator(TPtr item):
@@ -40,7 +43,7 @@ public:
     {}
 
     bool
-    operator ==(const ListIterator<TPtr, GetListItem> &other) const
+    operator ==(const ListIterator<TPtr, Trait> &other) const
     {
         return curItem == other.curItem;
     }
@@ -49,7 +52,7 @@ public:
     operator ++()
     {
         if (curItem) {
-            curItem = GetListItem(curItem).next;
+            curItem = Trait::GetNext(curItem);
         }
     }
 
@@ -66,17 +69,17 @@ private:
 } // namespace details
 
 
-// Singly-linked list. Weak constraints version for using when *TPtr is not yet fully defined.
-template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
-requires details::ListItemAccessorWeak<TPtr, GetListItem>
-struct ListWeak {
+/// Intrusive singly-linked list.
+template <typename TPtr, class Trait = details::ListDefaultTrait<TPtr>>
+requires details::ListTrait<Trait, TPtr>
+struct List {
     TPtr head = TPtr();
 
-    ListWeak() = default;
+    List() = default;
 
-    ListWeak(const ListWeak &other) = delete;
+    List(const List &other) = delete;
 
-    ListWeak(ListWeak &&other):
+    List(List &&other):
         head(etl::move(other.head))
     {
         other.head = TPtr();
@@ -92,83 +95,73 @@ struct ListWeak {
     bool
     Remove(const TPtr &item);
 
-    details::ListIterator<TPtr, GetListItem>
+    details::ListIterator<TPtr, Trait>
     begin() const
     {
         return {head};
     }
 
-    details::ListIterator<TPtr, GetListItem>
+    details::ListIterator<TPtr, Trait>
     end() const
     {
         return {TPtr()};
     }
 };
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessorWeak<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 void
-ListWeak<TPtr, GetListItem>::AddFirst(TPtr item)
+List<TPtr, Trait>::AddFirst(TPtr item)
 {
-    PULSE_ASSERT(!GetListItem(item).next);
+    PULSE_ASSERT(!Trait::GetNext(item));
     if (!head) {
         head = etl::move(item);
     } else {
-        auto &li = GetListItem(item);
-        li.next = etl::move(head);
+        Trait::SetNext(item, etl::move(head));
         head = etl::move(item);
     }
 }
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessorWeak<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 TPtr
-ListWeak<TPtr, GetListItem>::PopFirst()
+List<TPtr, Trait>::PopFirst()
 {
     TPtr res = head;
     if (res) {
-        auto &li = GetListItem(res);
-        head = li.next;
-        li.next = TPtr();
+        head = Trait::GetNext(res);
+        Trait::SetNext(res, TPtr());
     }
     return etl::move(res);
 }
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessorWeak<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 bool
-ListWeak<TPtr, GetListItem>::Remove(const TPtr &item)
+List<TPtr, Trait>::Remove(const TPtr &item)
 {
     TPtr p = head;
     TPtr prev = TPtr();
     while (p) {
-        auto &li = GetListItem(p);
         if (p == item) {
             if (prev) {
-                auto &prevLi = GetListItem(prev);
-                prevLi.next = li.next;
+                Trait::SetNext(prev, Trait::GetNext(p));
             } else {
-                head = li.next;
+                head = Trait::GetNext(p);
             }
-            li.next = TPtr();
+            Trait::SetNext(p, TPtr());
             return true;
         }
         prev = p;
-        p = li.next;
+        p = Trait::GetNext(p);
     }
     return false;
 }
 
 
-// Singly-linked list.
-template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
-requires details::ListItemAccessor<TPtr, GetListItem>
-using List = ListWeak<TPtr, GetListItem>;
-
-
-// Singly-linked list with tail pointer.
-template <typename TPtr, auto GetListItem = details::GetDefaultListItem<TPtr>>
-requires details::ListItemAccessor<TPtr, GetListItem>
+/// Intrusive singly-linked list with tail pointer.
+template <typename TPtr, class Trait = details::ListDefaultTrait<TPtr>>
+requires details::ListTrait<Trait, TPtr>
 struct TailedList {
     TPtr head = TPtr(),
          tail = TPtr();
@@ -205,93 +198,88 @@ struct TailedList {
     bool
     Remove(const TPtr &item);
 
-    details::ListIterator<TPtr, GetListItem>
+    details::ListIterator<TPtr, Trait>
     begin() const
     {
         return {head};
     }
 
-    details::ListIterator<TPtr, GetListItem>
+    details::ListIterator<TPtr, Trait>
     end() const
     {
         return {TPtr()};
     }
 };
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessor<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 void
-TailedList<TPtr, GetListItem>::AddFirst(TPtr item)
+TailedList<TPtr, Trait>::AddFirst(TPtr item)
 {
-    PULSE_ASSERT(!GetListItem(item).next);
+    PULSE_ASSERT(!Trait::GetNext(item));
     if (!head) {
         PULSE_ASSERT(!tail);
         head = item;
         tail = etl::move(item);
     } else {
-        auto &li = GetListItem(item);
-        li.next = etl::move(head);
+        Trait::SetNext(item, etl::move(head));
         head = etl::move(item);
     }
 }
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessor<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 void
-TailedList<TPtr, GetListItem>::AddLast(TPtr item)
+TailedList<TPtr, Trait>::AddLast(TPtr item)
 {
-    PULSE_ASSERT(!GetListItem(item).next);
+    PULSE_ASSERT(!Trait::GetNext(item));
     if (!tail) {
         head = item;
         tail = etl::move(item);
     } else {
-        auto &li = GetListItem(tail);
-        li.next = item;
+        Trait::SetNext(tail, item);
         tail = etl::move(item);
     }
 }
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessor<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 TPtr
-TailedList<TPtr, GetListItem>::PopFirst()
+TailedList<TPtr, Trait>::PopFirst()
 {
     TPtr res = head;
     if (res) {
-        auto &li = GetListItem(res);
-        head = li.next;
+        head = Trait::GetNext(res);
         if (!head) {
             tail = TPtr();
         }
-        li.next = TPtr();
+        Trait::SetNext(res, TPtr());
     }
     return etl::move(res);
 }
 
-template <typename TPtr, auto GetListItem>
-requires details::ListItemAccessor<TPtr, GetListItem>
+template <typename TPtr, class Trait>
+requires details::ListTrait<Trait, TPtr>
 bool
-TailedList<TPtr, GetListItem>::Remove(const TPtr &item)
+TailedList<TPtr, Trait>::Remove(const TPtr &item)
 {
     TPtr p = head;
     TPtr prev = TPtr();
     while (p) {
-        auto &li = GetListItem(p);
         if (p == item) {
             if (prev) {
-                auto &prevLi = GetListItem(prev);
-                prevLi.next = li.next;
+                Trait::SetNext(prev, Trait::GetNext(p));
             } else {
-                head = li.next;
+                head = Trait::GetNext(p);
             }
             if (tail == p) {
                 tail = prev;
             }
-            li.next = TPtr();
+            Trait::SetNext(p, TPtr());
             return true;
         }
         prev = p;
-        p = li.next;
+        p = Trait::GetNext(p);
     }
     return false;
 }

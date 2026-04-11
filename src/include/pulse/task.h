@@ -408,13 +408,19 @@ public:
 
 namespace details {
 
-inline TaskPromise &
-GetTaskPromise(const Task &task)
-{
-    return task.GetPromise();
-}
+struct TaskListTrait {
+    static inline Task
+    GetNext(const Task &p);
+
+    template <typename TPtr>
+    static inline void
+    SetNext(Task &p, TPtr &&next);
+};
 
 } // namespace details
+
+using TaskList = List<Task, details::TaskListTrait>;
+using TaskTailedList = TailedList<Task, details::TaskListTrait>;
 
 
 /** Also acts as task control block. */
@@ -425,7 +431,7 @@ public:
     /// Tag for weak pointers if any created.
     details::TaskWeakPtrTag *weakPtr = nullptr;
     /// Tasks currently awaiting this task finishing.
-    ListWeak<Task, details::GetTaskPromise> resultWaiters;
+    TaskList resultWaiters;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
     /// Task currently queued in runnable queue.
@@ -481,10 +487,6 @@ protected:
     void
     NotifyWaiters();
 };
-
-
-using TaskList = List<Task, details::GetTaskPromise>;
-using TaskTailedList = TailedList<Task, details::GetTaskPromise>;
 
 
 /** @tparam initialSuspend Enables initial suspend when true. Tasks spawned by scheduler typically
@@ -1007,6 +1009,20 @@ TaskAwaiter<void>
 TTask<void, initialSuspend>::operator co_await() const
 {
     return Wait();
+}
+
+
+Task
+details::TaskListTrait::GetNext(const Task &p)
+{
+    return p.GetPromise().next;
+}
+
+template <typename TPtr>
+void
+details::TaskListTrait::SetNext(Task &p, TPtr &&next)
+{
+    p.GetPromise().next = etl::forward<TPtr>(next);
 }
 
 
