@@ -429,7 +429,7 @@ public:
     /// Next task when in list, none if last one.
     Task next = nullptr;
     /// Tag for weak pointers if any created.
-    details::TaskWeakPtrTag *weakPtr = nullptr;
+    SharedPtr<details::TaskWeakPtrTag> weakPtrTag = nullptr;
     /// Tasks currently awaiting this task finishing.
     TaskList resultWaiters;
     uint8_t refCounter = 0;
@@ -597,6 +597,9 @@ public:
     TaskWeakPtr &
     operator =(TaskWeakPtr &&other) = default;
 
+    /** This does not guarantee the referenced task is still alive, use Lock() to check it. It just
+     * checks it tag is attached which might be useful in some cases.
+     */
     operator bool() const
     {
         return tag;
@@ -620,16 +623,63 @@ private:
 
     SharedPtr<TaskWeakPtrTag> tag;
 
-    TaskWeakPtr(TaskWeakPtrTag *tag):
-        tag(tag)
+    TaskWeakPtr(SharedPtr<TaskWeakPtrTag> tag):
+        tag(etl::move(tag))
     {}
 };
 
 } // namespace details
 
 
+/** For now it is mostly marker interface. There is currently no need to make it polymorphic. */
 template <typename TRet>
-class TaskAwaiter {
+class Awaiter {
+public:
+    /* Each awaiter should follow some basic rules to make it properly functional and robust.
+     *
+     * 1. Awaiter should have destructor which should cancel any queued operations.
+     *      Awaiter may be created but never awaited, or, more common, it can be used in
+     *      `Task::WhenAny()` so that some awaiters are never resumed and are destructed after
+     *      suspend but before resume. All these cases should be properly handled by awaiter
+     *      destructor. Event source should have API to cancel queued awaiter.
+     *
+     * 2. Awaiter should queue `this` pointer to an event source, not Task (reason in bullet 3).
+     *      This implies restriction on moving awaiter instance after suspended. For simplicity,
+     *      just disable copy and move constructors for all awaiters, this work well for most cases.
+     *
+     * 3. Awaiter should never store suspended task handle, nor queue it to an event source, to
+     *      prevent reference loop. Suspended task may be destructed when the last reference
+     *      released, but the very last reference may be held by an awaiter which in turn is
+     *      destructed when coroutine frame is destructed, which never happens in such case. This is
+     *      specifically important for `Task::WhenAny()` case, which will release references to all
+     *      non-finished tasks, which should cause coroutine frame destruction, and thus, awaiter
+     *      destruction and cancelling all queued operations (see bullet 1). Holding reference to
+     *      coroutine frame by `Task` instance prevents this, and causes the queued operation and
+     *      dangling coroutine to resume at some point, causing undesired effects (and consuming
+     *      memory while dangling). Use `Task::WeakPtr` to store suspended task reference in an
+     *      awaiter.
+     */
+
+    Awaiter() = default;
+    Awaiter(const Awaiter &) = delete;
+    Awaiter(Awaiter &&) = delete;
+
+    /* These methods should be implemented in derived class:
+     *
+     * bool
+     * await_ready() [const];
+     *
+     * bool | void
+     * await_suspend(Task::CoroutineHandle handle);
+     *
+     * TRet
+     * await_resume() [const];
+     */
+};
+
+
+template <typename TRet>
+class TaskAwaiter: public Awaiter<TRet> {
 public:
     template <bool initialSuspend>
     TaskAwaiter(TTask<TRet, initialSuspend> task):
@@ -666,7 +716,7 @@ private:
 
 
 template <>
-class TaskAwaiter<void> {
+class TaskAwaiter<void>: public Awaiter<void> {
 public:
     TaskAwaiter(Task task):
         task(etl::move(task))
@@ -770,7 +820,7 @@ protected:
 
 
 template <size_t NumTasks>
-class AllTasksAwaiter: public details::MultipleTasksAwaiter<NumTasks> {
+class AllTasksAwaiter: public details::MultipleTasksAwaiter<NumTasks>, Awaiter<void> {
 public:
     AllTasksAwaiter(const etl::span<Task, NumTasks> &tasks);
 
@@ -796,7 +846,7 @@ private:
 
 
 template <size_t NumTasks>
-class AnyTaskAwaiter: public details::MultipleTasksAwaiter<NumTasks>  {
+class AnyTaskAwaiter: public details::MultipleTasksAwaiter<NumTasks>, Awaiter<size_t>  {
 public:
     AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks);
 

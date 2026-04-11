@@ -89,7 +89,7 @@ TEST_CASE("WhenAny with TokenQueue (never resumed)")
 
 TEST_CASE("WhenAny with TokenQueue")
 {
-    TokenQueue<> q1, q2;
+    TokenQueue<> q1(1, 10), q2(1, 20);
 
     auto Task1 = [&]() -> TTask<int> {
         co_return co_await Task::WhenAny(q1, q2);
@@ -98,10 +98,13 @@ TEST_CASE("WhenAny with TokenQueue")
     auto Task2 = [&](TTask<int> t1) -> TaskV {
         q2.Push();
         REQUIRE(co_await t1 == 1);
+        q2.Push();
+        REQUIRE(co_await q2 == 21);
+
         // Awaiter on q1 should be removed at this point, so token should be queued and then
         // immediately returned to co_await.
         q1.Push();
-        REQUIRE(co_await q1 == 1);
+        REQUIRE(co_await q1 == 10);
     };
 
     auto t1 = Task::Spawn(Task1());

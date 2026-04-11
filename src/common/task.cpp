@@ -216,19 +216,19 @@ Task::AwaitResult(Task task) const
 TaskPromise::~TaskPromise()
 {
     PULSE_ASSERT(refCounter == 0);
-    if (weakPtr) {
-        weakPtr->handle.reset();
+    if (weakPtrTag) {
+        weakPtrTag->handle.reset();
     }
 }
 
 Task::WeakPtr
 TaskPromise::GetWeakPtr()
 {
-    if (weakPtr) {
-        return weakPtr;
+    if (weakPtrTag) {
+        return weakPtrTag;
     }
-    weakPtr = new details::TaskWeakPtrTag(Task::CoroutineHandle::from_promise(*this));
-    return weakPtr;
+    weakPtrTag = new details::TaskWeakPtrTag(Task::CoroutineHandle::from_promise(*this));
+    return weakPtrTag;
 }
 
 void

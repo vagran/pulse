@@ -62,7 +62,7 @@ private:
 
 
 template <etl::integral TCounter>
-class TokenQueueAwaiter {
+class TokenQueueAwaiter: Awaiter<TCounter> {
 public:
     TokenQueueAwaiter(const TokenQueueAwaiter &) = delete;
     TokenQueueAwaiter(TokenQueueAwaiter &&) = delete;
@@ -99,12 +99,16 @@ private:
     TokenQueueAwaiter<TCounter> *next = nullptr;
     TokenQueue<TCounter> &queue;
     etl::optional<TCounter> result;
-    Task task;
+    Task::WeakPtr task;
 
     void
     Wakeup()
     {
-        etl::move(task).Schedule();
+        Task t = task.Lock();
+        task.Reset();
+        if (t) {
+            etl::move(t).Schedule();
+        }
     }
 };
 
@@ -117,8 +121,7 @@ TokenQueue<TCounter>::~TokenQueue()
     while (next) {
         auto waiter = next;
         next = waiter->next;
-        Task task = etl::move(waiter->task);
-        waiter->task.ReleaseHandle();
+        waiter->task.Reset();
     }
 }
 
@@ -200,7 +203,7 @@ TokenQueueAwaiter<TCounter>::await_suspend(Task::CoroutineHandle handle)
     }
     CriticalSection cs;
     if (queue.numTokens == 0) {
-        task = handle;
+        task = Task(handle).GetWeakPtr();
         queue.waiters.AddLast(this);
         return true;
     }
