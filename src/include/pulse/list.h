@@ -17,6 +17,7 @@ concept ListTrait = requires(TPtr &p, const TPtr &pNext) {
     { Tr::SetNext(p, pNext) } -> etl::same_as<void>;
 };
 
+// Make this class friend if having private `next`.
 template <typename TPtr>
 struct ListDefaultTrait {
     static TPtr

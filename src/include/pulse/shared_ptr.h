@@ -22,6 +22,7 @@ concept SharedPtrTrait = requires(T &obj) {
     { Tr::Delete(obj) } -> etl::same_as<void>;
 };
 
+// Make this class friend if having private `refCounter`.
 template <typename T>
 struct SharedPtrDefaultTrait {
     static void

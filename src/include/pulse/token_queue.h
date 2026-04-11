@@ -64,8 +64,6 @@ private:
 template <etl::integral TCounter>
 class TokenQueueAwaiter {
 public:
-    TokenQueueAwaiter<TCounter> *next = nullptr;
-
     TokenQueueAwaiter(const TokenQueueAwaiter &) = delete;
     TokenQueueAwaiter(TokenQueueAwaiter &&) = delete;
 
@@ -96,7 +94,9 @@ public:
 
 private:
     friend class TokenQueue<TCounter>;
+    friend class details::ListDefaultTrait<TokenQueueAwaiter *>;
 
+    TokenQueueAwaiter<TCounter> *next = nullptr;
     TokenQueue<TCounter> &queue;
     etl::optional<TCounter> result;
     Task task;

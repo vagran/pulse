@@ -574,6 +574,10 @@ public:
 
     // Null if co-routine destroyed.
     Task::CoroutineHandle handle;
+
+private:
+    friend struct details::SharedPtrDefaultTrait<TaskWeakPtrTag>;
+
     uint8_t refCounter = 0;
 };
 

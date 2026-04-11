@@ -221,8 +221,6 @@ public:
 
 class TimerAwaiter {
 public:
-    TimerAwaiter *next = nullptr;
-
     ~TimerAwaiter();
 
     bool
@@ -240,6 +238,7 @@ public:
 
 private:
     friend class Timer;
+    friend struct details::ListDefaultTrait<TimerAwaiter *>;
 
     enum class State: uint8_t {
         SCHEDULED,
@@ -247,6 +246,7 @@ private:
         CANCELLED
     };
 
+    TimerAwaiter *next = nullptr;
     // Set to null when completes
     Timer::Handle timer;
     Task waiter;
