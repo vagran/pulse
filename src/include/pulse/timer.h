@@ -135,6 +135,12 @@ public:
         return static_cast<int32_t>(t1 - t2) > 0;
     }
 
+    static constexpr bool
+    IsReached(TickCount t1, TickCount t2)
+    {
+        return !IsBefore(t1, t2);
+    }
+
     static TickCount
     GetTime();
 
@@ -151,10 +157,10 @@ public:
     static void
     Tick();
 
-    static inline DelayAwaiter
+    static inline Awaitable<void>
     Delay(Duration duration);
 
-    static inline DelayAwaiter
+    static inline Awaitable<void>
     WaitUntil(TickCount time);
 
 private:
@@ -203,22 +209,6 @@ private:
 };
 
 
-class DelayAwaiter {
-public:
-    const Timer::TickCount time;
-
-    bool
-    await_ready() const;
-
-    void
-    await_suspend(Task::CoroutineHandle handle);
-
-    void
-    await_resume() const
-    {}
-};
-
-
 class TimerAwaiter {
 public:
     ~TimerAwaiter();
@@ -249,7 +239,7 @@ private:
     TimerAwaiter *next = nullptr;
     // Set to null when completes
     Timer::Handle timer;
-    Task waiter;
+    Task::WeakPtr waiter;
     State state;
 
     TimerAwaiter() = delete;
@@ -283,16 +273,18 @@ Timer::Create(Args&&... args)
     return p;
 }
 
-DelayAwaiter
+Awaitable<void>
 Timer::Delay(Duration duration)
 {
-    return DelayAwaiter{Timer::GetTime() + duration.duration};
+    Timer timer(duration);
+    co_await timer;
 }
 
-DelayAwaiter
+Awaitable<void>
 Timer::WaitUntil(TickCount time)
 {
-    return DelayAwaiter{time};
+    Timer timer(time);
+    co_await timer;
 }
 
 TimerAwaiter

@@ -21,96 +21,22 @@ static_assert(pulseConfig_MAX_TIMERS > 0,
 
 
 struct pulse::details::TimerEntry {
-    // Do not use etl::variant due to big overhead (size_t and function pointer).
-    struct alignas(Task) alignas(Timer::Handle) {
-        uint8_t data[etl::max(sizeof(Task), sizeof(Timer::Handle))];
-    } data;
+    Timer::Handle timer;
     TickCount time;
-    // True if `data` holds Timer::Handle.
-    uint8_t isTimer = false,
-    // True if `data` holds Task.
-            isTask = false;
 
     TimerEntry()
     {}
 
     TimerEntry(const TimerEntry &) = delete;
-
-    TimerEntry(TimerEntry &&other):
-        time(other.time)
-    {
-        if (other.isTimer) {
-            CreateTimer(etl::move(other.GetTimer()));
-        } else if (other.isTask) {
-            CreateTask(etl::move(other.GetTask()));
-        }
-        other.Destroy();
-    }
-
-    TimerEntry(Task task, TickCount time):
-        time(time)
-    {
-        CreateTask(etl::move(task));
-    }
+    TimerEntry(TimerEntry &&other) = default;
 
     TimerEntry(Timer::Handle timer, TickCount time):
+        timer(etl::move(timer)),
         time(time)
-    {
-        CreateTimer(etl::move(timer));
-    }
-
-    ~TimerEntry()
-    {
-        Destroy();
-    }
+    {}
 
     TimerEntry &
-    operator =(TimerEntry &&other)
-    {
-        time = other.time;
-        Destroy();
-        if (other.isTimer) {
-            CreateTimer(etl::move(other.GetTimer()));
-        } else if (other.isTask) {
-            CreateTask(etl::move(other.GetTask()));
-        }
-        other.Destroy();
-        return *this;
-    }
-
-    Task &
-    GetTask()
-    {
-        PULSE_ASSERT(isTask);
-        return *reinterpret_cast<Task *>(data.data);
-    }
-
-    Timer::Handle &
-    GetTimer()
-    {
-        PULSE_ASSERT(isTimer);
-        return *reinterpret_cast<Timer::Handle *>(data.data);
-    }
-
-    template <typename... T>
-    Task &
-    CreateTask(T&& ...args)
-    {
-        Destroy();
-        new (data.data) Task(etl::forward<T>(args)...);
-        isTask = 1;
-        return GetTask();
-    }
-
-    template <typename... T>
-    Timer::Handle &
-    CreateTimer(T&& ...args)
-    {
-        Destroy();
-        new (data.data) Timer::Handle(etl::forward<T>(args)...);
-        isTimer = 1;
-        return GetTimer();
-    }
+    operator =(TimerEntry &&other) = default;
 
     void
     Fire();
@@ -118,8 +44,7 @@ struct pulse::details::TimerEntry {
     void
     ReplaceTimer(Timer::Handle timer)
     {
-        PULSE_ASSERT(isTimer);
-        CreateTimer(etl::move(timer));
+        this->timer = etl::move(timer);
     }
 
     static bool
@@ -131,22 +56,7 @@ struct pulse::details::TimerEntry {
     static void
     SetIndex(TimerEntry &e, size_t index)
     {
-        if (e.isTimer) {
-            e.GetTimer()->heapIdx = index;
-        }
-    }
-
-private:
-    void
-    Destroy()
-    {
-        if (isTimer) {
-            etl::destroy_at(&GetTimer());
-            isTimer = 0;
-        } else if (isTask) {
-            etl::destroy_at(&GetTask());
-            isTask = 0;
-        }
+        e.timer->heapIdx = index;
     }
 };
 
@@ -157,14 +67,6 @@ etl::atomic<TickCount> curTime;
 
 Heap<TimerEntry, details::TimerEntry::IsBefore, pulseConfig_MAX_TIMERS,
      details::TimerEntry::SetIndex> timers;
-
-void
-ScheduleTask(Task task, TickCount time)
-{
-    if (!timers.Insert(TimerEntry(etl::move(task), time))) {
-        PULSE_PANIC("Out of timers capacity");
-    }
-}
 
 void
 ScheduleTimer(Timer::Handle timer, TickCount time)
@@ -179,14 +81,8 @@ ScheduleTimer(Timer::Handle timer, TickCount time)
 void
 TimerEntry::Fire()
 {
-    if (isTimer) {
-        GetTimer()->Fire();
-    } else if (isTask) {
-        GetTask().Schedule();
-    } else {
-        PULSE_PANIC("Empty timer entry");
-    }
-    Destroy();
+    timer->Fire();
+    timer.Reset();
 }
 
 TickCount
@@ -279,8 +175,12 @@ void
 Timer::Schedule(TickCount time)
 {
     PULSE_ASSERT(state != SCHEDULED);
-    state = SCHEDULED;
-    ScheduleTimer(this, time);
+    if (Timer::IsReached(curTime.load(), time)) {
+        state = FIRED;
+    } else {
+        state = SCHEDULED;
+        ScheduleTimer(this, time);
+    }
 }
 
 void
@@ -301,12 +201,15 @@ Timer::ScheduleAwaiters()
         if (!awaiter) {
             break;
         }
-        PULSE_ASSERT(awaiter->waiter);
         n++;
         awaiter->state = state == FIRED ?
             TimerAwaiter::State::FIRED : TimerAwaiter::State::CANCELLED;
         awaiter->timer.Reset();
-        awaiter->waiter.Schedule();
+        Task task = awaiter->waiter.Lock();
+        awaiter->waiter.Reset();
+        if (task) {
+            etl::move(task).Schedule();
+        }
     }
     return n;
 }
@@ -325,17 +228,6 @@ details::CheckTimers()
     return etl::numeric_limits<TickCount>::max();
 }
 
-bool
-DelayAwaiter::await_ready() const
-{
-    return !Timer::IsAfter(time, curTime);
-}
-
-void
-DelayAwaiter::await_suspend(Task::CoroutineHandle handle)
-{
-    ScheduleTask(handle, time);
-}
 
 TimerAwaiter::TimerAwaiter(Timer::Handle timer)
 {
@@ -375,7 +267,7 @@ TimerAwaiter::await_suspend(Task::CoroutineHandle handle)
     if (state != State::SCHEDULED) {
         return false;
     }
-    waiter = handle;
+    waiter = Task(handle).GetWeakPtr();
     return true;
 }
 

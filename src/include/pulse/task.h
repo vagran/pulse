@@ -64,7 +64,8 @@ class TaskWeakPtrTag;
 } // namespace details
 
 
-/// Smart pointer for coroutine frame.
+/// Smart pointer for coroutine frame. At least one reference should be kept until task is finished
+/// otherwise it might be destroyed earlier.
 class Task {
 public:
     using TPromise = TaskPromise;
@@ -184,6 +185,11 @@ public:
     void
     SetPriority(Priority priority);
 
+    /** Pass the task to the scheduler. The returned reference should be kept until task is finished
+     * otherwise it might be destroyed once the first suspension point is reached (scheduler
+     * releases its reference and awaiters are not allowed to store task reference to prevent
+     * reference loop).
+     */
     template <typename TRet>
     static TTask<TRet, true>
     Spawn(TTask<TRet, true> task, Priority priority = LOWEST_PRIORITY)
@@ -641,7 +647,8 @@ public:
      *      Awaiter may be created but never awaited, or, more common, it can be used in
      *      `Task::WhenAny()` so that some awaiters are never resumed and are destructed after
      *      suspend but before resume. All these cases should be properly handled by awaiter
-     *      destructor. Event source should have API to cancel queued awaiter.
+     *      destructor. Event source should have API to cancel queued awaiter. This also allows
+     *      safe destroying of suspended tasks.
      *
      * 2. Awaiter should queue `this` pointer to an event source, not Task (reason in bullet 3).
      *      This implies restriction on moving awaiter instance after suspended. For simplicity,
