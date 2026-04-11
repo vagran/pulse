@@ -4,4 +4,5 @@ Checks: 'bugprone-*,clang-analyzer-*,concurrency-*,misc-*,
         -bugprone-implicit-widening-of-multiplication-result,
         -bugprone-exception-escape,
         -misc-non-private-member-variables-in-classes,
-        -performance-no-int-to-ptr'
+        -performance-no-int-to-ptr',
+        -performance-noexcept-move-constructor

@@ -79,7 +79,7 @@ public:
     /** Transfer state from another timer which becomes cancelled (all waiters are cancelled as
      * well).
      */
-    Timer(Timer &&other) noexcept;
+    Timer(Timer &&other);
 
     /** Create new timer instance. */
     template <typename... Args>

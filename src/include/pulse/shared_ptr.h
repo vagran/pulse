@@ -117,7 +117,7 @@ public:
     }
 
     SharedPtr &
-    operator =(SharedPtr &&other) noexcept
+    operator =(SharedPtr &&other)
     {
         if (&other == this) {
             return *this;
@@ -130,7 +130,7 @@ public:
 
     template<typename Y>
     SharedPtr &
-    operator =(SharedPtr<Y> &&other) noexcept
+    operator =(SharedPtr<Y> &&other)
     {
         Reset();
         ptr = other.ptr;

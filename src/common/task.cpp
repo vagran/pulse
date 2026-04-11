@@ -213,6 +213,24 @@ Task::AwaitResult(Task task) const
 }
 
 
+TaskPromise::~TaskPromise()
+{
+    PULSE_ASSERT(refCounter == 0);
+    if (weakPtr) {
+        weakPtr->handle.reset();
+    }
+}
+
+Task::WeakPtr
+TaskPromise::GetWeakPtr()
+{
+    if (weakPtr) {
+        return weakPtr;
+    }
+    weakPtr = new details::TaskWeakPtrTag(Task::CoroutineHandle::from_promise(*this));
+    return weakPtr;
+}
+
 void
 TaskPromise::NotifyWaiters()
 {
@@ -223,6 +241,16 @@ TaskPromise::NotifyWaiters()
         }
         ScheduleTask(etl::move(task));
     }
+}
+
+
+Task
+details::TaskWeakPtr::Lock()
+{
+    if (!tag) {
+        return nullptr;
+    }
+    return tag->handle;
 }
 
 

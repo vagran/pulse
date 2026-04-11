@@ -1,12 +1,12 @@
 #ifndef TASK_H
 #define TASK_H
 
-#include <stdint.h>
 #include <pulse/config.h>
 #include <pulse/details/common.h>
 #include <pulse/coroutine.h>
 #include <pulse/list.h>
-#include <etl/bit.h>
+#include <pulse/shared_ptr.h>
+
 #include <etl/memory.h>
 #include <etl/span.h>
 #include <etl/invoke.h>
@@ -58,6 +58,9 @@ struct TaskTraits<TTask<TRet_, initialSuspend_>> {
     static constexpr bool initialSuspend = initialSuspend_;
 };
 
+class TaskWeakPtr;
+class TaskWeakPtrTag;
+
 } // namespace details
 
 
@@ -75,6 +78,10 @@ public:
                               LOWEST_PRIORITY = pulseConfig_NUM_TASK_PRIORITIES - 1;
 
     using CoroutineHandle = std::coroutine_handle<TaskPromise>;
+
+    /** Does not prevent task from destruction when last reference from `Task` handle is released.
+     */
+    using WeakPtr = details::TaskWeakPtr;
 
     // Awaiter for explicit task switching.
     class TaskSwitchAwaiter {
@@ -112,7 +119,7 @@ public:
     inline
     Task(const Task &other);
 
-    Task(Task &&other) noexcept:
+    Task(Task &&other):
         handle(other.handle)
     {
         other.handle = CoroutineHandle();
@@ -127,7 +134,7 @@ public:
     operator =(const Task &other);
 
     inline Task &
-    operator =(Task &&other) noexcept;
+    operator =(Task &&other);
 
     bool
     operator ==(const Task &other) const
@@ -157,6 +164,12 @@ public:
     {
         return handle;
     }
+
+    /** Get weak pointer to this task. This requires dynamic allocation for the first call for the
+     * given co-routine instance.
+     */
+    inline WeakPtr
+    GetWeakPtr();
 
     /** Enqueue this task into ready tasks queue according to its current priority. */
     void
@@ -409,6 +422,8 @@ class TaskPromise {
 public:
     /// Next task when in list, none if last one.
     Task next = nullptr;
+    /// Tag for weak pointers if any created.
+    details::TaskWeakPtrTag *weakPtr = nullptr;
     /// Tasks currently awaiting this task finishing.
     ListWeak<Task, details::GetTaskPromise> resultWaiters;
     uint8_t refCounter = 0;
@@ -422,10 +437,7 @@ public:
 
     // No need to make it virtual since promise object is always constructed and destructed from
     // coroutine frame constructor/destructor by concrete type.
-    ~TaskPromise()
-    {
-        PULSE_ASSERT(refCounter == 0);
-    }
+    ~TaskPromise();
 
     /// Add reference from new Task instance.
     void
@@ -445,6 +457,9 @@ public:
         PULSE_ASSERT(refCounter != 0);
         return --refCounter == 0;
     }
+
+    Task::WeakPtr
+    GetWeakPtr();
 
     std::suspend_always
     final_suspend() noexcept
@@ -543,6 +558,68 @@ public:
         NotifyWaiters();
     }
 };
+
+
+namespace details {
+
+class TaskWeakPtrTag {
+public:
+    TaskWeakPtrTag(Task::CoroutineHandle handle):
+        handle(handle)
+    {}
+
+    TaskWeakPtrTag(const TaskWeakPtrTag &) = delete;
+
+    // Null if co-routine destroyed.
+    Task::CoroutineHandle handle;
+    uint8_t refCounter = 0;
+};
+
+class TaskWeakPtr {
+public:
+    TaskWeakPtr() = default;
+    TaskWeakPtr(const TaskWeakPtr &) = default;
+    TaskWeakPtr(TaskWeakPtr &&) = default;
+
+    TaskWeakPtr(etl::nullptr_t):
+        tag(nullptr)
+    {}
+
+    TaskWeakPtr &
+    operator =(const TaskWeakPtr &other) = default;
+
+    TaskWeakPtr &
+    operator =(TaskWeakPtr &&other) = default;
+
+    operator bool() const
+    {
+        return tag;
+    }
+
+    /** Obtain reference to task if not yet destroyed. Returns null (empty Task) if already
+     * destroyed.
+     */
+    Task
+    Lock();
+
+    /// Make it null.
+    void
+    Reset()
+    {
+        tag.Reset();
+    }
+
+private:
+    friend class pulse::TaskPromise;
+
+    SharedPtr<TaskWeakPtrTag> tag;
+
+    TaskWeakPtr(TaskWeakPtrTag *tag):
+        tag(tag)
+    {}
+};
+
+} // namespace details
 
 
 template <typename TRet>
@@ -747,7 +824,9 @@ private:
 Task::Task(CoroutineHandle handle):
     handle(handle)
 {
-    GetPromise().AddRef();
+    if (handle) {
+        GetPromise().AddRef();
+    }
 }
 
 Task::Task(const Task &other):
@@ -770,7 +849,7 @@ Task::operator =(const Task &other)
 }
 
 Task &
-Task::operator =(Task &&other) noexcept
+Task::operator =(Task &&other)
 {
     ReleaseHandle();
     handle = other.handle;
@@ -883,6 +962,15 @@ Task::ReleaseHandle()
             handle = CoroutineHandle();
         }
     }
+}
+
+Task::WeakPtr
+Task::GetWeakPtr()
+{
+    if (!handle) {
+        return nullptr;
+    }
+    return GetPromise().GetWeakPtr();
 }
 
 

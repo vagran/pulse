@@ -76,7 +76,7 @@ struct ListWeak {
 
     ListWeak(const ListWeak &other) = delete;
 
-    ListWeak(ListWeak &&other) noexcept:
+    ListWeak(ListWeak &&other):
         head(etl::move(other.head))
     {
         other.head = TPtr();
@@ -177,7 +177,7 @@ struct TailedList {
 
     TailedList(const TailedList &other) = delete;
 
-    TailedList(TailedList &&other) noexcept:
+    TailedList(TailedList &&other):
         head(etl::move(other.head)),
         tail(etl::move(other.tail))
     {

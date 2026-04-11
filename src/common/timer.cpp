@@ -36,7 +36,7 @@ struct pulse::details::TimerEntry {
 
     TimerEntry(const TimerEntry &) = delete;
 
-    TimerEntry(TimerEntry &&other) noexcept:
+    TimerEntry(TimerEntry &&other):
         time(other.time)
     {
         if (other.isTimer) {
@@ -65,7 +65,7 @@ struct pulse::details::TimerEntry {
     }
 
     TimerEntry &
-    operator =(TimerEntry &&other) noexcept
+    operator =(TimerEntry &&other)
     {
         time = other.time;
         Destroy();
@@ -221,7 +221,7 @@ Timer::Timer(Duration expiresAfter):
     Timer(GetTime() + expiresAfter.duration)
 {}
 
-Timer::Timer(Timer &&other) noexcept:
+Timer::Timer(Timer &&other):
     waiters(etl::move(other.waiters)),
     heapIdx(other.heapIdx),
     state(other.state)

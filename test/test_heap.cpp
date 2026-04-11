@@ -142,12 +142,12 @@ struct Tracker {
     size_t index = 42;
 
     Tracker(int v) : value(v) { constructed++; }
-    Tracker(const Tracker& o) : value(o.value) { constructed++; }
+    Tracker(const Tracker& other) : value(other.value) { constructed++; }
 
-    Tracker(Tracker&& o) noexcept:
-        value(o.value)
+    Tracker(Tracker&& other):
+        value(other.value)
     {
-        o.value = std::nullopt;
+        other.value = std::nullopt;
         constructed++;
     }
 
@@ -162,7 +162,7 @@ struct Tracker {
     }
 
     Tracker &
-    operator =(Tracker &&other) noexcept
+    operator =(Tracker &&other)
     {
         if (value) {
             optionalDestroyed++;

@@ -85,6 +85,12 @@ struct coroutine_handle<void> {
     {
         return framePtr;
     }
+
+    void
+    reset() noexcept
+    {
+        framePtr = nullptr;
+    }
 };
 
 template<typename Promise>

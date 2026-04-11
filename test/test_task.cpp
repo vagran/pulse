@@ -841,3 +841,30 @@ TEST_CASE("WhenAny - stress")
     REQUIRE(t1.IsFinished());
     REQUIRE(t2.IsFinished());
 }
+
+
+TEST_CASE("TaskWeakPtr")
+{
+    Task::WeakPtr p;
+    {
+        Task t = ([]() -> TTask<int> {
+            co_return 42;
+        })();
+        p = t.GetWeakPtr();
+        REQUIRE(p);
+        REQUIRE(p.Lock() == t);
+
+        Task::WeakPtr p2 = etl::move(p);
+        REQUIRE(!p);
+        REQUIRE(!p.Lock());
+        REQUIRE(p2);
+        REQUIRE(p2.Lock() == t);
+
+        p = p2;
+        REQUIRE(p);
+        REQUIRE(p.Lock() == t);
+        REQUIRE(p2);
+        REQUIRE(p2.Lock() == t);
+    }
+    REQUIRE(!p.Lock());
+}
