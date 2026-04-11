@@ -1,14 +1,12 @@
 #ifndef PULSE_CONFIG_H
 #define PULSE_CONFIG_H
 
+#include <panic.h>
 #include <pulse/defs.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-void
-Panic(const char *msg);
 
 void
 MallocLock();

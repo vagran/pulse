@@ -94,7 +94,7 @@ public:
 
 private:
     friend class TokenQueue<TCounter>;
-    friend class details::ListDefaultTrait<TokenQueueAwaiter *>;
+    friend struct details::ListDefaultTrait<TokenQueueAwaiter *>;
 
     TokenQueueAwaiter<TCounter> *next = nullptr;
     TokenQueue<TCounter> &queue;

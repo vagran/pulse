@@ -1,11 +1,13 @@
-#include <stm32f1xx_hal.h>
-#include <stm32f103xb.h>
-
 #include <pulse/malloc.h>
 #include <pulse/task.h>
 #include <pulse/timer.h>
 #include <pulse/port.h>
 #include <pulse/token_queue.h>
+
+#include <stm32f1xx_hal.h>
+#include <stm32f103xb.h>
+
+#include <uart.h>
 
 
 using namespace pulse;
@@ -22,6 +24,7 @@ void
 Panic(const char *msg)
 {
     pulsePort_DisableInterrupts();
+    uart.PanicFlush();
     for(;;);
 }
 
@@ -80,8 +83,6 @@ InitLed(void)
     GPIO_InitTypeDef init = {0};
 
     __HAL_RCC_GPIOC_CLK_ENABLE();
-    __HAL_RCC_GPIOD_CLK_ENABLE();
-    __HAL_RCC_GPIOA_CLK_ENABLE();
 
     // Initially off (active low)
     HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
@@ -97,6 +98,8 @@ void
 InitButton()
 {
     GPIO_InitTypeDef init = {0};
+
+    __HAL_RCC_GPIOC_CLK_ENABLE();
 
     init.Pin = BUTTON_Pin;
     init.Mode = GPIO_MODE_IT_FALLING;
@@ -177,7 +180,7 @@ BlinkTask()
 TaskV
 ButtonTask()
 {
-    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(200);
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(100);
     Timer jitterTimer;
 
     while (true) {
@@ -225,7 +228,9 @@ void
 HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == BUTTON_Pin) {
-        Task::Spawn([](){ buttonEvents.Push(); });
+        Task::Spawn([](){
+            buttonEvents.Push();
+        });
     }
 }
 
@@ -237,11 +242,13 @@ main()
     HAL_Init();
     SystemClock_Config();
 
+    uart.Initialize(230400, 1024);
+
     InitLed();
     InitButton();
 
-    Task::Spawn(BlinkTask());
-    Task::Spawn(ButtonTask());
+    auto blinkTask = Task::Spawn(BlinkTask());
+    auto buttonTask = Task::Spawn(ButtonTask());
 
     Task::RunScheduler();
 
