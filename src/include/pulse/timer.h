@@ -51,9 +51,9 @@ public:
     };
 
 private:
-    friend struct details::SharedPtrDefaultTrait<Timer>;
+    friend struct details::SharedPtrDefaultAtomicTrait<Timer>;
 
-    struct SharedPtrTrait: details::SharedPtrDefaultTrait<Timer> {
+    struct SharedPtrTrait: details::SharedPtrDefaultAtomicTrait<Timer> {
         static void
         Delete(Timer &obj)
         {
@@ -177,7 +177,7 @@ private:
     List<TimerAwaiter *> waiters;
     // Index in heap when scheduled.
     SizedUint<etl::bit_width(static_cast<uintmax_t>(pulseConfig_MAX_TIMERS))> heapIdx;
-    uint8_t refCounter = 0;
+    etl::atomic<uint8_t> refCounter = 0;
     uint8_t dynamicAlloc:1 = 0,
             state: 2 = INITIAL;
 

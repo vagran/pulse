@@ -2,6 +2,9 @@
 #define SHARED_PTR_H
 
 #include <pulse/details/common.h>
+#include <etl/atomic.h>
+#include <etl/limits.h>
+
 
 namespace pulse {
 
@@ -29,7 +32,7 @@ struct SharedPtrDefaultTrait {
     AddRef(T &obj)
     {
         if (obj.refCounter == etl::numeric_limits<decltype(obj.refCounter)>::max()) {
-            PULSE_PANIC("Reference counter overflow");
+            PULSE_PANIC("SharedPtr reference counter overflow");
         }
         obj.refCounter++;
     }
@@ -49,11 +52,39 @@ struct SharedPtrDefaultTrait {
     }
 };
 
+// Make this class friend if having private `refCounter`.
+template <typename T>
+struct SharedPtrDefaultAtomicTrait {
+    static void
+    AddRef(T &obj)
+    {
+        auto prevValue = obj.refCounter.fetch_add(1);
+        if (prevValue == etl::numeric_limits<decltype(prevValue)>::max()) {
+            PULSE_PANIC("SharedPtr reference counter overflow");
+        }
+    }
+
+    /// @return True if last reference released.
+    static bool
+    ReleaseRef(T &obj)
+    {
+        auto prevValue = obj.refCounter.fetch_sub(1);
+        PULSE_ASSERT(prevValue != 0);
+        return prevValue == 1;
+    }
+
+    static void
+    Delete(T &obj)
+    {
+        delete &obj;
+    }
+};
+
 } // namespace details
 
 
 /** Intrusive shared pointer. */
-template <typename T, class Trait = details::SharedPtrDefaultTrait<T>>
+template <typename T, class Trait = details::SharedPtrDefaultAtomicTrait<T>>
 requires details::SharedPtrTrait<Trait, T>
 class SharedPtr {
 public:
