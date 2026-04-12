@@ -38,7 +38,7 @@ public:
 
     ~TokenQueue();
 
-    /** Push the specified number of tokens into the queue. */
+    /** Push the specified number of tokens into the queue. Can be called from ISR. */
     void
     Push(TCounter n = 1);
 
