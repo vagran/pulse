@@ -10,6 +10,7 @@
 #include <etl/memory.h>
 #include <etl/span.h>
 #include <etl/invoke.h>
+#include <etl/atomic.h>
 
 
 namespace pulse {
@@ -416,13 +417,15 @@ using TaskTailedList = TailedList<Task, details::TaskListTrait>;
 /** Also acts as task control block. */
 class TaskPromise {
 public:
+    using TRefCounter = uint8_t;
+
     /// Next task when in list, none if last one.
     Task next = nullptr;
     /// Tag for weak pointers if any created.
     SharedPtr<details::TaskWeakPtrTag> weakPtrTag = nullptr;
     /// Awaiters currently awaiting this task finishing.
     List<details::TaskAwaiterBase *> resultWaiters;
-    uint8_t refCounter = 0;
+    etl::atomic<TRefCounter> refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
     /// Task currently queued in runnable queue.
             isRunnable: 1 = 0,
@@ -439,10 +442,10 @@ public:
     void
     AddRef()
     {
-        if (refCounter == etl::numeric_limits<decltype(refCounter)>::max()) {
+        TRefCounter prevValue = refCounter.fetch_add(1);
+        if (prevValue == etl::numeric_limits<TRefCounter>::max()) {
             PULSE_PANIC("Task reference counter overflow");
         }
-        refCounter++;
     }
 
     /// Release reference from Task instance.
@@ -450,8 +453,9 @@ public:
     bool
     ReleaseRef()
     {
-        PULSE_ASSERT(refCounter != 0);
-        return --refCounter == 0;
+        TRefCounter prevValue = refCounter.fetch_sub(1);
+        PULSE_ASSERT(prevValue != 0);
+        return prevValue == 1;
     }
 
     Task::WeakPtr
