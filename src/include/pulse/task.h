@@ -29,6 +29,8 @@ using TaskV = TTask<void>;
 template <typename TRet>
 using Awaitable = TTask<TRet, false>;
 
+class TaskSwitchAwaiter;
+
 template <typename TRet>
 class TaskAwaiter;
 
@@ -58,6 +60,8 @@ struct TaskTraits<TTask<TRet_, initialSuspend_>> {
     static constexpr bool initialSuspend = initialSuspend_;
 };
 
+class TaskAwaiterBase;
+
 class TaskWeakPtr;
 class TaskWeakPtrTag;
 
@@ -83,29 +87,6 @@ public:
     /** Does not prevent task from destruction when last reference from `Task` handle is released.
      */
     using WeakPtr = details::TaskWeakPtr;
-
-    // Awaiter for explicit task switching.
-    class TaskSwitchAwaiter {
-    public:
-        bool
-        await_ready() const
-        {
-            return false;
-        }
-
-        bool
-        await_suspend(Task::CoroutineHandle handle);
-
-        /// @return True if task was switched, false if immediately returned to calling task.
-        bool
-        await_resume() const
-        {
-            return switched;
-        }
-
-    private:
-        bool switched = false;
-    };
 
 
     Task() = default;
@@ -284,11 +265,8 @@ public:
      * co_await Task::Switch();
      * @endcode
      */
-    static TaskSwitchAwaiter
-    Switch()
-    {
-        return {};
-    }
+    static inline TaskSwitchAwaiter
+    Switch();
 
     inline TaskAwaiter<void>
     Wait() const;
@@ -339,6 +317,8 @@ protected:
     template <typename, bool>
     friend class TTaskPromise;
 
+    friend class details::TaskAwaiterBase;
+
     template<typename>
     friend class TaskAwaiter;
 
@@ -361,8 +341,12 @@ private:
     static void
     SpawnImpl(Task task, Priority priority = LOWEST_PRIORITY);
 
+    /// @return True if added to wait list, false if already finished.
     bool
-    AwaitResult(Task task) const;
+    AwaitResult(details::TaskAwaiterBase *waiter, const Task &task) const;
+
+    void
+    CancelAwaitResult(details::TaskAwaiterBase *waiter) const;
 };
 
 
@@ -436,8 +420,8 @@ public:
     Task next = nullptr;
     /// Tag for weak pointers if any created.
     SharedPtr<details::TaskWeakPtrTag> weakPtrTag = nullptr;
-    /// Tasks currently awaiting this task finishing.
-    TaskList resultWaiters;
+    /// Awaiters currently awaiting this task finishing.
+    List<details::TaskAwaiterBase *> resultWaiters;
     uint8_t refCounter = 0;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
     /// Task currently queued in runnable queue.
@@ -685,14 +669,44 @@ public:
 };
 
 
-template <typename TRet>
-class TaskAwaiter: public Awaiter<TRet> {
+// Awaiter for explicit task switching.
+class TaskSwitchAwaiter: public Awaiter<void> {
 public:
-    template <bool initialSuspend>
-    TaskAwaiter(TTask<TRet, initialSuspend> task):
-        task(etl::move(task)),
-        initialSuspend(initialSuspend)
+    bool
+    await_ready() const
+    {
+        return false;
+    }
+
+    bool
+    await_suspend(Task::CoroutineHandle handle);
+
+    /// @return True if task was switched, false if immediately returned to calling task.
+    bool
+    await_resume() const
+    {
+        return switched;
+    }
+
+private:
+    bool switched = false;
+};
+
+
+namespace details {
+
+class TaskAwaiterBase {
+public:
+    TaskAwaiterBase(Task task):
+        task(etl::move(task))
     {}
+
+    ~TaskAwaiterBase()
+    {
+        if (waiter) {
+            task.CancelAwaitResult(this);
+        }
+    }
 
     bool
     await_ready() const
@@ -703,8 +717,36 @@ public:
     bool
     await_suspend(Task::CoroutineHandle handle)
     {
-        return task.AwaitResult(Task(handle));
+        Task waiterTask(handle);
+        if (!task.AwaitResult(this, waiterTask)) {
+            return false;
+        }
+        waiter = waiterTask.GetWeakPtr();
+        return true;
     }
+
+protected:
+    friend struct details::ListDefaultTrait<TaskAwaiterBase *>;
+    friend class pulse::TaskPromise;
+
+    const Task task;
+    TaskAwaiterBase *next = nullptr;
+    Task::WeakPtr waiter;
+
+    void
+    Wakeup();
+};
+
+} // namespace details
+
+template <typename TRet>
+class TaskAwaiter: public details::TaskAwaiterBase, Awaiter<TRet> {
+public:
+    template <bool initialSuspend>
+    TaskAwaiter(TTask<TRet, initialSuspend> task):
+        TaskAwaiterBase(etl::move(task)),
+        initialSuspend(initialSuspend)
+    {}
 
     TRet
     await_resume() const
@@ -717,36 +759,20 @@ public:
     }
 
 private:
-    const Task task;
     const bool initialSuspend;
 };
 
 
 template <>
-class TaskAwaiter<void>: public Awaiter<void> {
+class TaskAwaiter<void>: public details::TaskAwaiterBase, Awaiter<void> {
 public:
     TaskAwaiter(Task task):
-        task(etl::move(task))
+        TaskAwaiterBase(etl::move(task))
     {}
-
-    bool
-    await_ready() const
-    {
-        return task.IsFinished();
-    }
-
-    bool
-    await_suspend(Task::CoroutineHandle handle)
-    {
-        return task.AwaitResult(handle);
-    }
 
     void
     await_resume() const
     {}
-
-private:
-    const Task task;
 };
 
 
@@ -760,15 +786,13 @@ protected:
 
     MultipleTasksAwaiterBase() = default;
 
-    // Cannot copy or move awaiter since it has callbacks in tasks wait list installed in the
-    // constructor, which are bound to this instance.
-    MultipleTasksAwaiterBase(const MultipleTasksAwaiterBase &) = delete;
-    MultipleTasksAwaiterBase(MultipleTasksAwaiterBase &&) = delete;
-
-    Task waiter;
+    Task::WeakPtr waiter;
 
     static void
     Finish(Entry *tasks, size_t numTasks);
+
+    void
+    Wakeup();
 };
 
 
@@ -925,6 +949,12 @@ Task::IsFinished() const
 {
     PULSE_ASSERT(handle);
     return GetPromise().isFinished;
+}
+
+TaskSwitchAwaiter
+Task::Switch()
+{
+    return {};
 }
 
 TaskAwaiter<void>
@@ -1094,7 +1124,7 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &task
 {
     // It is observed that just capturing `this` by value (like `[this]`) may not work in GCC for
     // some reason - captured `this` value is not preserved across suspension point. At the same
-    // time it works flawlessly in Clang. So use workaround here with `self` variable.
+    // time it works flawlessly in Clang. So use workaround here with `self` argument.
     auto handler = [](size_t index, decltype(this) self) -> Awaitable<void> {
         Entry &e = self->tasks[index];
 
@@ -1105,7 +1135,7 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &task
 
         self->numLeft--;
         if (self->numLeft == 0 && self->waiter) {
-            self->waiter.Schedule();
+            self->Wakeup();
         }
     };
 
@@ -1129,12 +1159,16 @@ AllTasksAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
         return false;
     }
 
-    Base::waiter = handle;
+    Task waiterTask(handle);
+    Base::waiter = waiterTask.GetWeakPtr();
+
     // Handlers should have the same priority as waiter.
-    Task::Priority pri = Base::waiter.GetPromise().priority;
+    Task::Priority pri = waiterTask.GetPromise().priority;
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
-        e.handler.SetPriority(pri);
+        if (e.handler) {
+            e.handler.SetPriority(pri);
+        }
     }
 
     return true;
@@ -1146,7 +1180,7 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks)
 {
     // It is observed that just capturing `this` by value (like `[this]`) may not work in GCC for
     // some reason - captured `this` value is not preserved across suspension point. At the same
-    // time it works flawlessly in Clang. So use workaround here with `self` variable.
+    // time it works flawlessly in Clang. So use workaround here with `self` argument.
     auto handler = [](size_t index, decltype(this) self) -> Awaitable<void> {
         Entry &e = self->tasks[index];
 
@@ -1160,7 +1194,7 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks)
         }
         self->result = index;
         if (self->waiter) {
-            self->waiter.Schedule();
+            self->Wakeup();
         }
     };
 
@@ -1187,10 +1221,12 @@ AnyTaskAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
     if (result != NONE) {
         return false;
     }
-    Base::waiter = handle;
+
+    Task waiterTask(handle);
+    Base::waiter = waiterTask.GetWeakPtr();
 
     // Handlers should have the same priority as waiter.
-    Task::Priority pri = Base::waiter.GetPromise().priority;
+    Task::Priority pri = waiterTask.GetPromise().priority;
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
         e.handler.SetPriority(pri);

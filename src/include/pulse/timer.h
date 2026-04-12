@@ -290,7 +290,7 @@ Timer::WaitUntil(TickCount time)
 TimerAwaiter
 Timer::Wait()
 {
-    return TimerAwaiter(Timer::Handle(this));
+    return TimerAwaiter(this);
 }
 
 TimerAwaiter

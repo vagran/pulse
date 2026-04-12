@@ -168,7 +168,7 @@ Task::RunSome()
 }
 
 bool
-Task::TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
+TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
 {
     Task task(handle);
     TaskPromise &promise = task.GetPromise();
@@ -188,7 +188,7 @@ Task::TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
 }
 
 bool
-Task::AwaitResult(Task task) const
+Task::AwaitResult(details::TaskAwaiterBase *waiter, const Task &task) const
 {
     PULSE_ASSERT(task.handle.framePtr != handle.framePtr);
     Task::Priority priority = task.GetPromise().priority;
@@ -196,7 +196,7 @@ Task::AwaitResult(Task task) const
     if (promise.isFinished) {
         return false;
     }
-    promise.resultWaiters.AddFirst(etl::move(task));
+    promise.resultWaiters.AddFirst(waiter);
     if (priority < promise.priority) {
         // Propagate waiting task higher priority to this task.
         bool reschedule = promise.isRunnable;
@@ -210,6 +210,12 @@ Task::AwaitResult(Task task) const
         }
     }
     return true;
+}
+
+void
+Task::CancelAwaitResult(details::TaskAwaiterBase *waiter) const
+{
+    GetPromise().resultWaiters.Remove(waiter);
 }
 
 
@@ -235,11 +241,22 @@ void
 TaskPromise::NotifyWaiters()
 {
     while (true) {
-        Task task = resultWaiters.PopFirst();
-        if (!task) {
+        auto waiter = resultWaiters.PopFirst();
+        if (!waiter) {
             break;
         }
-        ScheduleTask(etl::move(task));
+        waiter->Wakeup();
+    }
+}
+
+
+void
+details::TaskAwaiterBase::Wakeup()
+{
+    Task t = waiter.Lock();
+    waiter.Reset();
+    if (t) {
+        etl::move(t).Schedule();
     }
 }
 
@@ -260,19 +277,24 @@ details::MultipleTasksAwaiterBase::Finish(Entry *tasks, size_t numTasks)
     for (size_t i = 0; i < numTasks; i++) {
         Entry &e = tasks[i];
         if (e.target) {
-            TaskPromise &targetPromise = e.target.GetPromise();
             TaskPromise &handlerPromise = e.handler.GetPromise();
             CriticalSection cs;
             if (!handlerPromise.isFinished) {
                 if (handlerPromise.isRunnable) {
                     DescheduleTask(e.handler);
-                } else {
-                    PULSE_ASSERT(!targetPromise.isFinished);
-                    if (!targetPromise.resultWaiters.Remove(e.handler)) {
-                        PULSE_PANIC("Handler not found in waiters list");
-                    }
                 }
+                // If still waiting, TaskAwaiter destructor will remove it from wait list.
             }
         }
+    }
+}
+
+void
+details::MultipleTasksAwaiterBase::Wakeup()
+{
+    Task t = waiter.Lock();
+    waiter.Reset();
+    if (t) {
+        etl::move(t).Schedule();
     }
 }

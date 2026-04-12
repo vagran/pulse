@@ -274,8 +274,12 @@ TEST_CASE("WhenAll")
         {
             CheckResult(2, "T2:1");
             results.push_back("T3:1");
-            // Check awaiter passing.
-            co_await Task::WhenAll(t1, t2);
+
+            auto instantTask = []() -> Awaitable<void> {
+                co_return;
+            };
+
+            co_await Task::WhenAll(t1, t2, instantTask());
             CheckResult(6, "T2:2");
             results.push_back("T3:2");
         }
@@ -435,7 +439,7 @@ TEST_CASE("WhenAll - awaiters")
 }
 
 
-TEST_CASE("WhenAll - completed")
+TEST_CASE("WhenAll - completed mixed")
 {
     struct Tasks {
         static TaskV
@@ -460,6 +464,99 @@ TEST_CASE("WhenAll - completed")
             CheckResult(2, "T2:1");
             results.push_back("T3:1");
             co_await Task::WhenAll(t1, t2.Wait());
+            results.push_back("T3:2");
+        }
+    };
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1());
+
+    auto t2 = Task::Spawn(Tasks::T2());
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2));
+
+    Task::RunSome();
+
+    CheckResult(4, "T3:2");
+}
+
+
+TEST_CASE("WhenAll - single completed")
+{
+    struct Tasks {
+        static TaskV
+        T1()
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_return;
+        }
+
+        static TaskV
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_await q;
+            CheckResult(3, "T3:1");
+            results.push_back("T2:2");
+            co_return;
+        }
+
+        static TaskV
+        T3(Task t1, Task t2, TokenQueue<> &q)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            q.Push();
+            co_await Task::WhenAll(t1, t2);
+            CheckResult(4, "T2:2");
+            results.push_back("T3:2");
+        }
+    };
+
+    TokenQueue<> q;
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1());
+
+    auto t2 = Task::Spawn(Tasks::T2(q));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2, q));
+
+    Task::RunSome();
+
+    CheckResult(5, "T3:2");
+}
+
+
+TEST_CASE("WhenAll - completed")
+{
+    struct Tasks {
+        static TaskV
+        T1()
+        {
+            REQUIRE(results.empty());
+            results.push_back("T1:1");
+            co_return;
+        }
+
+        static TaskV
+        T2()
+        {
+            CheckResult(1, "T1:1");
+            results.push_back("T2:1");
+            co_return;
+        }
+
+        static TaskV
+        T3(Task t1, Task t2)
+        {
+            CheckResult(2, "T2:1");
+            results.push_back("T3:1");
+            co_await Task::WhenAll(t1, t2);
             results.push_back("T3:2");
         }
     };
