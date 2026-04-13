@@ -418,18 +418,26 @@ public:
 #endif // pulseConfig_MALLOC_LOCK
 
 #if pulseConfig_MALLOC_STATS
-MallocStats stats = {0, 0, std::numeric_limits<size_t>::max()};
+MallocStats stats = {0, 0, etl::numeric_limits<size_t>::max(), 0};
 
 inline void
 StatsAlloc(BlockHeader *block)
 {
     stats.totalUsed += block->GetSize();
+    stats.numBlocksAllocated++;
+    // This should be done here, when block allocation is complete. Otherwise it will account
+    // interim block manipulations which always results in `minFree` zero, because whole chunk is
+    // firstly unfreed, split and returned to heap.
+    if (stats.totalFree < stats.minFree) {
+        stats.minFree = stats.totalFree;
+    }
 }
 
 inline void
 StatsDealloc(BlockHeader *block)
 {
     stats.totalUsed -= block->GetSize();
+    stats.numBlocksAllocated--;
 }
 
 inline void
@@ -442,9 +450,6 @@ inline void
 StatsUnfree(BlockHeader *block)
 {
     stats.totalFree -= block->GetSize();
-    if (stats.totalFree < stats.minFree) {
-        stats.minFree = stats.totalFree;
-    }
 }
 
 #else // pulseConfig_MALLOC_STATS
@@ -880,7 +885,8 @@ pulse_reset_heap()
 #if pulseConfig_MALLOC_STATS
     stats.totalFree = 0;
     stats.totalUsed = 0;
-    stats.minFree = std::numeric_limits<size_t>::max();
+    stats.minFree = etl::numeric_limits<size_t>::max();
+    stats.numBlocksAllocated = 0;
 #endif
 }
 

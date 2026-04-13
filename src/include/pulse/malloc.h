@@ -79,7 +79,7 @@ get_malloc_max_size();
 #if pulseConfig_MALLOC_STATS
 
 typedef struct {
-    size_t totalFree, totalUsed, minFree;
+    size_t totalFree, totalUsed, minFree, numBlocksAllocated;
 } MallocStats;
 
 /** Get current allocation statistics. It might be not exactly corresponding to requested sizes
