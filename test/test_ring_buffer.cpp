@@ -11,6 +11,29 @@ TEST_CASE("RingBuffer basic push/pop")
     int input[] = {1, 2, 3, 4};
     int output[4] = {};
 
+    REQUIRE(rb.capacity == 8);
+    REQUIRE(rb.GetSize() == 0);
+
+    auto pushed = rb.Write(input, 4);
+    REQUIRE(pushed == 4);
+    REQUIRE(rb.GetSize() == 4);
+
+    auto popped = rb.Read(output, 4);
+    REQUIRE(popped == 4);
+    REQUIRE(rb.GetSize() == 0);
+
+    REQUIRE(std::equal(output, output + 4, input));
+}
+
+TEST_CASE("RingBuffer basic push/pop (external storage)")
+{
+    int buffer[8];
+    RingBuffer<int> rb(buffer, PULSE_SIZEOF_ARRAY(buffer));
+
+    int input[] = {1, 2, 3, 4};
+    int output[4] = {};
+
+    REQUIRE(rb.capacity == 8);
     REQUIRE(rb.GetSize() == 0);
 
     auto pushed = rb.Write(input, 4);

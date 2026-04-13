@@ -9,15 +9,17 @@ namespace pulse {
 
 namespace details {
 
-template <typename T, size_t bufferSize, etl::unsigned_integral TIndex>
+template <typename T, size_t Capacity, etl::unsigned_integral TIndex>
 class RingBufferBase {
-protected:
-    etl::array<T, bufferSize> buffer;
-    static constexpr TIndex size = bufferSize;
+public:
+    static constexpr TIndex capacity = Capacity;
 
-    static_assert(bufferSize > 0);
-    static_assert(PULSE_IS_POW2(bufferSize));
-    static_assert(bufferSize * 2 <= etl::numeric_limits<TIndex>::max());
+protected:
+    etl::array<T, Capacity> buffer;
+
+    static_assert(Capacity > 0);
+    static_assert(PULSE_IS_POW2(Capacity));
+    static_assert(Capacity * 2 <= etl::numeric_limits<TIndex>::max());
 
     T *
     GetBuffer()
@@ -29,20 +31,24 @@ protected:
 template <typename T, etl::unsigned_integral TIndex>
 class RingBufferBase<T, etl::dynamic_extent, TIndex> {
 public:
+    const TIndex capacity;
+
     RingBufferBase() = delete;
 
-    RingBufferBase(T *buffer, TIndex size):
-        buffer(buffer),
-        size(size)
+    /** Use provided buffer as storage. The buffer lifetime should not be less than this object
+     * lifetime.
+     */
+    RingBufferBase(T *buffer, TIndex capacity):
+        capacity(capacity),
+        buffer(buffer)
     {
-        PULSE_ASSERT(size > 0);
-        PULSE_ASSERT(PULSE_IS_POW2(size));
-        PULSE_ASSERT(size * 2 <= etl::numeric_limits<TIndex>::max());
+        PULSE_ASSERT(capacity > 0);
+        PULSE_ASSERT(PULSE_IS_POW2(capacity));
+        PULSE_ASSERT(capacity * 2 <= etl::numeric_limits<TIndex>::max());
     }
 
 protected:
     T *buffer;
-    const TIndex size;
 
     T *
     GetBuffer()
@@ -59,12 +65,12 @@ protected:
  * @tparam T Type of values to store.
  * @tparam TIndex Type of index field.
  */
-template <typename T, size_t bufferSize = etl::dynamic_extent,
+template <typename T, size_t Capacity = etl::dynamic_extent,
           etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(
-            bufferSize == etl::dynamic_extent ? etl::dynamic_extent : bufferSize * 2)>>
-class RingBuffer: public details::RingBufferBase<T, bufferSize, TIndex> {
+            Capacity == etl::dynamic_extent ? etl::dynamic_extent : Capacity * 2)>>
+class RingBuffer: public details::RingBufferBase<T, Capacity, TIndex> {
 public:
-    using details::RingBufferBase<T, bufferSize, TIndex>::RingBufferBase;
+    using details::RingBufferBase<T, Capacity, TIndex>::RingBufferBase;
 
     /**
      * @return TIndex Number of elements currently contained in the buffer.
@@ -81,7 +87,7 @@ public:
     TIndex
     GetAvailableCapacity() const
     {
-        return this->size - GetSize();
+        return this->capacity - GetSize();
     }
 
     bool
@@ -103,8 +109,8 @@ public:
     Write(const T *data, TIndex size)
     {
         size = etl::min(size, GetAvailableCapacity());
-        TIndex bufferWritePos = writePos & (this->size - 1);
-        TIndex tailSize = etl::min<TIndex>(size, this->size - bufferWritePos);
+        TIndex bufferWritePos = writePos & (this->capacity - 1);
+        TIndex tailSize = etl::min<TIndex>(size, this->capacity - bufferWritePos);
         etl::copy(data, data + tailSize, this->GetBuffer() + bufferWritePos);
         if (tailSize < size) {
             etl::copy(data + tailSize, data + size, this->GetBuffer());
@@ -129,8 +135,8 @@ public:
     Read(T *out, TIndex size)
     {
         size = etl::min(size, GetSize());
-        TIndex bufferReadPos = readPos & (this->size - 1);
-        TIndex tailSize = etl::min<TIndex>(size, this->size - bufferReadPos);
+        TIndex bufferReadPos = readPos & (this->capacity - 1);
+        TIndex tailSize = etl::min<TIndex>(size, this->capacity - bufferReadPos);
         const T *readPtr = this->GetBuffer() + bufferReadPos;
         etl::copy(readPtr, readPtr + tailSize, out);
         if (tailSize < size) {
@@ -146,8 +152,8 @@ public:
     etl::span<T>
     GetWriteRegion()
     {
-        TIndex bufferWritePos = writePos & (this->size - 1);
-        TIndex size = etl::min<TIndex>(GetAvailableCapacity(), this->size - bufferWritePos);
+        TIndex bufferWritePos = writePos & (this->capacity - 1);
+        TIndex size = etl::min<TIndex>(GetAvailableCapacity(), this->capacity - bufferWritePos);
         T *writePtr = this->GetBuffer() + bufferWritePos;
         return {writePtr, writePtr + size};
     }
@@ -157,7 +163,7 @@ public:
     CommitWrite(TIndex size)
     {
         PULSE_ASSERT(size <= etl::min<TIndex>(GetAvailableCapacity(),
-                                              this->size - (writePos & (this->size - 1))));
+                                              this->capacity - (writePos & (this->capacity - 1))));
         writePos += size;
     }
 
@@ -167,8 +173,8 @@ public:
     etl::span<const T>
     GetReadRegion()
     {
-        TIndex bufferReadPos = readPos & (this->size - 1);
-        TIndex size = etl::min<TIndex>(GetSize(), this->size - bufferReadPos);
+        TIndex bufferReadPos = readPos & (this->capacity - 1);
+        TIndex size = etl::min<TIndex>(GetSize(), this->capacity - bufferReadPos);
         T *readPtr = this->GetBuffer() + bufferReadPos;
         return {readPtr, readPtr + size};
     }
@@ -178,7 +184,7 @@ public:
     CommitRead(TIndex size)
     {
         PULSE_ASSERT(size <= etl::min<TIndex>(GetSize(),
-                                              this->size - (readPos & (this->size - 1))));
+                                              this->capacity - (readPos & (this->capacity - 1))));
         readPos += size;
     }
 
