@@ -9,6 +9,8 @@
 
 #include <uart.h>
 
+#include <etl/to_string.h>
+
 
 using namespace pulse;
 
@@ -213,6 +215,25 @@ ButtonTask()
             blinkInterval = 0;
         }
         blinkTimer.Cancel();
+
+        etl::string<16> s;
+        uart.Write("New interval: ");
+        uart.Write(etl::to_string(blinkInterval, s));
+        uart.Write("\n");
+        MallocStats stats;
+        get_malloc_stats(&stats);
+        uart.Write("Total free: ");
+        uart.Write(etl::to_string(stats.totalFree, s));
+        uart.Write("\n");
+        uart.Write("Total used: ");
+        uart.Write(etl::to_string(stats.totalUsed, s));
+        uart.Write("\n");
+        uart.Write("Min free: ");
+        uart.Write(etl::to_string(stats.minFree, s));
+        uart.Write("\n");
+        uart.Write("Blocks allocated: ");
+        uart.Write(etl::to_string(stats.numBlocksAllocated, s));
+        uart.Write("\n");
     }
 }
 
@@ -240,7 +261,10 @@ main()
     HAL_Init();
     SystemClock_Config();
 
-    uart.Initialize(230400, 1024);
+    static uint8_t uartBuffer[1024];
+    uart.Initialize(230400, uartBuffer, sizeof(uartBuffer));
+
+    uart.Write("Application started\n");
 
     InitLed();
     InitButton();

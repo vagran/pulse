@@ -23,11 +23,15 @@ MallocUnlock();
 #define pulseConfig_MALLOC_GRANULARITY              8
 #define pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE     2
 
-#define pulseConfig_ASSERT(x) do { \
-    if (!(x)) { \
-        Panic("pulseConfig_ASSERT failed: " PULSE_STR(x)); \
-    } \
-} while (false)
+#ifdef DEBUG
+#   define pulseConfig_ASSERT(x) do { \
+        if (!(x)) { \
+            Panic("pulseConfig_ASSERT failed: " PULSE_STR(x)); \
+        } \
+    } while (false)
+#else
+#   define pulseConfig_ASSERT(x)
+#endif
 
 #define pulseConfig_PANIC(msg)                      Panic(msg)
 
@@ -37,5 +41,7 @@ MallocUnlock();
 
 #define pulseConfig_MALLOC_LOCK()                   MallocLock()
 #define pulseConfig_MALLOC_UNLOCK()                 MallocUnlock()
+
+#define pulseConfig_MALLOC_STATS                    1
 
 #endif /* PULSE_CONFIG_H */

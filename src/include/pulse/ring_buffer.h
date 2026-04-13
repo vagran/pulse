@@ -119,7 +119,7 @@ public:
     TIndex
     Write(etl::span<const T> data)
     {
-        return Push(data.data(), data.size());
+        return Write(data.data(), data.size());
     }
 
     /** Pop data from the buffer.

@@ -6,9 +6,10 @@ Uart uart;
 
 
 void
-Uart::Initialize(int baudRate, size_t bufSize)
+Uart::Initialize(int baudRate, uint8_t *buffer, size_t bufferSize)
 {
-    //XXX buf
+    this->buffer.emplace(buffer, bufferSize);
+
     memset(&h, 0, sizeof(h));
 
     h.Instance = USART1;
@@ -28,7 +29,7 @@ Uart::Initialize(int baudRate, size_t bufSize)
 void
 Uart::Write(etl::string_view s)
 {
-    //XXX
+    buffer->Write({reinterpret_cast<const uint8_t *>(s.data()), s.size()});
     __HAL_UART_ENABLE_IT(&h, UART_IT_TXE);
 }
 
@@ -41,7 +42,15 @@ Uart::WriteCharSync(uint8_t c)
 void
 Uart::PanicFlush()
 {
-    //XXX
+    while (true) {
+        auto region = this->buffer->GetReadRegion();
+        if (region.empty()) {
+            break;
+        }
+        for (uint8_t c: region) {
+            WriteCharSync(c);
+        }
+    }
 }
 
 void
@@ -57,12 +66,12 @@ USART1_IRQHandler()
     if (__HAL_UART_GET_IT_SOURCE(&uart.h, UART_IT_TXE) &&
         __HAL_UART_GET_FLAG(&uart.h, UART_FLAG_TXE)) {
 
-        //XXX
-        // if (RingBuf_Get(&s_uart1WriteRingBuffer, &data, 1)) {
-        //     /* Transmit Data */
-        //     uart.h.Instance->DR = ((uint16_t) data & (uint16_t) 0x01FF);
-        // } else {
-        //     __HAL_UART_DISABLE_IT(&uart.h, UART_IT_TXE);
-        // }
+        uint8_t c;
+        if (uart.buffer->Read(&c, 1)) {
+            /* Transmit Data */
+            uart.h.Instance->DR = c;
+        } else {
+            __HAL_UART_DISABLE_IT(&uart.h, UART_IT_TXE);
+        }
     }
 }
