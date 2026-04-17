@@ -245,18 +245,7 @@ TaskPromise::NotifyWaiters()
         if (!waiter) {
             break;
         }
-        waiter->Wakeup();
-    }
-}
-
-
-void
-details::TaskAwaiterBase::Wakeup()
-{
-    Task t = waiter.Lock();
-    waiter.Reset();
-    if (t) {
-        etl::move(t).Schedule();
+        waiter->waiter.Wakeup();
     }
 }
 
@@ -286,15 +275,5 @@ details::MultipleTasksAwaiterBase::Finish(Entry *tasks, size_t numTasks)
                 // If still waiting, TaskAwaiter destructor will remove it from wait list.
             }
         }
-    }
-}
-
-void
-details::MultipleTasksAwaiterBase::Wakeup()
-{
-    Task t = waiter.Lock();
-    waiter.Reset();
-    if (t) {
-        etl::move(t).Schedule();
     }
 }

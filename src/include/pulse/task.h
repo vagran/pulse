@@ -609,6 +609,19 @@ public:
         tag.Reset();
     }
 
+    /** Locks referenced task, resets this pointer and schedules the task if any. This is typical
+     * pattern used in awaiters.
+     */
+    void
+    Wakeup()
+    {
+        Task t = Lock();
+        Reset();
+        if (t) {
+            etl::move(t).Schedule();
+        }
+    }
+
 private:
     friend class pulse::TaskPromise;
 
@@ -735,15 +748,12 @@ protected:
     const Task task;
     TaskAwaiterBase *next = nullptr;
     Task::WeakPtr waiter;
-
-    void
-    Wakeup();
 };
 
 } // namespace details
 
 template <typename TRet>
-class TaskAwaiter: public details::TaskAwaiterBase, Awaiter<TRet> {
+class TaskAwaiter: public details::TaskAwaiterBase, public Awaiter<TRet> {
 public:
     template <bool initialSuspend>
     TaskAwaiter(TTask<TRet, initialSuspend> task):
@@ -767,7 +777,7 @@ private:
 
 
 template <>
-class TaskAwaiter<void>: public details::TaskAwaiterBase, Awaiter<void> {
+class TaskAwaiter<void>: public details::TaskAwaiterBase, public Awaiter<void> {
 public:
     TaskAwaiter(Task task):
         TaskAwaiterBase(etl::move(task))
@@ -793,9 +803,6 @@ protected:
 
     static void
     Finish(Entry *tasks, size_t numTasks);
-
-    void
-    Wakeup();
 };
 
 
@@ -854,7 +861,7 @@ protected:
 
 
 template <size_t NumTasks>
-class AllTasksAwaiter: public details::MultipleTasksAwaiter<NumTasks>, Awaiter<void> {
+class AllTasksAwaiter: public details::MultipleTasksAwaiter<NumTasks>, public Awaiter<void> {
 public:
     AllTasksAwaiter(const etl::span<Task, NumTasks> &tasks);
 
@@ -880,7 +887,7 @@ private:
 
 
 template <size_t NumTasks>
-class AnyTaskAwaiter: public details::MultipleTasksAwaiter<NumTasks>, Awaiter<size_t>  {
+class AnyTaskAwaiter: public details::MultipleTasksAwaiter<NumTasks>, public Awaiter<size_t>  {
 public:
     AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks);
 
@@ -1138,7 +1145,7 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &task
 
         self->numLeft--;
         if (self->numLeft == 0 && self->waiter) {
-            self->Wakeup();
+            self->waiter.Wakeup();
         }
     };
 
@@ -1197,7 +1204,7 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks)
         }
         self->result = index;
         if (self->waiter) {
-            self->Wakeup();
+            self->waiter.Wakeup();
         }
     };
 
