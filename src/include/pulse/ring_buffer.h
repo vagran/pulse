@@ -7,70 +7,26 @@
 
 namespace pulse {
 
-namespace details {
-
-template <typename T, size_t Capacity, etl::unsigned_integral TIndex>
-class RingBufferBase {
-public:
-    static constexpr TIndex capacity = Capacity;
-
-protected:
-    etl::array<T, Capacity> buffer;
-
-    static_assert(Capacity > 0);
-    static_assert(PULSE_IS_POW2(Capacity));
-    static_assert(Capacity * 2 <= etl::numeric_limits<TIndex>::max());
-
-    T *
-    GetBuffer()
-    {
-        return buffer.data();
-    }
-};
-
-template <typename T, etl::unsigned_integral TIndex>
-class RingBufferBase<T, etl::dynamic_extent, TIndex> {
-public:
-    const TIndex capacity;
-
-    RingBufferBase() = delete;
-
-    /** Use provided buffer as storage. The buffer lifetime should not be less than this object
-     * lifetime.
-     */
-    RingBufferBase(T *buffer, TIndex capacity):
-        capacity(capacity),
-        buffer(buffer)
-    {
-        PULSE_ASSERT(capacity > 0);
-        PULSE_ASSERT(PULSE_IS_POW2(capacity));
-        PULSE_ASSERT(capacity * 2 <= etl::numeric_limits<TIndex>::max());
-    }
-
-protected:
-    T *buffer;
-
-    T *
-    GetBuffer()
-    {
-        return buffer;
-    }
-};
-
-} // namespace details
-
-
 /** Light-weight ring buffer implementation. Buffer size should be strictly power of two to enable
  * fast math.
  * @tparam T Type of values to store.
  * @tparam TIndex Type of index field.
  */
-template <typename T, size_t Capacity = etl::dynamic_extent,
-          etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(
-            Capacity == etl::dynamic_extent ? etl::dynamic_extent : Capacity * 2)>>
-class RingBuffer: public details::RingBufferBase<T, Capacity, TIndex> {
+template <typename T, etl::unsigned_integral TIndex = size_t>
+class RingBuffer {
+private:
+    T * const buffer;
 public:
-    using details::RingBufferBase<T, Capacity, TIndex>::RingBufferBase;
+    const TIndex capacity;
+
+    RingBuffer(T *buffer, TIndex capacity):
+        buffer(buffer),
+        capacity(capacity)
+    {
+        PULSE_ASSERT(capacity > 0);
+        PULSE_ASSERT(PULSE_IS_POW2(capacity));
+        PULSE_ASSERT(capacity * 2 <= etl::numeric_limits<TIndex>::max());
+    }
 
     /**
      * @return TIndex Number of elements currently contained in the buffer.
@@ -87,7 +43,7 @@ public:
     TIndex
     GetAvailableCapacity() const
     {
-        return this->capacity - GetSize();
+        return capacity - GetSize();
     }
 
     bool
@@ -109,11 +65,11 @@ public:
     Write(const T *data, TIndex size)
     {
         size = etl::min(size, GetAvailableCapacity());
-        TIndex bufferWritePos = writePos & (this->capacity - 1);
-        TIndex tailSize = etl::min<TIndex>(size, this->capacity - bufferWritePos);
-        etl::copy(data, data + tailSize, this->GetBuffer() + bufferWritePos);
+        TIndex bufferWritePos = writePos & (capacity - 1);
+        TIndex tailSize = etl::min<TIndex>(size, capacity - bufferWritePos);
+        etl::copy(data, data + tailSize, buffer + bufferWritePos);
         if (tailSize < size) {
-            etl::copy(data + tailSize, data + size, this->GetBuffer());
+            etl::copy(data + tailSize, data + size, buffer);
         }
         writePos += size;
         return size;
@@ -135,12 +91,12 @@ public:
     Read(T *out, TIndex size)
     {
         size = etl::min(size, GetSize());
-        TIndex bufferReadPos = readPos & (this->capacity - 1);
-        TIndex tailSize = etl::min<TIndex>(size, this->capacity - bufferReadPos);
-        const T *readPtr = this->GetBuffer() + bufferReadPos;
+        TIndex bufferReadPos = readPos & (capacity - 1);
+        TIndex tailSize = etl::min<TIndex>(size, capacity - bufferReadPos);
+        const T *readPtr = buffer + bufferReadPos;
         etl::copy(readPtr, readPtr + tailSize, out);
         if (tailSize < size) {
-            etl::copy(this->GetBuffer(), this->GetBuffer() + size - tailSize, out + tailSize);
+            etl::copy(buffer, buffer + size - tailSize, out + tailSize);
         }
         readPos += size;
         return size;
@@ -152,9 +108,9 @@ public:
     etl::span<T>
     GetWriteRegion()
     {
-        TIndex bufferWritePos = writePos & (this->capacity - 1);
-        TIndex size = etl::min<TIndex>(GetAvailableCapacity(), this->capacity - bufferWritePos);
-        T *writePtr = this->GetBuffer() + bufferWritePos;
+        TIndex bufferWritePos = writePos & (capacity - 1);
+        TIndex size = etl::min<TIndex>(GetAvailableCapacity(), capacity - bufferWritePos);
+        T *writePtr = buffer + bufferWritePos;
         return {writePtr, writePtr + size};
     }
 
@@ -163,7 +119,7 @@ public:
     CommitWrite(TIndex size)
     {
         PULSE_ASSERT(size <= etl::min<TIndex>(GetAvailableCapacity(),
-                                              this->capacity - (writePos & (this->capacity - 1))));
+                                              capacity - (writePos & (capacity - 1))));
         writePos += size;
     }
 
@@ -173,9 +129,9 @@ public:
     etl::span<const T>
     GetReadRegion()
     {
-        TIndex bufferReadPos = readPos & (this->capacity - 1);
-        TIndex size = etl::min<TIndex>(GetSize(), this->capacity - bufferReadPos);
-        T *readPtr = this->GetBuffer() + bufferReadPos;
+        TIndex bufferReadPos = readPos & (capacity - 1);
+        TIndex size = etl::min<TIndex>(GetSize(), capacity - bufferReadPos);
+        T *readPtr = buffer + bufferReadPos;
         return {readPtr, readPtr + size};
     }
 
@@ -183,13 +139,25 @@ public:
     void
     CommitRead(TIndex size)
     {
-        PULSE_ASSERT(size <= etl::min<TIndex>(GetSize(),
-                                              this->capacity - (readPos & (this->capacity - 1))));
+        PULSE_ASSERT(size <= etl::min<TIndex>(GetSize(), capacity - (readPos & (capacity - 1))));
         readPos += size;
     }
-
 private:
     TIndex writePos = 0, readPos = 0;
+};
+
+
+/** RingBuffer with embedded fixed size storage. */
+template <typename T, size_t Capacity,
+          etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(Capacity * 2)>>
+class InlineRingBuffer: public RingBuffer<T, TIndex> {
+public:
+    InlineRingBuffer():
+        RingBuffer<T, TIndex>(buffer, Capacity)
+    {}
+
+private:
+    T buffer[Capacity];
 };
 
 } // namespace pulse

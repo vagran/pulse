@@ -6,7 +6,7 @@ using namespace pulse;
 
 TEST_CASE("RingBuffer basic push/pop")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input[] = {1, 2, 3, 4};
     int output[4] = {};
@@ -49,7 +49,7 @@ TEST_CASE("RingBuffer basic push/pop (external storage)")
 
 TEST_CASE("RingBuffer capacity limit")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input[10] = {};
 
@@ -61,7 +61,7 @@ TEST_CASE("RingBuffer capacity limit")
 
 TEST_CASE("RingBuffer wraparound behavior")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input1[] = {1,2,3,4,5};
     int input2[] = {6,7,8};
@@ -82,7 +82,7 @@ TEST_CASE("RingBuffer wraparound behavior")
 
 TEST_CASE("RingBuffer partial pop")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input[] = {1,2,3};
     int output[5] = {};
@@ -98,7 +98,7 @@ TEST_CASE("RingBuffer partial pop")
 
 TEST_CASE("RingBuffer zero-copy write region")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     auto region = rb.GetWriteRegion();
     REQUIRE(region.size() == 8);
@@ -113,7 +113,7 @@ TEST_CASE("RingBuffer zero-copy write region")
 
 TEST_CASE("RingBuffer zero-copy read region")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input[] = {1,2,3,4};
     rb.Write(input, 4);
@@ -130,7 +130,7 @@ TEST_CASE("RingBuffer zero-copy read region")
 
 TEST_CASE("RingBuffer zero-copy wrap split")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input1[] = {1,2,3,4,5};
     rb.Write(input1, 5);
@@ -153,7 +153,7 @@ TEST_CASE("RingBuffer zero-copy wrap split")
 
 TEST_CASE("RingBuffer zero-copy read wrap split", "[single]")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input1[] = {1,2,3,4,5};
     int input2[] = {6,7,8, 9,10,11};
@@ -180,7 +180,7 @@ TEST_CASE("RingBuffer zero-copy read wrap split", "[single]")
 
 TEST_CASE("RingBuffer multiple region iteration")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     int input[] = {1,2,3,4,5,6};
     rb.Write(input, 6);
@@ -201,7 +201,7 @@ TEST_CASE("RingBuffer multiple region iteration")
 
 TEST_CASE("RingBuffer interleaved push/pop")
 {
-    RingBuffer<int, 8> rb;
+    InlineRingBuffer<int, 8> rb;
 
     for (int i = 0; i < 100; ++i) {
         rb.Write(&i, 1);
