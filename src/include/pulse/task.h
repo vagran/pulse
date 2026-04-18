@@ -665,6 +665,11 @@ public:
      *      dangling coroutine to resume at some point, causing undesired effects (and consuming
      *      memory while dangling). Use `Task::WeakPtr` to store suspended task reference in an
      *      awaiter.
+     *
+     * Note, that storing awaiter without awaiting on it across suspension point, may lead to UB if
+     * the awaiter event source is already destructed when resumed and awaiting on stored awaiter
+     * instance. So, the general rule of thumb is await immediately after creating awaiter or at
+     * least on the next suspension point (never after it).
      */
 
     Awaiter() = default;

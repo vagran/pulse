@@ -130,7 +130,6 @@ private:
     friend struct details::ListDefaultTrait<DiscardQueuePopAwaiter<T, tailDrop, TIndex> *>;
 
     DiscardQueuePopAwaiter<T, tailDrop, TIndex> *next = nullptr;
-
     DiscardQueue<T, tailDrop, TIndex> *queue = nullptr;
     Task::WeakPtr task;
     alignas(T) uint8_t storage[sizeof(T)];
@@ -305,18 +304,18 @@ template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 bool
 DiscardQueuePopAwaiter<T, tailDrop, TIndex>::await_suspend(Task::CoroutineHandle handle)
 {
-    if (!queue) {
-        return false;
-    }
+    // Move possible dynamic allocation out of lock.
+    auto wTask = Task(handle).GetWeakPtr();
+
     CriticalSection cs;
 
-    if (queue->size) {
+    if (queue->size) [[unlikely]] {
         etl::construct_at(&Item(), etl::move(queue->CurReadItem()));
         queue->CommitPop();
         queue = nullptr;
         return false;
     }
-    task = Task(handle).GetWeakPtr();
+    task = etl::move(wTask);
     queue->popWaiters.AddLast(this);
     return true;
 }

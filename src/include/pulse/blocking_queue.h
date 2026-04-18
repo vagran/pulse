@@ -377,7 +377,7 @@ BlockingQueuePushAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
     if (!this->queue) {
         return false;
     }
-    if (this->queue->size < this->queue->capacity) {
+    if (this->queue->size < this->queue->capacity) [[unlikely]] {
         etl::construct_at(&this->queue->CurWriteItem(), etl::move(this->Item()));
         this->queue->CommitPush(true);
         this->queue = nullptr;
@@ -409,7 +409,7 @@ BlockingQueuePopAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
     if (!this->queue) {
         return false;
     }
-    if (this->queue->size) {
+    if (this->queue->size) [[unlikely]] {
         etl::construct_at(&this->Item(), etl::move(this->queue->CurReadItem()));
         this->queue->CommitPop(true);
         this->queue = nullptr;

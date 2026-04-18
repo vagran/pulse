@@ -191,9 +191,12 @@ TokenQueueAwaiter<TCounter>::await_suspend(Task::CoroutineHandle handle)
     if (result) {
         return false;
     }
+    // Move possible dynamic allocation out of lock.
+    auto wTask = Task(handle).GetWeakPtr();
+
     CriticalSection cs;
-    if (queue.numTokens == 0) {
-        task = Task(handle).GetWeakPtr();
+    if (queue.numTokens == 0) [[likely]] {
+        task = etl::move(wTask);
         queue.waiters.AddLast(this);
         return true;
     }
