@@ -151,7 +151,7 @@ TEST_CASE("RingBuffer zero-copy wrap split")
     REQUIRE(rb.GetSize() == 5);
 }
 
-TEST_CASE("RingBuffer zero-copy read wrap split", "[single]")
+TEST_CASE("RingBuffer zero-copy read wrap split")
 {
     InlineRingBuffer<int, 8> rb;
 
