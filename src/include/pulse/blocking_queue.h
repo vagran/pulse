@@ -364,7 +364,9 @@ BlockingQueuePushAwaiter<T, TIndex>::~BlockingQueuePushAwaiter()
 {
     if (this->queue) {
         etl::destroy_at(&this->Item());
-        this->queue->pushWaiters.Remove(this);
+        if (this->task) {
+            this->queue->pushWaiters.Remove(this);
+        }
     }
 }
 
@@ -392,7 +394,9 @@ template <typename T, etl::unsigned_integral TIndex>
 BlockingQueuePopAwaiter<T, TIndex>::~BlockingQueuePopAwaiter()
 {
     if (this->queue) {
-        this->queue->popWaiters.Remove(this);
+        if (this->task) {
+            this->queue->popWaiters.Remove(this);
+        }
     } else {
         etl::destroy_at(&this->Item());
     }
