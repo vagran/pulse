@@ -186,6 +186,7 @@ public:
     T
     await_resume()
     {
+        PULSE_ASSERT(!this->queue);
         return etl::move(this->Item());
     }
 private:
@@ -287,6 +288,7 @@ BlockingQueuePopAwaiter<T>
 BlockingQueue<T>::Pop()
 {
     if (size) {
+        // Awaiters do not have copy constructors so temporarily store item here.
         T item = etl::move(CurReadItem());
         CommitPop(true);
         return BlockingQueuePopAwaiter<T>(etl::move(item));
@@ -312,13 +314,13 @@ BlockingQueue<T>::CommitPush(bool checkWaiters)
 {
     PULSE_ASSERT(size <= capacity);
     size++;
-    if (checkWaiters) {
+    if (!checkWaiters) {
         return;
     }
     while (size && !popWaiters.IsEmpty()) {
         auto waiter = popWaiters.PopFirst();
-        CommitPop(false);
         etl::construct_at(&waiter->Item(), etl::move(CurReadItem()));
+        CommitPop(false);
         waiter->queue = nullptr;
         waiter->task.Wakeup();
     }
@@ -343,6 +345,7 @@ BlockingQueue<T>::CommitPop(bool checkWaiters)
         etl::construct_at(&CurWriteItem(), etl::move(waiter->Item()));
         CommitPush(false);
         waiter->queue = nullptr;
+        etl::destroy_at(&waiter->Item());
         waiter->task.Wakeup();
     }
 }

@@ -25,7 +25,8 @@ CheckStats()
 
 class A {
 public:
-    std::optional<int> value;
+    // Use dynamic allocation to help troubleshooting with Valgrind.
+    std::unique_ptr<int> value;
 
     A()
     {
@@ -33,14 +34,14 @@ public:
     }
 
     A(int value):
-        value(value)
+        value(std::make_unique<int>(value))
     {
         numConstructed++;
         numValuesConstructed++;
     }
 
     A(const A &other):
-        value(other.value)
+        value(std::make_unique<int>(*other.value))
     {
         numConstructed++;
         numValuesConstructed++;
@@ -94,48 +95,58 @@ TEST_CASE("Blocking queue", "[single]")
 
                 CheckResult(2, "T1:2");
                 results.push_back("T1:3");
-                co_await q.Push(3);
+                co_await q.Push(3); // switch
 
-                CheckResult(6, "T2:3");
+                CheckResult(7, "T2:4");
                 results.push_back("T1:4");
-                co_await q.Push(4);
+                // Thiss one goes into pending awaiter
+                REQUIRE(q.TryPush(4));
 
-                CheckResult(7, "T1:4");
+                CheckResult(8, "T1:4");
                 results.push_back("T1:5");
-                co_await q.Push(5);
+                REQUIRE(q.TryEmplace(5));
 
-                CheckResult(10, "T2:5");
+                CheckResult(9, "T1:5");
                 results.push_back("T1:6");
+                co_await q.Emplace(6);
+
+                CheckResult(10, "T1:6");
+                results.push_back("T1:7");
             });
 
             auto t2 = Task::Spawn([&]() -> TaskV {
                 CheckResult(3, "T1:3");
                 results.push_back("T2:1");
-                REQUIRE((co_await q.Pop()).value == 1);
+                REQUIRE(*(co_await q.Pop()).value == 1);
 
                 CheckResult(4, "T2:1");
                 results.push_back("T2:2");
-                REQUIRE((co_await q.Pop()).value == 2);
+                REQUIRE(*(co_await q.Pop()).value == 2);
 
                 CheckResult(5, "T2:2");
                 results.push_back("T2:3");
-                REQUIRE((co_await q.Pop()).value == 3);
+                // This one is taken from pending awaiter
+                REQUIRE(*(co_await q.Pop()).value == 3);
 
-                CheckResult(8, "T1:5");
+                CheckResult(6, "T2:3");
                 results.push_back("T2:4");
-                REQUIRE((co_await q.Pop()).value == 4);
+                REQUIRE(*(co_await q.Pop()).value == 4); // switch
 
-                CheckResult(9, "T2:4");
+                CheckResult(11, "T1:7");
                 results.push_back("T2:5");
-                REQUIRE((co_await q.Pop()).value == 5);
+                REQUIRE(*(co_await q.Pop()).value == 5);
 
-                CheckResult(11, "T1:6");
+                CheckResult(12, "T2:5");
                 results.push_back("T2:6");
+                REQUIRE(*(co_await q.Pop()).value == 6);
+
+                CheckResult(13, "T2:6");
+                results.push_back("T2:7");
             });
 
             Task::RunSome();
 
-            CheckResult(12, "T2:6");
+            CheckResult(14, "T2:7");
         }
     }
 
