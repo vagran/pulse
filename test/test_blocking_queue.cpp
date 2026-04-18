@@ -77,7 +77,7 @@ CheckResult(size_t expectedSize, const std::string &expectedLast)
 } // anonymous namespace
 
 
-TEST_CASE("Blocking queue", "[single]")
+TEST_CASE("Blocking queue")
 {
     ResetStats();
     results.clear();

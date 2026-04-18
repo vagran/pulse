@@ -7,38 +7,42 @@
 
 namespace pulse {
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 class BlockingQueuePushAwaiter;
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 class BlockingQueuePopAwaiter;
 
 
-/** Implements blocking queue. Objects in the storage are constructed only when in queue.
+/** Implements blocking queue. Can block both producer and consumer. Can be used for communication
+ * between applications tasks only, cannot be used from ISR (use `DiscardQueue` to allow ISR
+ * producer). Objects in the storage are constructed only when in queue.
  *
  * @tparam T Type of value to store. Should be move constructible.
+ * @tparam TIndex Type used to stored sizes and indices. Capacity should fit into this type.
  */
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex = size_t>
 class BlockingQueue {
 public:
     /** Use provided buffer as storage. The buffer lifetime should not be less than this object
      * lifetime. Buffer values should not be initialized (not constructed).
      */
-    BlockingQueue(T *buffer, size_t capacity):
+    BlockingQueue(T *buffer, TIndex capacity):
         buffer(buffer),
         capacity(capacity)
     {
         PULSE_ASSERT(capacity > 0);
+        PULSE_ASSERT(capacity <= etl::numeric_limits<TIndex>::max());
     }
 
     ~BlockingQueue();
 
     template <typename U>
-    BlockingQueuePushAwaiter<T>
+    BlockingQueuePushAwaiter<T, TIndex>
     Push(U &&value);
 
     template <typename... Args>
-    BlockingQueuePushAwaiter<T>
+    BlockingQueuePushAwaiter<T, TIndex>
     Emplace(Args &&... args);
 
     template <typename U>
@@ -49,21 +53,21 @@ public:
     bool
     TryEmplace(Args &&... args);
 
-    BlockingQueuePopAwaiter<T>
+    BlockingQueuePopAwaiter<T, TIndex>
     Pop();
 
     etl::optional<T>
     TryPop();
 
 private:
-    friend class BlockingQueuePushAwaiter<T>;
-    friend class BlockingQueuePopAwaiter<T>;
+    friend class BlockingQueuePushAwaiter<T, TIndex>;
+    friend class BlockingQueuePopAwaiter<T, TIndex>;
 
     T * const buffer;
-    TailedList<BlockingQueuePushAwaiter<T> *> pushWaiters;
-    TailedList<BlockingQueuePopAwaiter<T> *> popWaiters;
-    const size_t capacity;
-    size_t readIdx = 0, size = 0;
+    TailedList<BlockingQueuePushAwaiter<T, TIndex> *> pushWaiters;
+    TailedList<BlockingQueuePopAwaiter<T, TIndex> *> popWaiters;
+    const TIndex capacity;
+    TIndex readIdx = 0, size = 0;
 
     T &
     CurReadItem()
@@ -76,7 +80,7 @@ private:
     CurWriteItem()
     {
         PULSE_ASSERT(size < capacity);
-        size_t idx = readIdx + size;
+        TIndex idx = readIdx + size;
         if (idx >= capacity) {
             idx -= capacity;
         }
@@ -92,14 +96,17 @@ private:
 
 
 /** BlockingQueue with embedded fixed size storage. */
-template <typename T, size_t Capacity>
-class InlineBlockingQueue: public BlockingQueue<T> {
+template <typename T, size_t Capacity,
+          etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(Capacity)>>
+class InlineBlockingQueue: public BlockingQueue<T, TIndex> {
 public:
     static constexpr size_t capacity = Capacity;
 
     InlineBlockingQueue():
-        BlockingQueue<T>(reinterpret_cast<T *>(buffer), Capacity)
-    {}
+        BlockingQueue<T, TIndex>(reinterpret_cast<T *>(buffer), Capacity)
+    {
+        static_assert(Capacity <= etl::numeric_limits<TIndex>::max());
+    }
 
 private:
     alignas(T) uint8_t buffer[sizeof(T) * Capacity];
@@ -108,18 +115,18 @@ private:
 
 namespace details {
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 class BlockingQueueAwaiter {
 protected:
-    friend class BlockingQueue<T>;
+    friend class BlockingQueue<T, TIndex>;
 
-    BlockingQueue<T> *queue = nullptr;
+    BlockingQueue<T, TIndex> *queue = nullptr;
     Task::WeakPtr task;
     alignas(T) uint8_t storage[sizeof(T)];
 
     BlockingQueueAwaiter() = default;
 
-    BlockingQueueAwaiter(BlockingQueue<T> *queue):
+    BlockingQueueAwaiter(BlockingQueue<T, TIndex> *queue):
         queue(queue)
     {}
 
@@ -133,8 +140,9 @@ protected:
 } // namespace details
 
 
-template <typename T>
-class BlockingQueuePushAwaiter: public details::BlockingQueueAwaiter<T>, public Awaiter<void> {
+template <typename T, etl::unsigned_integral TIndex>
+class BlockingQueuePushAwaiter: public details::BlockingQueueAwaiter<T, TIndex>,
+    public Awaiter<void> {
 public:
     ~BlockingQueuePushAwaiter();
 
@@ -152,25 +160,25 @@ public:
     {}
 
 private:
-    friend class BlockingQueue<T>;
-    friend struct details::ListDefaultTrait<BlockingQueuePushAwaiter<T> *>;
+    friend class BlockingQueue<T, TIndex>;
+    friend struct details::ListDefaultTrait<BlockingQueuePushAwaiter<T, TIndex> *>;
 
-    BlockingQueuePushAwaiter<T> *next = nullptr;
+    BlockingQueuePushAwaiter<T, TIndex> *next = nullptr;
 
 
     BlockingQueuePushAwaiter() = default;
 
     template <typename... Args>
-    BlockingQueuePushAwaiter(BlockingQueue<T> *queue, Args &&... args):
-        details::BlockingQueueAwaiter<T>(queue)
+    BlockingQueuePushAwaiter(BlockingQueue<T, TIndex> *queue, Args &&... args):
+        details::BlockingQueueAwaiter<T, TIndex>(queue)
     {
         etl::construct_at(&this->Item(), etl::forward<Args>(args)...);
     }
 };
 
 
-template <typename T>
-class BlockingQueuePopAwaiter: public details::BlockingQueueAwaiter<T>, public Awaiter<T> {
+template <typename T, etl::unsigned_integral TIndex>
+class BlockingQueuePopAwaiter: public details::BlockingQueueAwaiter<T, TIndex>, public Awaiter<T> {
 public:
     ~BlockingQueuePopAwaiter();
 
@@ -190,14 +198,14 @@ public:
         return etl::move(this->Item());
     }
 private:
-    friend class BlockingQueue<T>;
-    friend struct details::ListDefaultTrait<BlockingQueuePopAwaiter<T> *>;
+    friend class BlockingQueue<T, TIndex>;
+    friend struct details::ListDefaultTrait<BlockingQueuePopAwaiter<T, TIndex> *>;
 
-    BlockingQueuePopAwaiter<T> *next = nullptr;
+    BlockingQueuePopAwaiter<T, TIndex> *next = nullptr;
 
     BlockingQueuePopAwaiter() = default;
 
-    using details::BlockingQueueAwaiter<T>::BlockingQueueAwaiter;
+    using details::BlockingQueueAwaiter<T, TIndex>::BlockingQueueAwaiter;
 
     BlockingQueuePopAwaiter(T &&item)
     {
@@ -206,8 +214,8 @@ private:
 };
 
 
-template <typename T>
-BlockingQueue<T>::~BlockingQueue()
+template <typename T, etl::unsigned_integral TIndex>
+BlockingQueue<T, TIndex>::~BlockingQueue()
 {
     for (auto waiter: pushWaiters) {
         waiter->queue = nullptr;
@@ -231,36 +239,36 @@ BlockingQueue<T>::~BlockingQueue()
     }
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 template <typename U>
-BlockingQueuePushAwaiter<T>
-BlockingQueue<T>::Push(U &&value)
+BlockingQueuePushAwaiter<T, TIndex>
+BlockingQueue<T, TIndex>::Push(U &&value)
 {
     if (size < capacity) {
         etl::construct_at(&CurWriteItem(), etl::forward<U>(value));
         CommitPush(true);
         return {};
     }
-    return BlockingQueuePushAwaiter<T>(this, etl::forward<U>(value));
+    return BlockingQueuePushAwaiter<T, TIndex>(this, etl::forward<U>(value));
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 template <typename... Args>
-BlockingQueuePushAwaiter<T>
-BlockingQueue<T>::Emplace(Args &&... args)
+BlockingQueuePushAwaiter<T, TIndex>
+BlockingQueue<T, TIndex>::Emplace(Args &&... args)
 {
     if (size < capacity) {
         etl::construct_at(&CurWriteItem(), etl::forward<Args>(args)...);
         CommitPush(true);
         return {};
     }
-    return BlockingQueuePushAwaiter<T>(this, etl::forward<Args>(args)...);
+    return BlockingQueuePushAwaiter<T, TIndex>(this, etl::forward<Args>(args)...);
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 template <typename U>
 bool
-BlockingQueue<T>::TryPush(U &&value)
+BlockingQueue<T, TIndex>::TryPush(U &&value)
 {
     if (size >= capacity) {
         return false;
@@ -270,10 +278,10 @@ BlockingQueue<T>::TryPush(U &&value)
     return true;
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 template <typename... Args>
 bool
-BlockingQueue<T>::TryEmplace(Args &&... args)
+BlockingQueue<T, TIndex>::TryEmplace(Args &&... args)
 {
     if (size >= capacity) {
         return false;
@@ -283,22 +291,22 @@ BlockingQueue<T>::TryEmplace(Args &&... args)
     return true;
 }
 
-template <typename T>
-BlockingQueuePopAwaiter<T>
-BlockingQueue<T>::Pop()
+template <typename T, etl::unsigned_integral TIndex>
+BlockingQueuePopAwaiter<T, TIndex>
+BlockingQueue<T, TIndex>::Pop()
 {
     if (size) {
         // Awaiters do not have copy constructors so temporarily store item here.
         T item = etl::move(CurReadItem());
         CommitPop(true);
-        return BlockingQueuePopAwaiter<T>(etl::move(item));
+        return BlockingQueuePopAwaiter<T, TIndex>(etl::move(item));
     }
-    return BlockingQueuePopAwaiter<T>(this);
+    return BlockingQueuePopAwaiter<T, TIndex>(this);
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 etl::optional<T>
-BlockingQueue<T>::TryPop()
+BlockingQueue<T, TIndex>::TryPop()
 {
     if (size) {
         T item = etl::move(CurReadItem());
@@ -308,9 +316,9 @@ BlockingQueue<T>::TryPop()
     return etl::nullopt;
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 void
-BlockingQueue<T>::CommitPush(bool checkWaiters)
+BlockingQueue<T, TIndex>::CommitPush(bool checkWaiters)
 {
     PULSE_ASSERT(size <= capacity);
     size++;
@@ -326,9 +334,9 @@ BlockingQueue<T>::CommitPush(bool checkWaiters)
     }
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 void
-BlockingQueue<T>::CommitPop(bool checkWaiters)
+BlockingQueue<T, TIndex>::CommitPop(bool checkWaiters)
 {
     PULSE_ASSERT(size != 0);
     etl::destroy_at(&CurReadItem());
@@ -351,8 +359,8 @@ BlockingQueue<T>::CommitPop(bool checkWaiters)
 }
 
 
-template <typename T>
-BlockingQueuePushAwaiter<T>::~BlockingQueuePushAwaiter()
+template <typename T, etl::unsigned_integral TIndex>
+BlockingQueuePushAwaiter<T, TIndex>::~BlockingQueuePushAwaiter()
 {
     if (this->queue) {
         etl::destroy_at(&this->Item());
@@ -360,9 +368,9 @@ BlockingQueuePushAwaiter<T>::~BlockingQueuePushAwaiter()
     }
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 bool
-BlockingQueuePushAwaiter<T>::await_suspend(Task::CoroutineHandle handle)
+BlockingQueuePushAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
 {
     if (!this->queue) {
         return false;
@@ -380,8 +388,8 @@ BlockingQueuePushAwaiter<T>::await_suspend(Task::CoroutineHandle handle)
 }
 
 
-template <typename T>
-BlockingQueuePopAwaiter<T>::~BlockingQueuePopAwaiter()
+template <typename T, etl::unsigned_integral TIndex>
+BlockingQueuePopAwaiter<T, TIndex>::~BlockingQueuePopAwaiter()
 {
     if (this->queue) {
         this->queue->popWaiters.Remove(this);
@@ -390,9 +398,9 @@ BlockingQueuePopAwaiter<T>::~BlockingQueuePopAwaiter()
     }
 }
 
-template <typename T>
+template <typename T, etl::unsigned_integral TIndex>
 bool
-BlockingQueuePopAwaiter<T>::await_suspend(Task::CoroutineHandle handle)
+BlockingQueuePopAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
 {
     if (!this->queue) {
         return false;

@@ -154,7 +154,9 @@ class InlineRingBuffer: public RingBuffer<T, TIndex> {
 public:
     InlineRingBuffer():
         RingBuffer<T, TIndex>(buffer, Capacity)
-    {}
+    {
+        static_assert(Capacity * 2 <= etl::numeric_limits<TIndex>::max());
+    }
 
 private:
     T buffer[Capacity];
