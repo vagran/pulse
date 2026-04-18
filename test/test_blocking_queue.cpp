@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/blocking_queue.h>
+#include <pulse/token_queue.h>
+
 
 using namespace pulse;
 
@@ -81,9 +83,9 @@ TEST_CASE("Blocking queue", "[single]")
     results.clear();
 
     {
-        InlineBlockingQueue<A, 2> q;
-
         SECTION("Basic") {
+            InlineBlockingQueue<A, 2> q;
+
             auto t1 = Task::Spawn([&]() -> TaskV {
                 REQUIRE(results.empty());
                 results.push_back("T1:1");
@@ -147,6 +149,107 @@ TEST_CASE("Blocking queue", "[single]")
             Task::RunSome();
 
             CheckResult(14, "T2:7");
+        }
+
+        SECTION("Awaiter destruction") {
+            InlineBlockingQueue<A, 2> q;
+
+            auto t1 = Task::Spawn([&]() -> TaskV {
+                q.Push(1);
+                q.Push(2);
+                q.Push(3);
+                q.Push(4);
+                co_return;
+            });
+
+            auto t2 = Task::Spawn([&]() -> TaskV {
+                REQUIRE(*(co_await q.Pop()).value == 1);
+                REQUIRE(*(co_await q.Pop()).value == 2);
+                REQUIRE(!q.TryPop());
+            });
+
+            Task::RunSome();
+
+            REQUIRE(t1.IsFinished());
+            REQUIRE(t2.IsFinished());
+        }
+
+        SECTION("Awaited Awaiter destruction") {
+            InlineBlockingQueue<A, 2> q;
+            TokenQueue<> tq;
+
+            auto t1 = Task::Spawn([&]() -> TaskV {
+                REQUIRE(q.TryPush(1));
+                REQUIRE(q.TryPush(2));
+                REQUIRE(co_await Task::WhenAny(tq.Take(), q.Push(3)) == 0);
+            });
+
+            auto t2 = Task::Spawn([&]() -> TaskV {
+                tq.Push();
+                // Task::Make wrapper, handler task in AnyTaskAwaiter, t1
+                while (co_await Task::Switch());
+                REQUIRE(*(co_await q.Pop()).value == 1);
+                REQUIRE(*(co_await q.Pop()).value == 2);
+                REQUIRE(!q.TryPop());
+            });
+
+            Task::RunSome();
+
+            REQUIRE(t1.IsFinished());
+            REQUIRE(t2.IsFinished());
+        }
+
+        SECTION("Queue destruction") {
+            std::optional<InlineBlockingQueue<A, 2>> q;
+            TokenQueue<> tq;
+
+            q.emplace();
+
+            auto t1 = Task::Spawn([&]() -> TaskV {
+                REQUIRE(q->TryPush(1));
+                REQUIRE(q->TryPush(2));
+                REQUIRE(co_await Task::WhenAny(tq.Take(), q->Push(3)) == 1);
+            });
+
+            auto t2 = Task::Spawn([&]() -> TaskV {
+                q.reset();
+                co_return;
+            });
+
+            Task::RunSome();
+
+            REQUIRE(t1.IsFinished());
+            REQUIRE(t2.IsFinished());
+        }
+
+        SECTION("Queue destruction (pop)") {
+            std::optional<InlineBlockingQueue<A, 2>> q;
+            TokenQueue<> tq;
+
+            q.emplace();
+
+            auto t1 = Task::Spawn([&]() -> TaskV {
+                std::optional<A> result;
+                auto getResult = [&]() -> Awaitable<void> {
+                    result.emplace(co_await q->Pop());
+                };
+                auto awaitable = getResult();
+                REQUIRE(!result);
+                REQUIRE(co_await Task::WhenAny(tq.Take(), awaitable) == 1);
+                REQUIRE(result);
+                // Empty value should be returned
+                REQUIRE(!result->value);
+            });
+
+            auto t2 = Task::Spawn([&]() -> TaskV {
+                q.reset();
+                co_return;
+            });
+
+            Task::RunSome();
+
+            REQUIRE(t1.IsFinished());
+            REQUIRE(t2.IsFinished());
         }
     }
 
