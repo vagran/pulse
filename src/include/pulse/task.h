@@ -512,7 +512,7 @@ public:
     return_value(From&& from)
     {
         isFinished = 1;
-        new (result.data) TRet(etl::forward<From>(from));
+        etl::construct_at<TRet>(reinterpret_cast<TRet *>(result.data), etl::forward<From>(from));
         NotifyWaiters();
     }
 
@@ -521,6 +521,14 @@ public:
     {
         PULSE_ASSERT(isFinished);
         return *reinterpret_cast<const TRet *>(result.data);
+    }
+
+    /** Move result out of stored value. */
+    TRet &&
+    MoveResult()
+    {
+        PULSE_ASSERT(isFinished);
+        return etl::move(*reinterpret_cast<TRet *>(result.data));
     }
 
 private:
@@ -757,6 +765,12 @@ protected:
 
 } // namespace details
 
+/**
+ * Await task termination and get its result value. Note, that if the task result type is not
+ * copy-constructible its result value is moved out of stored value in the task promise object, so
+ * that any subsequent result retrieval will get empty (moved out) value.
+ * @tparam TRet Task return type.
+ */
 template <typename TRet>
 class TaskAwaiter: public details::TaskAwaiterBase, public Awaiter<TRet> {
 public:
@@ -770,9 +784,17 @@ public:
     await_resume() const
     {
         if (initialSuspend) {
-            return TTask<TRet, true>(task.handle).GetPromise().GetResult();
+            if constexpr (etl::is_copy_constructible_v<TRet>) {
+                return TTask<TRet, true>(task.handle).GetPromise().GetResult();
+            } else {
+                return TTask<TRet, true>(task.handle).GetPromise().MoveResult();
+            }
         } else {
-            return TTask<TRet, false>(task.handle).GetPromise().GetResult();
+            if constexpr (etl::is_copy_constructible_v<TRet>) {
+                return TTask<TRet, false>(task.handle).GetPromise().GetResult();
+            } else {
+                return TTask<TRet, false>(task.handle).GetPromise().MoveResult();
+            }
         }
     }
 

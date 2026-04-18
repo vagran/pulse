@@ -965,3 +965,20 @@ TEST_CASE("TaskWeakPtr")
     }
     REQUIRE(!p.Lock());
 }
+
+
+TEST_CASE("Task moveable return type")
+{
+    auto t1 = Task::Spawn([]() -> TTask<std::unique_ptr<int>> {
+        co_return std::make_unique<int>(42);
+    });
+
+    auto t2 = Task::Spawn([&]() -> TTask<std::unique_ptr<int>> {
+        co_return co_await t1;
+    });
+
+    Task::RunSome();
+
+    REQUIRE(t1.IsFinished());
+    REQUIRE(*t2.GetResult() == 42);
+}

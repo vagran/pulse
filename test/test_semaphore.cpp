@@ -77,11 +77,10 @@ TEST_CASE("Semaphore destruction")
     sem.emplace(2, 1);
 
     auto t1 = Task::Spawn([&]() -> TaskV {
-        //XXX implement moveable task return types
-        // {
-        //     auto g = co_await sem->AcquireGuard();
-        //     REQUIRE(g);
-        // }
+        {
+            auto g = co_await sem->AcquireGuard();
+            REQUIRE(g);
+        }
         REQUIRE(sem->TryAcquire());
         REQUIRE(!sem->TryAcquire());
         REQUIRE(!co_await sem->Acquire());

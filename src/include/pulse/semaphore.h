@@ -43,7 +43,7 @@ public:
     bool
     TryAcquire();
 
-    Awaitable<SemaphoreGuard<TSize> &&>
+    Awaitable<SemaphoreGuard<TSize>>
     AcquireGuard();
 
     /** Release token previously acquired by Acquire(). Can be called from ISR. */
@@ -186,7 +186,7 @@ Semaphore<TSize>::TryAcquire()
 }
 
 template <etl::unsigned_integral TSize>
-Awaitable<SemaphoreGuard<TSize> &&>
+Awaitable<SemaphoreGuard<TSize>>
 Semaphore<TSize>::AcquireGuard()
 {
     if (co_await Acquire()) {
