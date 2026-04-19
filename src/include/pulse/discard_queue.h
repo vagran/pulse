@@ -53,6 +53,46 @@ public:
     etl::optional<T>
     TryPop();
 
+    /// Get number of queued elements. Should be used only if producer is not in ISR or with
+    // interrupts disabled.
+    TIndex
+    Size() const
+    {
+        return size;
+    }
+
+    /// Check if queue is empty. Should be used only if producer is not in ISR or with
+    // interrupts disabled.
+    bool
+    IsEmpty() const
+    {
+        return size == 0;
+    }
+
+
+    /** Get reference to the first item (which is next to be popped out). Valid only if not empty.
+     * Should be used only if producer is not in ISR or with interrupts disabled.
+     */
+    T &
+    Peek()
+    {
+        return CurReadItem();
+    }
+
+    /** Get reference to the last pushed item. Valid only if not empty. Should be used only if
+     * producer is not in ISR or with interrupts disabled.
+     */
+    T &
+    PeekLast()
+    {
+        PULSE_ASSERT(size);
+        TIndex idx = readIdx + size - 1;
+        if (idx >= capacity) {
+            idx -= capacity;
+        }
+        return buffer[idx];
+    }
+
 private:
     friend class DiscardQueuePopAwaiter<T, tailDrop, TIndex>;
 
