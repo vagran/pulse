@@ -3,6 +3,7 @@
 #include <pulse/timer.h>
 #include <pulse/port.h>
 #include <pulse/token_queue.h>
+#include <pulse/discard_queue.h>
 
 #include <stm32f1xx_hal.h>
 #include <stm32f103xb.h>
@@ -13,13 +14,6 @@
 
 
 using namespace pulse;
-
-
-#define LED_Pin GPIO_PIN_13
-#define LED_GPIO_Port GPIOC
-
-#define BUTTON_Pin GPIO_PIN_14
-#define BUTTON_GPIO_Port GPIOC
 
 
 void
@@ -43,6 +37,25 @@ MallocUnlock()
 }
 
 namespace {
+
+struct GpioLine {
+    uintptr_t port;
+    uint16_t pin;
+
+    GPIO_TypeDef *
+    Port() const
+    {
+        return reinterpret_cast<GPIO_TypeDef *>(port);
+    }
+};
+
+#define DEF_IO(port, pin) {GPIO ## port ## _BASE, GPIO_PIN_ ## pin}
+
+constexpr GpioLine
+    ioLed DEF_IO(C, 13),
+    ioButton DEF_IO(C, 14),
+    ioRotEncA DEF_IO(A, 10),
+    ioRotEncB DEF_IO(A, 11);
 
 MallocUnit heap[16 * 1024 / sizeof(MallocUnit)];
 
@@ -87,13 +100,13 @@ InitLed(void)
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
     // Initially off (active low)
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(ioLed.Port(), ioLed.pin, GPIO_PIN_SET);
 
-    init.Pin = LED_Pin;
+    init.Pin = ioLed.pin;
     init.Mode = GPIO_MODE_OUTPUT_OD;
     init.Pull = GPIO_NOPULL;
     init.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(LED_GPIO_Port, &init);
+    HAL_GPIO_Init(ioLed.Port(), &init);
 }
 
 void
@@ -103,44 +116,64 @@ InitButton()
 
     __HAL_RCC_GPIOC_CLK_ENABLE();
 
-    init.Pin = BUTTON_Pin;
+    init.Pin = ioButton.pin;
     init.Mode = GPIO_MODE_IT_FALLING;
     init.Pull = GPIO_PULLUP;
 
-    HAL_GPIO_Init(BUTTON_GPIO_Port, &init);
+    HAL_GPIO_Init(ioButton.Port(), &init);
 
     HAL_NVIC_SetPriority(EXTI15_10_IRQn, 8, 0);
     HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 }
 
 void
+InitRotaryEncoder()
+{
+    GPIO_InitTypeDef init = {0};
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+
+    init.Pin = ioRotEncA.pin;
+    init.Mode = GPIO_MODE_IT_FALLING;
+    init.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(ioRotEncA.Port(), &init);
+
+    init.Pin = ioRotEncB.pin;
+    init.Mode = GPIO_MODE_IT_FALLING;
+    init.Pull = GPIO_PULLUP;
+
+    HAL_GPIO_Init(ioRotEncB.Port(), &init);
+}
+
+void
 LedOn()
 {
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(ioLed.Port(), ioLed.pin, GPIO_PIN_RESET);
 }
 
 void
 LedOff()
 {
-    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(ioLed.Port(), ioLed.pin, GPIO_PIN_SET);
 }
 
 void
 LedToggle()
 {
-    HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+    HAL_GPIO_TogglePin(ioLed.Port(), ioLed.pin);
 }
 
 bool
 IsButtonPressed()
 {
     // Active low.
-    return HAL_GPIO_ReadPin(BUTTON_GPIO_Port, BUTTON_Pin) == GPIO_PIN_RESET;
+    return HAL_GPIO_ReadPin(ioButton.Port(), ioButton.pin) == GPIO_PIN_RESET;
 }
 
 Timer blinkTimer;
 int blinkInterval = 0;
-TokenQueue buttonEvents(5);
+TokenQueue<uint8_t> buttonEvents(5);
 
 Awaitable<void>
 ConfirmSwitch(int interval)
@@ -182,8 +215,9 @@ BlinkTask()
 TaskV
 ButtonTask()
 {
-    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(100);
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(20);
     Timer jitterTimer;
+    etl::string<16> s;
 
     while (true) {
         co_await buttonEvents;
@@ -216,7 +250,6 @@ ButtonTask()
         }
         blinkTimer.Cancel();
 
-        etl::string<16> s;
         uart.Write("New interval: ");
         uart.Write(etl::to_string(blinkInterval, s));
         uart.Write("\n");
@@ -237,19 +270,169 @@ ButtonTask()
     }
 }
 
+class RotaryEncoder {
+public:
+    void
+    Initialize();
+
+    void
+    OnLineInterrupt(bool isA);
+
+    /** Get next click event. Value is number of clicked accumulated in given direction. Direction
+     * represented by sign.
+     */
+    Awaitable<int8_t>
+    WaitClick()
+    {
+        co_return co_await clicks.Pop();
+    }
+
+private:
+    TokenQueue<uint8_t> lineAEvent{5}, lineBEvents{5};
+    etl::optional<bool> lastDir;
+    bool lastLine = false, halfClick = false;
+    InlineDiscardQueue<int8_t, true, 16> clicks;
+
+    TaskV
+    LineTask(bool isA);
+
+    static bool
+    GetLineState(bool isA)
+    {
+        GpioLine line = isA ? ioRotEncA : ioRotEncB;
+        return HAL_GPIO_ReadPin(line.Port(), line.pin) == GPIO_PIN_RESET;
+    }
+
+    void
+    CommitEvent(bool triggerLineA, bool adjLineState);
+
+    void
+    CommitClick(bool dir);
+};
+
+RotaryEncoder rotEnc;
+
+void
+RotaryEncoder::OnLineInterrupt(bool isA)
+{
+    (isA ? lineAEvent : lineBEvents).Push();
+}
+
+void
+RotaryEncoder::Initialize()
+{
+    Task::Spawn(LineTask(true)).Pin();
+    Task::Spawn(LineTask(false)).Pin();
+}
+
+TaskV
+RotaryEncoder::LineTask(bool isA)
+{
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(1);
+    Timer jitterTimer;
+
+    while (true) {
+        co_await (isA ? lineAEvent : lineBEvents);
+        // Suppress jitter - wait until active level is stable for a long period.
+        bool pressed = false;
+        while (true) {
+            jitterTimer.ExpiresAfter(JITTER_DELAY);
+            size_t idx = co_await Task::WhenAny((isA ? lineAEvent : lineBEvents), jitterTimer);
+            if (idx == 0) {
+                // Activated again, restart anti-jitter delay
+                continue;
+            }
+            // Anti-jitter delay expired with no new events. Check if signal still active.
+            if (!GetLineState(isA)) {
+                break;
+            }
+            pressed = true;
+            break;
+        }
+
+        if (!pressed) {
+            // Ignore too short activation.
+            continue;
+        }
+        CommitEvent(isA, GetLineState(!isA));
+    }
+}
+
+void
+RotaryEncoder::CommitEvent(bool triggerLineA, bool adjLineState)
+{
+    //XXX
+    if (triggerLineA) {
+        uart.Write(adjLineState ? "A" : "a");
+    } else {
+        uart.Write(adjLineState ? "B" : "b");
+    }
+    bool dir = triggerLineA == adjLineState;
+    if (!lastDir || *lastDir != dir) {
+        lastDir = dir;
+        lastLine = triggerLineA;
+        halfClick = true;
+        return;
+    }
+    if (lastLine == triggerLineA) {
+        return;
+    }
+    lastLine = triggerLineA;
+    if (halfClick) {
+        CommitClick(dir);
+        halfClick = false;
+    } else {
+        halfClick = true;
+    }
+}
+
+void
+RotaryEncoder::CommitClick(bool dir)
+{
+    if (clicks.IsEmpty()) {
+        clicks.Push(dir ? 1 : -1);
+        return;
+    }
+    bool lastDir = clicks.PeekLast() > 0;
+    if (dir == lastDir) {
+        clicks.PeekLast() += dir ? 1 : -1;
+    } else {
+        clicks.Push(dir ? 1 : -1);
+    }
+}
+
+TaskV
+RotaryEncoderTask()
+{
+    etl::string<8> s;
+
+    while (true) {
+        int8_t clicks = co_await rotEnc.WaitClick();
+        uart.Write("Rotary encoder: ");
+        uart.Write(etl::to_string(clicks, s));
+        uart.Write("\n");
+    }
+}
+
 } /* anonymous namespace */
 
 extern "C" void
 EXTI15_10_IRQHandler()
 {
-    HAL_GPIO_EXTI_IRQHandler(BUTTON_Pin);
+    HAL_GPIO_EXTI_IRQHandler(ioButton.pin);
+    HAL_GPIO_EXTI_IRQHandler(ioRotEncA.pin);
+    HAL_GPIO_EXTI_IRQHandler(ioRotEncB.pin);
 }
 
 void
 HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-    if (GPIO_Pin == BUTTON_Pin) {
+    if (GPIO_Pin == ioButton.pin) {
         buttonEvents.Push();
+    } else if (GPIO_Pin == ioRotEncA.pin) {
+        rotEnc.OnLineInterrupt(true);
+    } else if (GPIO_Pin == ioRotEncB.pin) {
+        rotEnc.OnLineInterrupt(false);
     }
 }
 
@@ -267,10 +450,13 @@ main()
     uart.Write("Application started\n");
 
     InitLed();
+    InitRotaryEncoder();
     InitButton();
+    rotEnc.Initialize();
 
-    auto blinkTask = Task::Spawn(BlinkTask());
-    auto buttonTask = Task::Spawn(ButtonTask());
+    Task::Spawn(BlinkTask()).Pin();
+    Task::Spawn(ButtonTask()).Pin();
+    Task::Spawn(RotaryEncoderTask()).Pin();
 
     Task::RunScheduler();
 
