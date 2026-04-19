@@ -69,7 +69,7 @@ class TaskWeakPtrTag;
 
 
 /// Smart pointer for coroutine frame. At least one reference should be kept until task is finished
-/// otherwise it might be destroyed earlier.
+/// otherwise it might be destroyed earlier. Alternatively task can be pinned.
 class Task {
 public:
     using TPromise = TaskPromise;
@@ -146,6 +146,18 @@ public:
     {
         return handle;
     }
+
+    /// Pin task so that it is not destructed if last reference released.
+    inline void
+    Pin();
+
+    /** Unpin task if was previously pinned by `Pin()` method.
+     *
+     * @return True if task did not have references, was by pinning only, and was destroyed after
+     *  unpinning.
+     */
+    bool
+    Unpin();
 
     /** Get weak pointer to this task. This requires dynamic allocation for the first call for the
      * given co-routine instance.
@@ -427,7 +439,9 @@ public:
     /// Task currently queued in runnable queue.
             isRunnable: 1 = 0,
     /// Task finished and result is available.
-            isFinished: 1 = 0;
+            isFinished: 1 = 0,
+    /// Task is pinned - prevents destruction when last reference released.
+            isPinned: 1 = 0;
 
     TaskPromise() = default;
 
@@ -452,7 +466,21 @@ public:
     {
         auto prevValue = refCounter.fetch_sub(1);
         PULSE_ASSERT(prevValue != 0);
-        return prevValue == 1;
+        return prevValue == 1 && !isPinned;
+    }
+
+    void
+    Pin()
+    {
+        isPinned = 1;
+    }
+
+    /// @return True if last reference released.
+    bool
+    Unpin()
+    {
+        isPinned = 0;
+        return refCounter.load() == 0;
     }
 
     Task::WeakPtr
@@ -1083,15 +1111,21 @@ void
 Task::ReleaseHandle()
 {
     if (handle) {
-        auto h = handle;
         if (GetPromise().ReleaseRef()) {
             // Change state first to make iti visible to coroutine frame destructors
+            auto h = handle;
             handle = CoroutineHandle();
             h.destroy();
         } else {
             handle = CoroutineHandle();
         }
     }
+}
+
+void
+Task::Pin()
+{
+    GetPromise().isPinned = 1;
 }
 
 Task::WeakPtr

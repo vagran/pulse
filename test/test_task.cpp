@@ -366,13 +366,18 @@ TEST_CASE("WhenAll - mixed task/awaiter")
 
     auto t2 = Task::Spawn(Tasks::T2(q2));
 
-    auto t3 = Task::Spawn(Tasks::T3(t1, t2));
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2)).GetWeakPtr();
+    t3.Lock().Pin();
 
-    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2)).GetWeakPtr();
+    t4.Lock().Pin();
 
     Task::RunSome();
 
     CheckResult(7, "T3:2");
+
+    t3.Lock().Unpin();
+    t4.Lock().Unpin();
 }
 
 
@@ -980,5 +985,7 @@ TEST_CASE("Task moveable return type")
     Task::RunSome();
 
     REQUIRE(t1.IsFinished());
+    // Has been moved out.
+    REQUIRE(!t1.GetResult());
     REQUIRE(*t2.GetResult() == 42);
 }

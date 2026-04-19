@@ -96,6 +96,19 @@ DescheduleTask(const Task &task)
 
 } // anonymous namespace
 
+bool
+Task::Unpin()
+{
+    if (GetPromise().Unpin()) {
+        // Change state first to make iti visible to coroutine frame destructors
+        auto h = handle;
+        handle = CoroutineHandle();
+        h.destroy();
+        return true;
+    }
+    return false;
+}
+
 void
 Task::SpawnImpl(Task task, Priority priority)
 {
