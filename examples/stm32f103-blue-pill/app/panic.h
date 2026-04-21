@@ -5,6 +5,9 @@
 extern "C" {
 #endif
 
+#ifdef __cplusplus
+[[noreturn]]
+#endif
 void
 Panic(const char *msg);
 

@@ -16,7 +16,7 @@
 using namespace pulse;
 
 
-void
+[[noreturn]] void
 Panic(const char *msg)
 {
     pulsePort_DisableInterrupts();
@@ -172,7 +172,7 @@ IsButtonPressed()
 }
 
 Timer blinkTimer;
-int blinkInterval = 0;
+int blinkIntervalIndex = 0;
 TokenQueue<uint8_t> buttonEvents(5);
 
 Awaitable<void>
@@ -192,18 +192,18 @@ ConfirmSwitch(int interval)
 TaskV
 BlinkTask()
 {
-    int interval = blinkInterval;
+    int interval = blinkIntervalIndex;
 
     while (true) {
-        if (interval != blinkInterval) {
-            interval = blinkInterval;
+        if (interval != blinkIntervalIndex) {
+            interval = blinkIntervalIndex;
             co_await ConfirmSwitch(interval);
             continue;
         }
         blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << interval));
         if (!co_await blinkTimer) {
             // Timer cancelled, so interval is definitely changed
-            interval = blinkInterval;
+            interval = blinkIntervalIndex;
             co_await ConfirmSwitch(interval);
             LedOn();
         } else {
@@ -244,14 +244,14 @@ ButtonTask()
             continue;
         }
 
-        blinkInterval++;
-        if (blinkInterval > 3) {
-            blinkInterval = 0;
+        blinkIntervalIndex++;
+        if (blinkIntervalIndex > 3) {
+            blinkIntervalIndex = 0;
         }
         blinkTimer.Cancel();
 
         uart.Write("New interval: ");
-        uart.Write(etl::to_string(blinkInterval, s));
+        uart.Write(etl::to_string(blinkIntervalIndex, s));
         uart.Write("\n");
         MallocStats stats;
         get_malloc_stats(&stats);
@@ -361,12 +361,6 @@ RotaryEncoder::LineTask(bool isA)
 void
 RotaryEncoder::CommitEvent(bool triggerLineA, bool adjLineState)
 {
-    //XXX
-    if (triggerLineA) {
-        uart.Write(adjLineState ? "A" : "a");
-    } else {
-        uart.Write(adjLineState ? "B" : "b");
-    }
     bool dir = triggerLineA == adjLineState;
     if (!lastDir || *lastDir != dir) {
         lastDir = dir;
@@ -425,18 +419,18 @@ EXTI15_10_IRQHandler()
 }
 
 void
-HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+HAL_GPIO_EXTI_Callback(uint16_t gpioPin)
 {
-    if (GPIO_Pin == ioButton.pin) {
+    if (gpioPin == ioButton.pin) {
         buttonEvents.Push();
-    } else if (GPIO_Pin == ioRotEncA.pin) {
+    } else if (gpioPin == ioRotEncA.pin) {
         rotEnc.OnLineInterrupt(true);
-    } else if (GPIO_Pin == ioRotEncB.pin) {
+    } else if (gpioPin == ioRotEncB.pin) {
         rotEnc.OnLineInterrupt(false);
     }
 }
 
-extern "C" int
+extern "C" [[noreturn]] void
 main()
 {
     pulse_add_heap_region(heap, sizeof(heap));
@@ -461,7 +455,6 @@ main()
     Task::RunScheduler();
 
     Panic("Scheduler exited");
-    return 0;
 }
 
 
