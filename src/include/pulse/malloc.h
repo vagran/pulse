@@ -37,13 +37,17 @@ struct alignas(pulseConfig_MALLOC_GRANULARITY) MallocUnit {
     union {
         uint8_t unit[pulseConfig_MALLOC_GRANULARITY];
         /** This space in the first unit can be utilized after passing the region to
-            * `pulse_add_heap_region()`. Use it if each RAM byte matters on your platform.
-            */
+         * `pulse_add_heap_region()`. Use it if each RAM byte matters on your platform.
+         */
         uint8_t padding[PULSE_MALLOC_UNIT_PADDING_SIZE];
     };
 };
 
 static_assert(sizeof(MallocUnit) == pulseConfig_MALLOC_GRANULARITY);
+
+#define HEAP_UNITS_SIZE(size)       ((size) / sizeof(MallocUnit))
+#define HEAP_UNITS_SIZE_KB(size)    ((size) * 1024 / sizeof(MallocUnit))
+#define HEAP_UNITS_SIZE_MB(size)    ((size) * 1024 * 1024 / sizeof(MallocUnit))
 
 #endif // __cplusplus
 

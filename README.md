@@ -74,8 +74,8 @@ may be extracted into a dedicated submodule in the future.
 ## Examples
 
 The [`examples` directory](./examples/) contains sample applications. See also [this
-tutorial](docs/tutorial.md). Below are a few short snippets illustrating the framework’s look and
-feel.
+tutorial](https://github.com/vagran/pulse-tutorial). Below are a few short snippets illustrating the
+framework’s look and feel.
 
 
 ### Blinky
@@ -87,6 +87,9 @@ To blink a LED, simply spawn a task and use the provided timer facility to intro
 #include <pulse/timer.h>
 
 using namespace pulse;
+
+// Declaring heap like this ensures proper alignment and granularity.
+MallocUnit heap[HEAP_UNITS_SIZE_KB(1)];
 
 TaskV
 BlinkTask()

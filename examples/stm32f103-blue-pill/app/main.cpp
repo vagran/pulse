@@ -57,7 +57,7 @@ constexpr GpioLine
     ioRotEncA   DEF_IO(A, 10),
     ioRotEncB   DEF_IO(A, 11);
 
-MallocUnit heap[16 * 1024 / sizeof(MallocUnit)];
+MallocUnit heap[HEAP_UNITS_SIZE_KB(16)];
 
 void
 SystemClock_Config(void)
