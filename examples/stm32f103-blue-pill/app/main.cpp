@@ -52,10 +52,10 @@ struct GpioLine {
 #define DEF_IO(port, pin) {GPIO ## port ## _BASE, GPIO_PIN_ ## pin}
 
 constexpr GpioLine
-    ioLed DEF_IO(C, 13),
-    ioButton DEF_IO(C, 14),
-    ioRotEncA DEF_IO(A, 10),
-    ioRotEncB DEF_IO(A, 11);
+    ioLed       DEF_IO(C, 13),
+    ioButton    DEF_IO(C, 14),
+    ioRotEncA   DEF_IO(A, 10),
+    ioRotEncB   DEF_IO(A, 11);
 
 MallocUnit heap[16 * 1024 / sizeof(MallocUnit)];
 
@@ -176,11 +176,11 @@ int blinkIntervalIndex = 0;
 TokenQueue<uint8_t> buttonEvents(5);
 
 Awaitable<void>
-ConfirmSwitch(int interval)
+ConfirmSwitch(int intervalIndex)
 {
     LedOff();
     co_await Timer::Delay(etl::chrono::milliseconds(500));
-    for (int i = 0; i <= interval; i++) {
+    for (int i = 0; i <= intervalIndex; i++) {
         LedOn();
         co_await Timer::Delay(etl::chrono::milliseconds(100));
         LedOff();
@@ -189,22 +189,24 @@ ConfirmSwitch(int interval)
     co_await Timer::Delay(etl::chrono::milliseconds(500));
 }
 
+// Handles LED blinking
 TaskV
 BlinkTask()
 {
-    int interval = blinkIntervalIndex;
+    int intervalIndex = blinkIntervalIndex;
 
     while (true) {
-        if (interval != blinkIntervalIndex) {
-            interval = blinkIntervalIndex;
-            co_await ConfirmSwitch(interval);
+        if (intervalIndex != blinkIntervalIndex) {
+            intervalIndex = blinkIntervalIndex;
+            co_await ConfirmSwitch(intervalIndex);
+            LedOn();
             continue;
         }
-        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << interval));
+        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << intervalIndex));
         if (!co_await blinkTimer) {
             // Timer cancelled, so interval is definitely changed
-            interval = blinkIntervalIndex;
-            co_await ConfirmSwitch(interval);
+            intervalIndex = blinkIntervalIndex;
+            co_await ConfirmSwitch(intervalIndex);
             LedOn();
         } else {
             LedToggle();
@@ -212,6 +214,7 @@ BlinkTask()
     }
 }
 
+// Handles button debouncing
 TaskV
 ButtonTask()
 {

@@ -1,6 +1,4 @@
-<img src="./docs/logo.svg" style="height: 70pt;">
-
-# Pulse
+# ![Pulse](./docs/logo.svg)
 
 Pulse is a C++20 coroutine framework for embedded applications. It provides a minimal set of
 components required to build coroutine-based systems on resource-constrained devices. The framework
@@ -75,8 +73,9 @@ may be extracted into a dedicated submodule in the future.
 
 ## Examples
 
-The [`examples` directory](./examples/) contains sample applications. Below are a few short snippets
-illustrating the framework’s look and feel.
+The [`examples` directory](./examples/) contains sample applications. See also [this
+tutorial](docs/tutorial.md). Below are a few short snippets illustrating the framework’s look and
+feel.
 
 
 ### Blinky
@@ -133,11 +132,11 @@ TokenQueue<uint8_t> buttonEvents(5);
 
 /// Make mode switch confirmation indication
 Awaitable<void>
-ConfirmSwitch(int interval)
+ConfirmSwitch(int intervalIndex)
 {
     LedOff();
     co_await Timer::Delay(etl::chrono::milliseconds(500));
-    for (int i = 0; i <= interval; i++) {
+    for (int i = 0; i <= intervalIndex; i++) {
         LedOn();
         co_await Timer::Delay(etl::chrono::milliseconds(100));
         LedOff();
@@ -146,22 +145,24 @@ ConfirmSwitch(int interval)
     co_await Timer::Delay(etl::chrono::milliseconds(500));
 }
 
+// Handles LED blinking
 TaskV
 BlinkTask()
 {
-    int interval = blinkIntervalIndex;
+    int intervalIndex = blinkIntervalIndex;
 
     while (true) {
-        if (interval != blinkIntervalIndex) {
-            interval = blinkIntervalIndex;
-            co_await ConfirmSwitch(interval);
+        if (intervalIndex != blinkIntervalIndex) {
+            intervalIndex = blinkIntervalIndex;
+            co_await ConfirmSwitch(intervalIndex);
+            LedOn();
             continue;
         }
-        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << interval));
+        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << intervalIndex));
         if (!co_await blinkTimer) {
             // Timer cancelled, so interval is definitely changed
-            interval = blinkIntervalIndex;
-            co_await ConfirmSwitch(interval);
+            intervalIndex = blinkIntervalIndex;
+            co_await ConfirmSwitch(intervalIndex);
             LedOn();
         } else {
             LedToggle();
@@ -169,6 +170,7 @@ BlinkTask()
     }
 }
 
+// Handles button debouncing
 TaskV
 ButtonTask()
 {
