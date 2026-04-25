@@ -8,14 +8,13 @@
 
 #ifdef __cplusplus
 extern "C" {
-#endif
 
 /** Initial allocation unit in the heap will have unused padding of this size.  */
 #define PULSE_MALLOC_UNIT_PADDING_SIZE \
     ((pulseConfig_MALLOC_GRANULARITY > pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 2) ? \
         pulseConfig_MALLOC_GRANULARITY - pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE * 2 : 0)
 
-#ifdef __cplusplus
+namespace pulse {
 
 /** Helper stucture for allocation units. Provided heap regions should be multiple of these units.
  * Squeezing every RAM byte:
@@ -45,9 +44,11 @@ struct alignas(pulseConfig_MALLOC_GRANULARITY) MallocUnit {
 
 static_assert(sizeof(MallocUnit) == pulseConfig_MALLOC_GRANULARITY);
 
-#define HEAP_UNITS_SIZE(size)       ((size) / sizeof(MallocUnit))
-#define HEAP_UNITS_SIZE_KB(size)    ((size) * 1024 / sizeof(MallocUnit))
-#define HEAP_UNITS_SIZE_MB(size)    ((size) * 1024 * 1024 / sizeof(MallocUnit))
+#define PULSE_HEAP_UNITS_SIZE(size)         ((size) / sizeof(pulse::MallocUnit))
+#define PULSE_HEAP_UNITS_SIZE_KB(size)      ((size) * 1024 / sizeof(pulse::MallocUnit))
+#define PULSE_HEAP_UNITS_SIZE_MB(size)      ((size) * 1024 * 1024 / sizeof(pulse::MallocUnit))
+
+} // namespace pulse
 
 #endif // __cplusplus
 
