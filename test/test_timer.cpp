@@ -213,7 +213,8 @@ TEST_CASE("Timer - repeated expiration")
     };
 
     auto MakeDelay1 = [timer, &MakeDelay2]() -> Awaitable<bool> {
-        REQUIRE(co_await timer);
+        bool ret = co_await timer;
+        REQUIRE(ret);
         REQUIRE(Timer::GetTime() == 2);
         timer->ExpiresAt(10);
         auto task = Task::Spawn(MakeDelay2(), Task::HIGHEST_PRIORITY);
@@ -235,7 +236,8 @@ TEST_CASE("Timer - repeated expiration (awaitable func)")
     };
 
     auto MakeDelay1 = [timer, &MakeDelay2]() -> Awaitable<bool> {
-        REQUIRE(co_await timer);
+        bool ret = co_await timer;
+        REQUIRE(ret);
         REQUIRE(Timer::GetTime() == 2);
         timer->ExpiresAt(5);
         co_return co_await MakeDelay2();
@@ -332,7 +334,8 @@ TEST_CASE("Move waited timer")
     };
 
     auto MakeDelay2 = [&timer1, &timer2, &timer3]() -> Awaitable<bool> {
-        REQUIRE(co_await timer2);
+        bool ret = co_await timer2;
+        REQUIRE(ret);
         REQUIRE(Timer::GetTime() == 2);
         timer3.emplace(etl::move(timer1));
         co_return co_await timer3->Wait();

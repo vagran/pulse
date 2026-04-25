@@ -204,7 +204,8 @@ TEST_CASE("Priority propagation")
         {
             CheckResult(5, "T3:3");
             results.push_back("T1:1");
-            REQUIRE(!co_await Task::Switch());
+            bool sw = co_await Task::Switch();
+            REQUIRE(!sw);
             CheckResult(6, "T1:1");
             results.push_back("T1:2");
         }
@@ -214,7 +215,8 @@ TEST_CASE("Priority propagation")
         {
             CheckResult(1, "T3:1");
             results.push_back("T2:1");
-            REQUIRE(!co_await Task::Switch());
+            bool sw = co_await Task::Switch();
+            REQUIRE(!sw);
             // Should not suspend
             CheckResult(2, "T2:1");
             results.push_back("T2:2");
@@ -229,7 +231,8 @@ TEST_CASE("Priority propagation")
             co_await t2;
             CheckResult(3, "T2:2");
             results.push_back("T3:2");
-            REQUIRE(!co_await Task::Switch());
+            bool sw = co_await Task::Switch();
+            REQUIRE(!sw);
             CheckResult(4, "T3:2");
             results.push_back("T3:3");
         }
@@ -984,9 +987,9 @@ TEST_CASE("Task moveable return type")
         co_return std::make_unique<int>(42);
     });
 
-    auto t2 = Task::Spawn([&]() -> TTask<std::unique_ptr<int>> {
+    auto t2 = Task::Spawn([](auto &t1) -> TTask<std::unique_ptr<int>> {
         co_return co_await t1;
-    });
+    }, t1);
 
     Task::RunSome();
 

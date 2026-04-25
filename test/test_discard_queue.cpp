@@ -86,7 +86,7 @@ TEST_CASE("Discard queue")
         SECTION("Basic") {
             InlineDiscardQueue<A, true, 2> q;
 
-            auto t1 = Task::Spawn([&]() -> TaskV {
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q) -> TaskV {
                 REQUIRE(results.empty());
                 results.push_back("T1:1");
 
@@ -94,29 +94,38 @@ TEST_CASE("Discard queue")
                 REQUIRE(q.Push(2));
                 REQUIRE(!q.Push(3));
 
-                while (co_await  Task::Switch());
+                while (co_await Task::Switch()) {}
 
                 CheckResult(4, "T2:3");
                 results.push_back("T1:2");
                 REQUIRE(q.Push(4));
-            });
+            }, q);
 
-            auto t2 = Task::Spawn([&]() -> TaskV {
+            auto t2 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q) -> TaskV {
                 CheckResult(1, "T1:1");
                 results.push_back("T2:1");
-                REQUIRE(*(co_await q.Pop()).value == 1);
+                {
+                    A a = co_await q.Pop();
+                    REQUIRE(*a.value == 1);
+                }
 
                 CheckResult(2, "T2:1");
                 results.push_back("T2:2");
-                REQUIRE(*(co_await q.Pop()).value == 2);
+                {
+                    A a = co_await q.Pop();
+                    REQUIRE(*a.value == 2);
+                }
 
                 CheckResult(3, "T2:2");
                 results.push_back("T2:3");
-                REQUIRE(*(co_await q.Pop()).value == 4);
+                {
+                    A a = co_await q.Pop();
+                    REQUIRE(*a.value == 4);
+                }
 
                 CheckResult(5, "T1:2");
                 results.push_back("T2:4");
-            });
+            }, q);
 
             Task::RunSome();
 
@@ -126,7 +135,7 @@ TEST_CASE("Discard queue")
         SECTION("Basic head drop") {
             InlineDiscardQueue<A, false, 2> q;
 
-            auto t1 = Task::Spawn([&]() -> TaskV {
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, false, 2> &q) -> TaskV {
                 REQUIRE(results.empty());
                 results.push_back("T1:1");
 
@@ -134,29 +143,38 @@ TEST_CASE("Discard queue")
                 REQUIRE(q.Push(2));
                 REQUIRE(!q.Push(3));
 
-                while (co_await  Task::Switch());
+                while (co_await Task::Switch()) {}
 
                 CheckResult(4, "T2:3");
                 results.push_back("T1:2");
                 REQUIRE(q.Push(4));
-            });
+            }, q);
 
-            auto t2 = Task::Spawn([&]() -> TaskV {
+            auto t2 = Task::Spawn([](InlineDiscardQueue<A, false, 2> &q) -> TaskV {
                 CheckResult(1, "T1:1");
                 results.push_back("T2:1");
-                REQUIRE(*(co_await q.Pop()).value == 2);
+                {
+                    A a = co_await q.Pop();
+                    REQUIRE(*a.value == 2);
+                }
 
                 CheckResult(2, "T2:1");
                 results.push_back("T2:2");
-                REQUIRE(*(co_await q.Pop()).value == 3);
+                {
+                    A a = co_await q.Pop();
+                    REQUIRE(*a.value == 3);
+                }
 
                 CheckResult(3, "T2:2");
                 results.push_back("T2:3");
-                REQUIRE(*(co_await q.Pop()).value == 4);
+                {
+                    A a = co_await q.Pop();
+                    REQUIRE(*a.value == 4);
+                }
 
                 CheckResult(5, "T1:2");
                 results.push_back("T2:4");
-            });
+            }, q);
 
             Task::RunSome();
 
@@ -166,11 +184,11 @@ TEST_CASE("Discard queue")
         SECTION("Awaiter destruction") {
             InlineDiscardQueue<A, true, 2> q;
 
-            auto t1 = Task::Spawn([&]() -> TaskV {
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q) -> TaskV {
                 q.Pop();
                 q.Pop();
                 co_return;
-            });
+            }, q);
 
             Task::RunSome();
 
@@ -181,15 +199,17 @@ TEST_CASE("Discard queue")
             InlineDiscardQueue<A, true, 2> q;
             TokenQueue<> tq;
 
-            auto t1 = Task::Spawn([&]() -> TaskV {
-                REQUIRE(co_await Task::WhenAny(tq.Take(), q.Pop()) == 0);
-            });
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     TokenQueue<> &tq) -> TaskV {
+                size_t idx = co_await Task::WhenAny(tq.Take(), q.Pop());
+                REQUIRE(idx == 0);
+            }, q, tq);
 
-            auto t2 = Task::Spawn([&]() -> TaskV {
+            auto t2 = Task::Spawn([](TokenQueue<> &tq) -> TaskV {
                 tq.Push();
                 // Task::Make wrapper, handler task in AnyTaskAwaiter, t1
-                while (co_await Task::Switch());
-            });
+                while (co_await Task::Switch()) {}
+            }, tq);
 
             Task::RunSome();
 
@@ -203,23 +223,26 @@ TEST_CASE("Discard queue")
 
             q.emplace();
 
-            auto t1 = Task::Spawn([&]() -> TaskV {
+            auto t1 = Task::Spawn([](std::optional<InlineDiscardQueue<A, true, 2>> &q,
+                                     TokenQueue<> &tq) -> TaskV {
                 std::optional<A> result;
-                auto getResult = [&]() -> Awaitable<void> {
+                auto getResult = [](std::optional<InlineDiscardQueue<A, true, 2>> &q,
+                                    std::optional<A> &result) -> Awaitable<void> {
                     result.emplace(co_await q->Pop());
                 };
-                auto awaitable = getResult();
+                auto awaitable = getResult(q, result);
                 REQUIRE(!result);
-                REQUIRE(co_await Task::WhenAny(tq.Take(), awaitable) == 1);
+                size_t idx = co_await Task::WhenAny(tq.Take(), awaitable);
+                REQUIRE(idx == 1);
                 REQUIRE(result);
                 // Empty value should be returned
                 REQUIRE(!result->value);
-            });
+            }, q, tq);
 
-            auto t2 = Task::Spawn([&]() -> TaskV {
+            auto t2 = Task::Spawn([](std::optional<InlineDiscardQueue<A, true, 2>> &q) -> TaskV {
                 q.reset();
                 co_return;
-            });
+            }, q);
 
             Task::RunSome();
 
