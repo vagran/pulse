@@ -78,7 +78,7 @@ pulse_reset_heap();
 /** @return Maximal possible allocation size according to current heap configuration.
  */
 size_t
-get_malloc_max_size();
+pulse_get_malloc_max_size();
 
 
 #if pulseConfig_MALLOC_STATS
@@ -91,7 +91,7 @@ typedef struct {
  * since internally it is counted in allocation units, and also may utilize paddings in block tail.
  */
 void
-get_malloc_stats(MallocStats *stats);
+pulse_get_malloc_stats(MallocStats *stats);
 
 #endif // pulseConfig_MALLOC_STATS
 
@@ -101,7 +101,7 @@ get_malloc_stats(MallocStats *stats);
  * @return true if heap state valid.
  */
 bool
-validate_heap();
+pulse_validate_heap();
 
 #endif // pulseConfig_MALLOC_DEBUG
 
@@ -133,6 +133,44 @@ AddHeapRegion(void *region, size_t size)
 {
     pulse_add_heap_region(region, size);
 }
+
+inline void
+ResetHeap()
+{
+    pulse_reset_heap();
+}
+
+inline size_t
+GetMallocMaxSize()
+{
+    return pulse_get_malloc_max_size();;
+}
+
+#if pulseConfig_MALLOC_STATS
+
+/** Get current allocation statistics. It might be not exactly corresponding to requested sizes
+ * since internally it is counted in allocation units, and also may utilize paddings in block tail.
+ */
+inline void
+GetMallocStats(MallocStats *stats)
+{
+    pulse_get_malloc_stats(stats);
+}
+
+#endif // pulseConfig_MALLOC_STATS
+
+#if pulseConfig_MALLOC_DEBUG
+
+/** Perfroms heap validation as much as possible. Mostly useful with pulseConfig_ASSERT specified.
+ * @return true if heap state valid.
+ */
+inline bool
+ValidateHeap()
+{
+    return pulse_validate_heap();
+}
+
+#endif // pulseConfig_MALLOC_DEBUG
 
 } // namespace pulse
 

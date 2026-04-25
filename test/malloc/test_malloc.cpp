@@ -228,22 +228,22 @@ TEST_CASE("Random activity")
     std::uniform_int_distribution<uint8_t> actionDist{0, 2};
 
     InitHeap();
-    validate_heap();
+    pulse_validate_heap();
 
     MallocStats stats;
-    get_malloc_stats(&stats);
+    pulse_get_malloc_stats(&stats);
 
     std::cout << "Total free before tests: " << stats.totalFree << "\n";
     std::cout << "Maximal allocation size: " << maxAllocSize << ", allocator limit: " <<
-        get_malloc_max_size() << "\n";
+        pulse_get_malloc_max_size() << "\n";
 
     size_t numInitialAllocations = std::max(M_ALLOC_RATIO * 2, 1000);
     for (int i = 0; i < numInitialAllocations; i++) {
         ctx.Allocate();
         ctx.CheckAllFills();
-        validate_heap();
+        pulse_validate_heap();
         if ((i & 1023) == 0) {
-            get_malloc_stats(&stats);
+            pulse_get_malloc_stats(&stats);
             if (stats.totalFree < maxAllocSize * 2) {
                 std::cout << "Interrupting initial allocation due to heap depletion after " <<
                     i + 1<< " iterations\n";
@@ -252,7 +252,7 @@ TEST_CASE("Random activity")
         }
     }
 
-    get_malloc_stats(&stats);
+    pulse_get_malloc_stats(&stats);
     std::cout << "Total free after initial allocations: " << stats.totalFree << ", min free: " <<
         stats.minFree << ", total used: " << stats.totalUsed << "\n";
     std::cout << "Failed allocations: " << ctx.numFailedAllocs << "\n";
@@ -282,10 +282,10 @@ TEST_CASE("Random activity")
             FAIL("should not be reached");
         }
         ctx.CheckAllFills();
-        validate_heap();
+        pulse_validate_heap();
     }
 
-    get_malloc_stats(&stats);
+    pulse_get_malloc_stats(&stats);
     std::cout << "Total free after mixed actions: " << stats.totalFree << ", min free: " <<
         stats.minFree << ", total used: " << stats.totalUsed << "\n";
     std::cout << "Total allocs: " << ctx.totalAllocs << ", reallocs: " << ctx.totalReallocs <<
@@ -298,10 +298,10 @@ TEST_CASE("Random activity")
         Block block = ctx.GetRandomBlock();
         ctx.Free(block);
         ctx.CheckAllFills();
-        validate_heap();
+        pulse_validate_heap();
     }
 
-    get_malloc_stats(&stats);
+    pulse_get_malloc_stats(&stats);
     REQUIRE(stats.totalUsed == 0);
     std::cout << "Total free after test: " << stats.totalFree << ", min free: " << stats.minFree <<
         ", total used: " << stats.totalUsed << "\n";

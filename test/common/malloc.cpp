@@ -15,8 +15,8 @@ bool isHeapLocked = false;
 void
 InitHeap()
 {
-    pulse_reset_heap();
-    pulse_add_heap_region(heap, sizeof(heap));
+    pulse::ResetHeap();
+    pulse::AddHeapRegion(heap, sizeof(heap));
 }
 
 void

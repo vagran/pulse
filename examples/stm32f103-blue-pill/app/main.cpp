@@ -74,7 +74,7 @@ constexpr GpioLine
     ioRotEncA   DEF_IO(A, 10),
     ioRotEncB   DEF_IO(A, 11);
 
-MallocUnit heap[PULSE_HEAP_UNITS_SIZE_KB(16)];
+MallocUnit heap[PULSE_HEAP_UNITS_SIZE_KB(15)];
 
 void
 SystemClock_Config(void)
@@ -274,7 +274,7 @@ ButtonTask()
         uart.Write(etl::to_string(blinkIntervalIndex, s));
         uart.Write("\n");
         MallocStats stats;
-        get_malloc_stats(&stats);
+        pulse::GetMallocStats(&stats);
         uart.Write("Total free: ");
         uart.Write(etl::to_string(stats.totalFree, s));
         uart.Write("\n");
@@ -341,8 +341,8 @@ RotaryEncoder::OnLineInterrupt(bool isA)
 void
 RotaryEncoder::Initialize()
 {
-    Task::Spawn(LineTask(true)).Pin();
-    Task::Spawn(LineTask(false)).Pin();
+    Task::Spawn(LineTask(true), Task::HIGHEST_PRIORITY).Pin();
+    Task::Spawn(LineTask(false), Task::HIGHEST_PRIORITY).Pin();
 }
 
 TaskV

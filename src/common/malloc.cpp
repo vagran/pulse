@@ -891,7 +891,7 @@ pulse_reset_heap()
 }
 
 size_t
-get_malloc_max_size()
+pulse_get_malloc_max_size()
 {
     return MAX_ALLOC_SIZE;
 }
@@ -899,7 +899,7 @@ get_malloc_max_size()
 #if pulseConfig_MALLOC_STATS
 
 void
-get_malloc_stats(MallocStats *stats)
+pulse_get_malloc_stats(MallocStats *stats)
 {
     *stats = ::stats;
 }
@@ -909,7 +909,7 @@ get_malloc_stats(MallocStats *stats)
 #if pulseConfig_MALLOC_DEBUG
 
 bool
-validate_heap()
+pulse_validate_heap()
 {
     size_t numFreeBlocks = 0;
     size_t freeSize = 0, usedSize = 0;
