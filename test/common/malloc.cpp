@@ -6,7 +6,7 @@
 
 namespace {
 
-MallocUnit heap[1024 * 1024 / sizeof(MallocUnit)];
+pulse::MallocUnit heap[PULSE_HEAP_UNITS_SIZE_MB(1)];
 
 bool isHeapLocked = false;
 

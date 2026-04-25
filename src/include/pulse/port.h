@@ -41,7 +41,7 @@ pulsePort_GetAndDisableInterrupts();
  * pulsePort_GetAndDisableInterrupts().
  */
 #ifndef pulsePort_SetInterrupts
-unsigned
+void
 pulsePort_SetInterrupts(unsigned state);
 #endif
 
@@ -77,6 +77,44 @@ pulsePort_Sleep();
 } // extern "C"
 
 namespace pulse {
+
+// C++ wrappers for port C macros/functions
+
+inline void
+DisableInterrupts()
+{
+    pulsePort_DisableInterrupts();
+}
+
+inline void
+EnableInterrupts()
+{
+    pulsePort_EnableInterrupts();
+}
+
+inline unsigned
+GetAndDisableInterrupts()
+{
+    return pulsePort_GetAndDisableInterrupts();
+}
+
+inline void
+SetInterrupts(unsigned state)
+{
+    pulsePort_SetInterrupts(state);
+}
+
+inline void
+EnterCriticalSection()
+{
+    pulsePort_EnterCriticalSection();
+}
+
+inline void
+ExitCriticalSection()
+{
+    pulsePort_ExitCriticalSection();
+}
 
 /** Helper class to disable ISRs in this class instance scope. */
 class InterruptsGuard {

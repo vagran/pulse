@@ -19,7 +19,7 @@ using namespace pulse;
 [[noreturn]] void
 Panic(const char *msg)
 {
-    pulsePort_DisableInterrupts();
+    DisableInterrupts();
     uart.PanicFlush();
     for(;;);
 }
@@ -27,13 +27,13 @@ Panic(const char *msg)
 void
 MallocLock()
 {
-    pulsePort_EnterCriticalSection();
+    EnterCriticalSection();
 }
 
 void
 MallocUnlock()
 {
-    pulsePort_ExitCriticalSection();
+    ExitCriticalSection();
 }
 
 namespace {
@@ -57,7 +57,7 @@ constexpr GpioLine
     ioRotEncA   DEF_IO(A, 10),
     ioRotEncB   DEF_IO(A, 11);
 
-MallocUnit heap[HEAP_UNITS_SIZE_KB(16)];
+MallocUnit heap[PULSE_HEAP_UNITS_SIZE_KB(16)];
 
 void
 SystemClock_Config(void)
@@ -433,7 +433,7 @@ HAL_GPIO_EXTI_Callback(uint16_t gpioPin)
     }
 }
 
-extern "C" [[noreturn]] void
+extern "C" [[noreturn]] int
 main()
 {
     pulse_add_heap_region(heap, sizeof(heap));
