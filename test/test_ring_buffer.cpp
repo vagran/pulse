@@ -204,10 +204,10 @@ TEST_CASE("RingBuffer interleaved push/pop")
     InlineRingBuffer<int, 8> rb;
 
     for (int i = 0; i < 100; ++i) {
-        rb.Write(&i, 1);
+        REQUIRE(rb.Write(&i, 1) == 1);
 
-        int out;
-        rb.Read(&out, 1);
+        int out = 0;
+        REQUIRE(rb.Read(&out, 1) == 1);
 
         REQUIRE(out == i);
     }

@@ -216,6 +216,7 @@ requires HeapComparator<T, decltype(IsHigher)> &&
 void
 Heap<T, IsHigher, capacity, ItemSetIndex>::PopTop()
 {
+    PULSE_ASSERT(size);
     size_t lastIdx = size - 1;
     T &lastItem = Item(lastIdx);
     if (lastIdx != 0) {

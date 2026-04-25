@@ -12,6 +12,8 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 add_compile_options(-Werror -Wall)
+# GCC does some crazy static analysis and cannot compile Heap implementation without this warning
+add_compile_options(-Wno-array-bounds)
 
 include_directories(${CMAKE_SOURCE_DIR})
 
