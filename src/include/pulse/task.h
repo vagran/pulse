@@ -178,6 +178,10 @@ public:
     void
     SetPriority(Priority priority);
 
+    /// Set new priority if it is higher than current task priority.
+    void
+    RaisePriority(Priority priority);
+
     /** Pass the task to the scheduler. The returned reference should be kept until task is finished
      * otherwise it might be destroyed once the first suspension point is reached (scheduler
      * releases its reference and awaiters are not allowed to store task reference to prevent
@@ -270,6 +274,13 @@ public:
     /** Run tasks which are currently in runnable state. Exits when no more runnable task. */
     static void
     RunSome();
+
+    /** @return Currently running task if any. This is top-level task, which is run by scheduler.
+     * When calling asynchronous functions, newly created coroutine is not top-level until it is
+     * suspended and later resumed by scheduler.
+     */
+    static Task
+    GetCurrent();
 
     /** Switch to other runnable task if any. `co_await` returns true if task was switched, false if
      * immediately returned to calling task.
@@ -443,7 +454,7 @@ public:
     /// Task is pinned - prevents destruction when last reference released.
             isPinned: 1 = 0;
 
-    TaskPromise() = default;
+    TaskPromise();
 
     // No need to make it virtual since promise object is always constructed and destructed from
     // coroutine frame constructor/destructor by concrete type.
@@ -1233,12 +1244,14 @@ AllTasksAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
     Task waiterTask(handle);
     Base::waiter = waiterTask.GetWeakPtr();
 
-    // Handlers should have the same priority as waiter.
+    // Handlers should have the same priority as waiter. Since waiter is blocked until all tasks are
+    // completed, priority is also propagated to all targets.
     Task::Priority pri = waiterTask.GetPromise().priority;
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
         if (e.handler) {
             e.handler.SetPriority(pri);
+            e.target.RaisePriority(pri);
         }
     }
 

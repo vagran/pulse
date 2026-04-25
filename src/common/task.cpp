@@ -58,11 +58,14 @@ static_assert(pulseConfig_NUM_TASK_PRIORITIES >= 2,
 static_assert(pulseConfig_NUM_TASK_PRIORITIES < sizeof(PriorityBitmap) * 8,
               "pulseConfig_NUM_TASK_PRIORITIES too big");
 
-/** Tasks in runnable state, arranged by priority. */
+/// Tasks in runnable state, arranged by priority.
 TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
 
-/** Each set bit corresponds to non-empty queue for corresponding priority. */
+/// Each set bit corresponds to non-empty queue for corresponding priority.
 PriorityBitmap readyTasksBitmap;
+
+/// Currently running task (top-level, resumed by scheduler)
+Task currentTask;
 
 void
 ScheduleTask(Task task)
@@ -147,6 +150,23 @@ Task::SetPriority(Priority priority)
 }
 
 void
+Task::RaisePriority(Priority priority)
+{
+    TaskPromise &promise = GetPromise();
+    if (promise.priority <= priority) {
+        return;
+    }
+    bool wasScheduled = promise.isRunnable;
+    if (wasScheduled) {
+        DescheduleTask(*this);
+    }
+    promise.priority = priority;
+    if (wasScheduled) {
+        ScheduleTask(*this);
+    }
+}
+
+void
 Task::RunScheduler()
 {
     while (true) {
@@ -168,16 +188,23 @@ Task::RunSome()
         uint8_t pri = readyTasksBitmap.FirstSet();
         PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
         TaskTailedList &list = readyTasks[pri];
-        Task task = list.PopFirst();
-        PULSE_ASSERT(task);
+        currentTask = list.PopFirst();
+        PULSE_ASSERT(currentTask);
         if (list.IsEmpty()) {
             readyTasksBitmap.Clear(pri);
         }
-        PULSE_ASSERT(task.GetPromise().isRunnable);
-        task.GetPromise().isRunnable = 0;
+        PULSE_ASSERT(currentTask.GetPromise().isRunnable);
+        currentTask.GetPromise().isRunnable = 0;
         cs.Exit();
-        task.Resume();
+        currentTask.Resume();
+        currentTask.ReleaseHandle();
     }
+}
+
+Task
+Task::GetCurrent()
+{
+    return currentTask;
 }
 
 bool
@@ -231,6 +258,14 @@ Task::CancelAwaitResult(details::TaskAwaiterBase *waiter) const
     GetPromise().resultWaiters.Remove(waiter);
 }
 
+
+TaskPromise::TaskPromise()
+{
+    Task currentTask = Task::GetCurrent();
+    if (currentTask) {
+        priority = currentTask.GetPromise().priority;
+    }
+}
 
 TaskPromise::~TaskPromise()
 {

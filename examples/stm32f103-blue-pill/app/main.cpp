@@ -21,7 +21,24 @@ Panic(const char *msg)
 {
     DisableInterrupts();
     uart.PanicFlush();
+
+    /* Stop in debug build, reset after delay in release build. */
+#ifdef DEBUG
     for(;;);
+#else
+    /* Make delay before reset */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    if (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) {
+        /* 1 second delay. */
+        uint32_t cycles = SystemCoreClock;
+        uint32_t start = DWT->CYCCNT;
+        while ((DWT->CYCCNT - start) < cycles);
+    }
+
+    NVIC_SystemReset();
+#endif
 }
 
 void

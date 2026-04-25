@@ -3,7 +3,9 @@
 Pulse is a C++20 coroutine framework for embedded applications. It provides a minimal set of
 components required to build coroutine-based systems on resource-constrained devices. The framework
 includes a lightweight dynamic memory allocator optimized for very small MCUs, a coroutine support
-library, a priority-based scheduler, timer facilities, and a collection of essential components.
+library, a priority-based scheduler, timer facilities, and a collection of essential components. It
+does not attempt to replace the target MCU’s low-level hardware API or HAL; rather, it provides the
+necessary infrastructure for convenient use of C++ coroutines in an embedded environment.
 
 _DISCLAIMER: This project is still a work in progress and has not yet been fully battle-tested, so
 the API may evolve to better suit real-world use cases. However, it is supported by extensive unit

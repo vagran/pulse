@@ -15,6 +15,9 @@ std::vector<std::string> results;
 void
 CheckResult(size_t expectedSize, const std::string &expectedLast)
 {
+    if (expectedSize != results.size()) {
+        std::cout << "Result size mismatch: " << expectedSize << " != " << results.size();
+    }
     REQUIRE(!results.empty());
     REQUIRE(expectedLast == results.back());
     REQUIRE(expectedSize == results.size());
@@ -589,7 +592,7 @@ TEST_CASE("WhenAll - priority")
             CheckResult(1, "T3:1");
             results.push_back("T1:1");
             co_await q;
-            CheckResult(5, "T5:1");
+            CheckResult(4, "T4:1");
             results.push_back("T1:2");
         }
 
@@ -603,12 +606,12 @@ TEST_CASE("WhenAll - priority")
             results.push_back("T2:2");
         }
 
+        // High-priority task
         static TaskV
         T3(Task t1, Task t2)
         {
             REQUIRE(results.empty());
             results.push_back("T3:1");
-            // Cannot use t.Wait() here since priority is not propagated to awaitable wrapper task.
             co_await Task::WhenAll(t1, t2);
             CheckResult(8, "T2:2");
             results.push_back("T3:2");
@@ -621,7 +624,7 @@ TEST_CASE("WhenAll - priority")
             results.push_back("T4:1");
             q1.Push();
             co_await Task::Switch();
-            CheckResult(6, "T1:2");
+            CheckResult(6, "T5:1");
             results.push_back("T4:2");
             q2.Push();
             q5.Push();
@@ -631,7 +634,7 @@ TEST_CASE("WhenAll - priority")
         static TaskV
         T5(TokenQueue<> &q)
         {
-            CheckResult(4, "T4:1");
+            CheckResult(5, "T1:2");
             results.push_back("T5:1");
             co_await q;
             CheckResult(9, "T3:2");
@@ -731,7 +734,7 @@ TEST_CASE("WhenAny - mixed task/awaiters")
         static TaskV
         T1(TokenQueue<> &q)
         {
-            CheckResult(1, "T3:1");
+            CheckResult(2, "T2:1");
             results.push_back("T1:1");
             co_await q;
             CheckResult(4, "T4:1");
@@ -741,19 +744,22 @@ TEST_CASE("WhenAny - mixed task/awaiters")
         static TaskV
         T2(TokenQueue<> &q)
         {
-            CheckResult(2, "T1:1");
+            CheckResult(1, "T3:1");
             results.push_back("T2:1");
             co_await q;
             CheckResult(7, "T4:2");
             results.push_back("T2:2");
         }
 
+        // High-priority task
         static TaskV
         T3(Task t1, Task t2)
         {
             REQUIRE(results.empty());
             results.push_back("T3:1");
-            // Check awaiter passing.
+            // Check awaiter passing. Calling `Wait()` directly propagates this task priority.
+            // Passing task to WhenAny just adds it to the waiting list, priority is not propagated
+            // in WhenAny.
             co_await Task::WhenAny(t1, t2.Wait());
             CheckResult(5, "T1:2");
             results.push_back("T3:2");
@@ -762,7 +768,7 @@ TEST_CASE("WhenAny - mixed task/awaiters")
         static TaskV
         T4(TokenQueue<> &q1, TokenQueue<> &q2)
         {
-            CheckResult(3, "T2:1");
+            CheckResult(3, "T1:1");
             results.push_back("T4:1");
             q1.Push();
             co_await Task::Switch();
