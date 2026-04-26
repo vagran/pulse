@@ -75,7 +75,7 @@ may be extracted into a dedicated submodule in the future.
 
 ## Examples
 
-The [`examples` directory](./examples/) contains sample applications. See also [this
+The [`examples` directory](./examples/) contains sample applications. See also [this extensive
 tutorial](https://github.com/vagran/pulse-tutorial). Below are a few short snippets illustrating the
 framework’s look and feel.
 
@@ -88,16 +88,15 @@ To blink a LED, simply spawn a task and use the provided timer facility to intro
 #include <pulse/task.h>
 #include <pulse/timer.h>
 
-using namespace pulse;
 
 // Declaring heap like this ensures proper alignment and granularity.
-MallocUnit heap[HEAP_UNITS_SIZE_KB(1)];
+pulse::MallocUnit heap[HEAP_UNITS_SIZE_KB(1)];
 
-TaskV
+pulse::TaskV
 BlinkTask()
 {
     while (true) {
-        co_await Timer::Delay(etl::chrono::seconds(1));
+        co_await pulse::Timer::Delay(etl::chrono::seconds(1));
         LedToggle();
     }
 }
@@ -106,13 +105,13 @@ extern "C" [[noreturn]] void
 main()
 {
     // Add some RAM to the memory allocator.
-    pulse_add_heap_region(heap, sizeof(heap));
+    pulse::AddHeapRegion(heap, sizeof(heap));
 
     // Do some hardware initialization
     InitHardware();
 
-    Task::Spawn(BlinkTask()).Pin();
-    Task::RunScheduler(); // Never returns
+    pulse::Task::Spawn(BlinkTask()).Pin();
+    pulse::Task::RunScheduler(); // Never returns
 
     Panic("Scheduler exited");
 }
@@ -130,28 +129,28 @@ the following behavior:
 - The button input includes software debouncing.
 
 ```cpp
-Timer blinkTimer;
+pulse::Timer blinkTimer;
 int blinkIntervalIndex = 0;
 // Published from the button ISR
-TokenQueue<uint8_t> buttonEvents(5);
+pulse::TokenQueue<uint8_t> buttonEvents(5);
 
 /// Make mode switch confirmation indication
-Awaitable<void>
+pulse::Awaitable<void>
 ConfirmSwitch(int intervalIndex)
 {
     LedOff();
-    co_await Timer::Delay(etl::chrono::milliseconds(500));
+    co_await pulse::Timer::Delay(etl::chrono::milliseconds(500));
     for (int i = 0; i <= intervalIndex; i++) {
         LedOn();
-        co_await Timer::Delay(etl::chrono::milliseconds(100));
+        co_await pulse::Timer::Delay(etl::chrono::milliseconds(100));
         LedOff();
-        co_await Timer::Delay(etl::chrono::milliseconds(200));
+        co_await pulse::Timer::Delay(etl::chrono::milliseconds(200));
     }
-    co_await Timer::Delay(etl::chrono::milliseconds(500));
+    co_await pulse::Timer::Delay(etl::chrono::milliseconds(500));
 }
 
 // Handles LED blinking
-TaskV
+pulse::TaskV
 BlinkTask()
 {
     int intervalIndex = blinkIntervalIndex;
@@ -176,11 +175,11 @@ BlinkTask()
 }
 
 // Handles button debouncing
-TaskV
+pulse::TaskV
 ButtonTask()
 {
     constexpr auto JITTER_DELAY = etl::chrono::milliseconds(20);
-    Timer jitterTimer;
+    pulse::Timer jitterTimer;
 
     while (true) {
         co_await buttonEvents;
@@ -188,7 +187,7 @@ ButtonTask()
         bool pressed = false;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await Task::WhenAny(buttonEvents, jitterTimer);
+            size_t idx = co_await pulse::Task::WhenAny(buttonEvents, jitterTimer);
             if (idx == 0) {
                 // Button pressed again, restart anti-jitter delay
                 continue;
@@ -232,14 +231,14 @@ HAL_GPIO_EXTI_Callback(uint16_t gpioPin)
 extern "C" [[noreturn]] void
 main()
 {
-    pulse_add_heap_region(heap, sizeof(heap));
+    pulse::AddHeapRegion(heap, sizeof(heap));
 
     InitHardware();
 
-    Task::Spawn(BlinkTask()).Pin();
-    Task::Spawn(ButtonTask()).Pin();
+    pulse::Task::Spawn(BlinkTask()).Pin();
+    pulse::Task::Spawn(ButtonTask()).Pin();
 
-    Task::RunScheduler();
+    pulse::Task::RunScheduler();
 
     Panic("Scheduler exited");
 }
