@@ -11,6 +11,10 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(DEBUG)
 endif()
 
+if (${SANITIZE})
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined")
+endif()
+
 add_compile_options(-Werror -Wall)
 # GCC does some crazy static analysis and cannot compile Heap implementation without this warning
 add_compile_options(-Wno-array-bounds)

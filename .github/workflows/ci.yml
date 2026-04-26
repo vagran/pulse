@@ -11,7 +11,7 @@ permissions:
   packages: read
 
 jobs:
-  build:
+  unit-tests:
     runs-on: ubuntu-latest
 
     container:
@@ -20,18 +20,38 @@ jobs:
     env:
       DEBUGINFOD_URLS: https://debuginfod.archlinux.org
 
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [cc, gcc, clang]
+        build_type: [Debug, Release]
+
+    name: Unit tests ${{ matrix.compiler }}-${{ matrix.build_type }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
+      - name: Select compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            echo "CC=/usr/bin/gcc" >> $GITHUB_ENV
+            echo "CXX=/usr/bin/g++" >> $GITHUB_ENV
+          elif [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "CC=/usr/bin/clang" >> $GITHUB_ENV
+            echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
+          fi
+
       - name: Configure (cc/c++)
-        run: cmake -S test -B build -G Ninja
+        run: >
+          cmake -S test -B build/${{ matrix.compiler }}-${{ matrix.build_type }}
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
       - name: Build (cc/c++)
-        run: cmake --build build
+        run: cmake --build build/${{ matrix.compiler }}-${{ matrix.build_type }} --target pulse_test
 
-      - &run-ut
-        name: Run unit tests
-        run: valgrind --leak-check=full build/pulse_test
+      - name: Run unit tests
+        run: valgrind --leak-check=full build/${{ matrix.compiler }}-${{ matrix.build_type }}/pulse_test
