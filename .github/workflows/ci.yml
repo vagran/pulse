@@ -23,8 +23,11 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Configure
+      - name: Configure (cc/c++)
         run: cmake -S test -B build -G Ninja
 
-      - name: Build
+      - name: Build (cc/c++)
         run: cmake --build build
+
+      - name: Run unit tests
+        run: valgrind --leak-check=full build/pulse_test

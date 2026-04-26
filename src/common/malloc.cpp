@@ -493,7 +493,7 @@ AllocateBlock(size_t size)
 
     BlockHeader *p = freeList;
     BlockHeader *bestFit = nullptr;
-    size_t bestFitSpare PULSE_UNUSED = 0;
+    ptrdiff_t bestFitSpare PULSE_UNUSED = 0;
 
     while (p) {
         PULSE_ASSERT(p->isFree());

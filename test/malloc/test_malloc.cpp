@@ -238,7 +238,7 @@ TEST_CASE("Random activity")
         pulse_get_malloc_max_size() << "\n";
 
     size_t numInitialAllocations = std::max(M_ALLOC_RATIO * 2, 1000);
-    for (int i = 0; i < numInitialAllocations; i++) {
+    for (size_t i = 0; i < numInitialAllocations; i++) {
         ctx.Allocate();
         ctx.CheckAllFills();
         pulse_validate_heap();

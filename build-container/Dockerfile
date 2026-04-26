@@ -10,3 +10,4 @@ RUN pacman -S --noconfirm valgrind
 RUN pacman -S --noconfirm cmake
 RUN pacman -S --noconfirm ninja
 RUN pacman -S --noconfirm git
+RUN pacman -S --noconfirm catch2
