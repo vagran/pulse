@@ -17,6 +17,9 @@ jobs:
     container:
       image: ghcr.io/vagran/pulse-build:latest
 
+    env:
+      DEBUGINFOD_URLS: https://debuginfod.archlinux.org
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -29,5 +32,6 @@ jobs:
       - name: Build (cc/c++)
         run: cmake --build build
 
-      - name: Run unit tests
+      - &run-ut
+        name: Run unit tests
         run: valgrind --leak-check=full build/pulse_test
