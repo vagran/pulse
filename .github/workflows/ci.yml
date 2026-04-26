@@ -98,7 +98,7 @@ jobs:
           cmake -S examples/stm32f103-blue-pill -B $BUILD_DIR
           -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/examples/arm-${{ matrix.compiler }}-toolchain.cmake
+          -DCMAKE_TOOLCHAIN_FILE=$PWD/examples/arm-${{ matrix.compiler }}-toolchain.cmake
 
       - name: Build
         run: cmake --build $BUILD_DIR --target all
