@@ -235,8 +235,9 @@ public:
     {
         using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
 
-        auto taskFunc = [](F &&func, Args &&... args) -> TTask<TRet> {
-            co_return etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+        auto taskFunc = [](etl::remove_cvref_t<F> func,
+                           etl::remove_cvref_t<Args>... args) -> TTask<TRet> {
+            co_return etl::invoke(etl::move(func), etl::move(args)...);
         };
 
         auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
@@ -256,8 +257,9 @@ public:
     {
         using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
 
-        auto taskFunc = [](F &&func, Args &&... args) -> TTask<TRet> {
-            co_return etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+        auto taskFunc = [](etl::remove_cvref_t<F> func,
+                           etl::remove_cvref_t<Args>... args) -> TTask<TRet> {
+            co_return etl::invoke(etl::move(func), etl::move(args)...);
         };
 
         auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
