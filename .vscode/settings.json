@@ -5,6 +5,7 @@
     "cmake.configureArgs": [
         // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-gcc-toolchain.cmake"
         // "-DCMAKE_TOOLCHAIN_FILE=${workspaceFolder}/examples/arm-clang-toolchain.cmake"
+        // "-DSANITIZE=ON"
     ],
     "cSpell.words": [
         "AHBCLK",

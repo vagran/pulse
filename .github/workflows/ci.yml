@@ -25,14 +25,18 @@ jobs:
       matrix:
         compiler: [cc, gcc, clang]
         build_type: [Debug, Release]
+        validator: [valgrind, sanitize]
 
-    name: Unit tests ${{ matrix.compiler }}-${{ matrix.build_type }}
+    name: Unit tests ${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.validator }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           submodules: recursive
+
+      - name: Set build directory
+        run: echo "BUILD_DIR=build/${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.validator }}" >> $GITHUB_ENV
 
       - name: Select compiler
         run: |
@@ -44,14 +48,28 @@ jobs:
             echo "CXX=/usr/bin/clang++" >> $GITHUB_ENV
           fi
 
-      - name: Configure (cc/c++)
+      - name: Select validator
+        run: |
+          if [ "${{ matrix.validator }}" = "sanitize" ]; then
+            echo "SANITIZE=ON" >> $GITHUB_ENV
+          elif [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "SANITIZE=OFF" >> $GITHUB_ENV
+          fi
+
+      - name: Configure
         run: >
-          cmake -S test -B build/${{ matrix.compiler }}-${{ matrix.build_type }}
+          cmake -S test -B $BUILD_DIR
           -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DSANITIZE=$SANITIZE
 
-      - name: Build (cc/c++)
-        run: cmake --build build/${{ matrix.compiler }}-${{ matrix.build_type }} --target pulse_test
+      - name: Build
+        run: cmake --build $BUILD_DIR --target pulse_test
 
       - name: Run unit tests
-        run: valgrind --leak-check=full build/${{ matrix.compiler }}-${{ matrix.build_type }}/pulse_test
+        run: |
+          if [ "${{ matrix.validator }}" = "valgrind" ]; then
+            valgrind --leak-check=full $BUILD_DIR/pulse_test
+          else
+            $BUILD_DIR/pulse_test
+          fi
