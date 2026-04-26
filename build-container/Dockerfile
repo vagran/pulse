@@ -9,3 +9,4 @@ RUN pacman -S --noconfirm clang
 RUN pacman -S --noconfirm valgrind
 RUN pacman -S --noconfirm cmake
 RUN pacman -S --noconfirm ninja
+RUN pacman -S --noconfirm git
