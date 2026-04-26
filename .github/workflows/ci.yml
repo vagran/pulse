@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        compiler: [cgcc, clang]
+        compiler: [gcc, clang]
         build_type: [Debug, Release]
 
     name: Examples cross-compilation ${{ matrix.compiler }}-${{ matrix.build_type }}
@@ -93,20 +93,12 @@ jobs:
       - name: Set build directory
         run: echo "BUILD_DIR=build/${{ matrix.compiler }}-${{ matrix.build_type }}" >> $GITHUB_ENV
 
-      - name: Select compiler
-        run: |
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            echo "TOOLCHAIN=examples/arm-gcc-toolchain.cmake" >> $GITHUB_ENV
-          elif [ "${{ matrix.compiler }}" = "clang" ]; then
-            echo "TOOLCHAIN=examples/arm-clang-toolchain.cmake" >> $GITHUB_ENV
-          fi
-
       - name: Configure
         run: >
-          cmake -S test -B $BUILD_DIR
+          cmake -S examples/stm32f103-blue-pill -B $BUILD_DIR
           -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN
+          -DCMAKE_TOOLCHAIN_FILE=${{ github.workspace }}/examples/arm-${{ matrix.compiler }}-toolchain.cmake
 
       - name: Build
         run: cmake --build $BUILD_DIR --target all
