@@ -6,10 +6,6 @@ on:
   pull_request:
     branches: [ "master" ]
 
-permissions:
-  contents: read
-  packages: read
-
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
@@ -73,3 +69,44 @@ jobs:
           else
             $BUILD_DIR/pulse_test
           fi
+
+  build-examples:
+    runs-on: ubuntu-latest
+
+    container:
+      image: ghcr.io/vagran/pulse-build:latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [cgcc, clang]
+        build_type: [Debug, Release]
+
+    name: Examples cross-compilation ${{ matrix.compiler }}-${{ matrix.build_type }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set build directory
+        run: echo "BUILD_DIR=build/${{ matrix.compiler }}-${{ matrix.build_type }}" >> $GITHUB_ENV
+
+      - name: Select compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            echo "TOOLCHAIN=examples/arm-gcc-toolchain.cmake" >> $GITHUB_ENV
+          elif [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "TOOLCHAIN=examples/arm-clang-toolchain.cmake" >> $GITHUB_ENV
+          fi
+
+      - name: Configure
+        run: >
+          cmake -S test -B $BUILD_DIR
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN
+
+      - name: Build
+        run: cmake --build $BUILD_DIR --target all
