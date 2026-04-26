@@ -5,7 +5,10 @@ LABEL org.opencontainers.image.description="Build and test environment for Pulse
 
 RUN pacman -Syu --noconfirm
 RUN pacman -S --noconfirm arm-none-eabi-gcc
+RUN pacman -S --noconfirm arm-none-eabi-newlib
 RUN pacman -S --noconfirm clang
+RUN pacman -S --noconfirm llvm
+RUN pacman -S --noconfirm lld
 RUN pacman -S --noconfirm valgrind
 RUN pacman -S --noconfirm cmake
 RUN pacman -S --noconfirm ninja

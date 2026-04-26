@@ -66,7 +66,7 @@ USART1_IRQHandler()
     if (__HAL_UART_GET_IT_SOURCE(&uart.h, UART_IT_TXE) &&
         __HAL_UART_GET_FLAG(&uart.h, UART_FLAG_TXE)) {
 
-        uint8_t c;
+        uint8_t c = 0;
         if (uart.buffer->Read(&c, 1)) {
             /* Transmit Data */
             uart.h.Instance->DR = c;
