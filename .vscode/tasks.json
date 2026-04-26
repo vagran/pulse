@@ -37,6 +37,38 @@
             "label": "Reset MCU",
             "type": "shell",
             "command": "st-flash --connect-under-reset reset"
+        },
+        {
+            "label": "Build docker image (build continaer)",
+            "type": "shell",
+            "command": "docker build -t ghcr.io/vagran/pulse-build:latest .",
+            "options": {
+                "cwd": "${workspaceFolder}/build-container",
+                "env": {
+                    "DOCKER_BUILDKIT": "1"
+                }
+            }
+        },
+        {
+            "label": "Publish docker image (build container)",
+            "type": "shell",
+            "command": "docker push ghcr.io/vagran/pulse-build:latest",
+            "options": {
+                "cwd": "${workspaceFolder}/build-container",
+                "env": {
+                    "DOCKER_BUILDKIT": "1"
+                }
+            }
+        },
+        {
+            "label": "Run docker image (build container)",
+            "type": "process",
+            "command": "docker",
+            "args": ["run", "-it", "--entrypoint", "/bin/bash",
+                     "ghcr.io/vagran/pulse-build:latest"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
         }
     ]
 }
