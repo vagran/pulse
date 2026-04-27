@@ -66,14 +66,14 @@ SECTIONS
   {
     . = ALIGN(4);
     *(.text)           /* .text sections (code) */
-    *(.text*)          /* .text* sections (code) */
+    *(SORT_BY_ALIGNMENT(.text*))          /* .text* sections (code) */
     *(.glue_7)         /* glue arm to thumb code */
     *(.glue_7t)        /* glue thumb to arm code */
     *(.eh_frame)
 
     KEEP (*(.init))
-    KEEP (*(.fini))
-
+    *(SORT_BY_ALIGNMENT(.init*))
+    
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
   } >FLASH
@@ -117,16 +117,6 @@ SECTIONS
     KEEP (*(SORT(.init_array.*)))
     KEEP (*(.init_array*))
     PROVIDE_HIDDEN (__init_array_end = .);
-    . = ALIGN(4);
-  } >FLASH
-
-  .fini_array :
-  {
-    . = ALIGN(4);
-    PROVIDE_HIDDEN (__fini_array_start = .);
-    KEEP (*(SORT(.fini_array.*)))
-    KEEP (*(.fini_array*))
-    PROVIDE_HIDDEN (__fini_array_end = .);
     . = ALIGN(4);
   } >FLASH
 
@@ -175,12 +165,15 @@ SECTIONS
     . = ALIGN(8);
   } >RAM
 
-  /* Remove information from the compiler libraries */
   /DISCARD/ :
   {
+    /* Remove information from the compiler libraries */
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
+    /* Application never exits, so global destructors are not needed. */
+    *(.fini_array);
+    *(.fini);
   }
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
