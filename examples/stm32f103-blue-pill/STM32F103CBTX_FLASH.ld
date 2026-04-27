@@ -72,7 +72,6 @@ SECTIONS
     *(.eh_frame)
 
     KEEP (*(.init))
-    *(SORT_BY_ALIGNMENT(.init*))
 
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
