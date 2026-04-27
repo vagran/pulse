@@ -73,7 +73,7 @@ SECTIONS
 
     KEEP (*(.init))
     *(SORT_BY_ALIGNMENT(.init*))
-    
+
     . = ALIGN(4);
     _etext = .;        /* define a global symbols at end of code */
   } >FLASH
@@ -171,9 +171,6 @@ SECTIONS
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
-    /* Application never exits, so global destructors are not needed. */
-    *(.fini_array);
-    *(.fini);
   }
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
