@@ -14,3 +14,9 @@ RUN pacman -S --noconfirm cmake
 RUN pacman -S --noconfirm ninja
 RUN pacman -S --noconfirm git
 RUN pacman -S --noconfirm catch2
+
+ENV DEBUGINFOD_URLS=https://debuginfod.elfutils.org/
+ENV DEBUGINFOD_CACHE_PATH=/opt/debuginfod-cache
+
+RUN debuginfod-find debuginfo /usr/lib/ld-linux-x86-64.so.2
+RUN debuginfod-find debuginfo /usr/lib/libc.so.6

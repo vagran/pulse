@@ -13,9 +13,6 @@ jobs:
     container:
       image: ghcr.io/vagran/pulse-build:latest
 
-    env:
-      DEBUGINFOD_URLS: https://debuginfod.archlinux.org
-
     strategy:
       fail-fast: false
       matrix:

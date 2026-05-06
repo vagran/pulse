@@ -39,7 +39,7 @@
             "command": "st-flash --connect-under-reset reset"
         },
         {
-            "label": "Build docker image (build continaer)",
+            "label": "Build docker image (build container)",
             "type": "shell",
             "command": "docker build -t ghcr.io/vagran/pulse-build:latest .",
             "options": {
