@@ -30,13 +30,19 @@ void
 Uart::Write(etl::string_view s)
 {
     buffer->Write({reinterpret_cast<const uint8_t *>(s.data()), s.size()});
-    __HAL_UART_ENABLE_IT(&h, UART_IT_TXE);
+    CommitWrite();
 }
 
 void
 Uart::WriteCharSync(uint8_t c)
 {
     HAL_UART_Transmit(&h, &c, 1, 0xFFFF);
+}
+
+void
+Uart::CommitWrite()
+{
+    __HAL_UART_ENABLE_IT(&h, UART_IT_TXE);
 }
 
 void

@@ -1,6 +1,8 @@
 set(CMAKE_SYSTEM_NAME Generic-ELF)
 set(CMAKE_SYSTEM_PROCESSOR ARM)
 
+set(CMAKE_SYSROOT /usr/arm-none-eabi)
+
 set(TOOLCHAIN_TRIPLE arm-none-eabi)
 find_program(CLANG_PATH clang NO_CACHE)
 
@@ -52,12 +54,12 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT}" CACH
 
 set(CMAKE_ASM_FLAGS_INIT "${CLANG_TARGET_FLAG}")
 
-set(CMAKE_EXE_LINKER_FLAGS_INIT "${CLANG_TARGET_FLAG} -nostartfiles -fuse-ld=lld --sysroot=${CMAKE_SYSROOT} -L${CMAKE_SYSROOT}/lib/thumb/v7-m/nofp -lc -lm")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "${CLANG_TARGET_FLAG} -nostartfiles -fuse-ld=lld \
+    --sysroot=${CMAKE_SYSROOT} -L${CMAKE_SYSROOT}/lib/thumb/v7-m/nofp -lc -lm")
 
 set(CMAKE_OBJCOPY ${ARM_TOOLCHAIN_DIR}/llvm-objcopy CACHE INTERNAL "objcopy tool")
 set(CMAKE_SIZE_UTIL ${ARM_TOOLCHAIN_DIR}/llvm-size CACHE INTERNAL "size tool")
 
-set(CMAKE_SYSROOT /usr/arm-none-eabi)
 set(CMAKE_FIND_ROOT_PATH ${CLANG_PATH})
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)

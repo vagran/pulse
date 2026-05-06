@@ -237,7 +237,6 @@ ButtonTask()
 {
     constexpr auto JITTER_DELAY = etl::chrono::milliseconds(20);
     Timer jitterTimer;
-    etl::string<16> s;
 
     while (true) {
         co_await buttonEvents;
@@ -270,23 +269,13 @@ ButtonTask()
         }
         blinkTimer.Cancel();
 
-        uart.Write("New interval: ");
-        uart.Write(etl::to_string(blinkIntervalIndex, s));
-        uart.Write("\n");
+        uart.Format("New interval: {}\n", blinkIntervalIndex);
         MallocStats stats;
         pulse::GetMallocStats(&stats);
-        uart.Write("Total free: ");
-        uart.Write(etl::to_string(stats.totalFree, s));
-        uart.Write("\n");
-        uart.Write("Total used: ");
-        uart.Write(etl::to_string(stats.totalUsed, s));
-        uart.Write("\n");
-        uart.Write("Min free: ");
-        uart.Write(etl::to_string(stats.minFree, s));
-        uart.Write("\n");
-        uart.Write("Blocks allocated: ");
-        uart.Write(etl::to_string(stats.numBlocksAllocated, s));
-        uart.Write("\n");
+        uart.Format("Total free: {}\n", stats.totalFree);
+        uart.Format("Total used: {}\n", stats.totalUsed);
+        uart.Format("Min free: {}\n", stats.minFree);
+        uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
     }
 }
 
@@ -418,13 +407,9 @@ RotaryEncoder::CommitClick(bool dir)
 TaskV
 RotaryEncoderTask()
 {
-    etl::string<8> s;
-
     while (true) {
         int8_t clicks = co_await rotEnc.WaitClick();
-        uart.Write("Rotary encoder: ");
-        uart.Write(etl::to_string(clicks, s));
-        uart.Write("\n");
+        uart.Format("Rotary encoder: {}\n", clicks);
     }
 }
 

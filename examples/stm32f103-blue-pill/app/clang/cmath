@@ -1,0 +1,14 @@
+// Stub file for required by <etl/format.h>
+#include <math.h>
+
+inline float
+modf(float x, float *y)
+{
+  return modff(x, y);
+}
+
+inline long double
+modf(long double x, long double *y)
+{
+  return modfl(x, y);
+}

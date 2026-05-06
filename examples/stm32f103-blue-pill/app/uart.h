@@ -5,6 +5,7 @@
 #include <pulse/ring_buffer.h>
 
 #include <etl/string_view.h>
+#include <etl/format.h>
 
 
 extern "C" void
@@ -16,8 +17,8 @@ public:
     public:
         WriteIterator(const WriteIterator &) = default;
 
-        WriteIterator(pulse::RingBuffer<uint8_t> &buffer):
-            buffer(&buffer)
+        WriteIterator(Uart &uart):
+            uart(&uart)
         {
             GetRegion();
         }
@@ -38,7 +39,8 @@ public:
             if (writeSize) {
                 writeSize--;
                 writePtr++;
-                buffer->CommitWrite(1);
+                uart->buffer->CommitWrite(1);
+                uart->CommitWrite();
             } else {
                 GetRegion();
             }
@@ -52,7 +54,7 @@ public:
         }
 
     private:
-        pulse::RingBuffer<uint8_t> *buffer;
+        Uart *uart;
         uint8_t *writePtr = nullptr;
         size_t writeSize = 0;
         uint8_t sink;
@@ -60,7 +62,7 @@ public:
         void
         GetRegion()
         {
-            auto region = buffer->GetWriteRegion();
+            auto region = uart->buffer->GetWriteRegion();
             if (!region.empty()) {
                 writePtr = region.data();
                 writeSize = region.size();
@@ -77,6 +79,13 @@ public:
     void
     WriteCharSync(uint8_t c);
 
+    template<class... Args>
+    void
+    Format(etl::format_string<Args...> fmt, Args&&... args)
+    {
+        etl::format_to(WriteIterator(*this), fmt, etl::forward<Args>(args)...);
+    }
+
     /** Flush current buffer in case of Panic engaged. Should be called with interrupts disabled. */
     void
     PanicFlush();
@@ -86,6 +95,9 @@ private:
 
     UART_HandleTypeDef h;
     etl::optional<pulse::RingBuffer<uint8_t>> buffer;
+
+    void
+    CommitWrite();
 };
 
 extern Uart uart;

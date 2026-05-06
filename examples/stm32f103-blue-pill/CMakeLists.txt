@@ -16,7 +16,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(DEBUG)
 endif()
 
-add_compile_options(-mcpu=cortex-m3 -mthumb)
+add_compile_options(-mcpu=cortex-m3 -mthumb -mfloat-abi=soft)
 add_compile_options(-ffunction-sections -fdata-sections -fno-common -fmessage-length=0)
 
 add_compile_definitions(STM32F103xB)
@@ -59,6 +59,19 @@ target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:-Wno-un
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-c++-static-destructors>)
+
+    # Need libgcc for software FP functions
+    find_program(ARM_GCC arm-none-eabi-gcc REQUIRED)
+    execute_process(
+        COMMAND ${ARM_GCC} -mcpu=cortex-m3 -mthumb -mfloat-abi=soft -print-libgcc-file-name
+        OUTPUT_VARIABLE LIBGCC_FILE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    get_filename_component(LIBGCC_DIR "${LIBGCC_FILE}" DIRECTORY)
+
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L${LIBGCC_DIR} -lgcc")
+
+    include_directories(${CMAKE_SOURCE_DIR}/app/clang)
 endif()
 
 
