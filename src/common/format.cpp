@@ -1,5 +1,6 @@
 #include <pulse/format.h>
 #include <pulse/details/common.h>
+#include <etl/to_string.h>
 
 
 using namespace pulse::fmt;
@@ -345,6 +346,7 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
                         n--;
                     }
                     continue;
+
                 } else {
                     const char *end = FindFormatSpecEnd(p + 1, size - 1);
                     if (!end) {
@@ -353,10 +355,14 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
                     }
 
                     FormatSpec spec;
-                    if (!spec.Parse(etl::string_view())) {
+                    if (!spec.Parse(etl::string_view(p + 1, end))) {
                         ReportError("Format specifier parsing failed");
-                        stream.Write(etl::string_view(p, end + 1));
-                        size -= end - p + 1;
+                        size_t numWritten = etl::min(static_cast<size_t>(end - p + 1), n);
+                        stream.Write(etl::string_view(p, numWritten));
+                        size -= numWritten;
+                        if (n != etl::numeric_limits<size_t>::max()) {
+                            n -= numWritten;
+                        }
                         p = end + 1;
                         continue;
                     }
@@ -388,10 +394,48 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
                     p = end + 1;
                     continue;
                 }
+
             } else {
                 stream.WriteChar('{');
                 resultSize++;
+                if (n != etl::numeric_limits<size_t>::max()) {
+                    n--;
+                }
                 ReportError("Trailing unescaped '{'");
+                break;
+            }
+
+        } else if (c == '}') {
+            if (size > 1) {
+                if (p[1] == '}') {
+                    stream.WriteChar('}');
+                    resultSize++;
+                    p += 2;
+                    size -= 2;
+                    if (n != etl::numeric_limits<size_t>::max()) {
+                        n--;
+                    }
+                    continue;
+                } else {
+                    stream.WriteChar('}');
+                    resultSize++;
+                    p++;
+                    size--;
+                    if (n != etl::numeric_limits<size_t>::max()) {
+                        n--;
+                    }
+                    ReportError("Unexpected '}'");
+                    continue;
+                }
+            } else {
+                stream.WriteChar('}');
+                resultSize++;
+                p++;
+                size--;
+                if (n != etl::numeric_limits<size_t>::max()) {
+                    n--;
+                }
+                ReportError("Trailing unescaped '}'");
                 break;
             }
         }
@@ -406,18 +450,79 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
     return resultSize;
 }
 
+size_t
+FormatterBase::AlignString(OutputStream &stream, size_t n, etl::string_view s,
+                           char defaultAlignment)
+{
+    size_t numWritten = 0;
+    if (!spec.width || *spec.width <= s.size()) {
+        // Alignment and fill does not matter if width is not specified or less than string width.
+        numWritten = etl::min(n, s.size());
+        stream.Write(etl::string_view(s.data(), numWritten));
+        return numWritten;
+    }
+
+    size_t margin = *spec.width - s.size();
+    char fill = spec.fill ? spec.fill : ' ';
+
+    size_t leftMargin;
+    char align = spec.align ? spec.align : defaultAlignment;
+    if (align == '>') {
+        leftMargin = margin;
+    } else if (align == '^') {
+        leftMargin = margin / 2;
+    } else {
+        leftMargin = 0;
+    }
+
+    for (size_t i = 0; i < leftMargin && n; i++) {
+        stream.WriteChar(fill);
+        numWritten++;
+        n--;
+    }
+
+    if (n == 0) {
+        return numWritten;
+    }
+
+    size_t writeSize = etl::min(n, s.size());
+    stream.Write(etl::string_view(s.data(), writeSize));
+    n -= writeSize;
+    numWritten += writeSize;
+
+    if (n == 0) {
+        return numWritten;
+    }
+
+    size_t rightMargin = margin - leftMargin;
+    for (size_t i = 0; i < rightMargin && n; i++) {
+        stream.WriteChar(fill);
+        numWritten++;
+        n--;
+    }
+
+    return numWritten;
+}
+
 
 size_t
 Formatter<int>::operator()(OutputStream &stream, size_t n, int value)
 {
     //XXX
-    return 0;
+    etl::string<20> s;
+    etl::to_string(value, s);
+    stream.Write(s);
+    return s.size();
 }
 
 
 size_t
 StringFormatter::Format(OutputStream &stream, size_t n, const char *value, size_t size)
 {
-    //XXX
-    return 0;
+    if (spec.precision) {
+        if (*spec.precision < size) {
+            size = *spec.precision;
+        }
+    }
+    return AlignString(stream, n, etl::string_view(value, size));
 }

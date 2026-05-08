@@ -57,6 +57,12 @@ public:
         }
     }
 
+    size_t
+    RemainingSize() const
+    {
+        return size;
+    }
+
 private:
     char *ptr;
     size_t size;
@@ -104,6 +110,10 @@ public:
     {}
 protected:
     const FormatSpec &spec;
+
+    /// Write the provided string applying fill, alignment and width from the format specifier.
+    size_t
+    AlignString(OutputStream &stream, size_t n, etl::string_view s, char defaultAlignment = '<');
 };
 
 /// Formatter for each supported type (including any custom user types) should be implemented by
@@ -146,38 +156,37 @@ protected:
 };
 
 template <>
-class Formatter<const char *>: public StringFormatter {
+class Formatter<etl::string_view>: public StringFormatter {
 public:
     using StringFormatter::StringFormatter;
 
     size_t
-    operator()(OutputStream &stream, size_t n, const char *value)
-    {
-        return Format(stream, n, value, strlen(value));
-    }
-};
-
-template <size_t size>
-struct FormatterTrait<char [size]> {
-    using TFormatter = Formatter<const char *>;
-};
-
-template <>
-class Formatter<etl::istring>: public StringFormatter {
-public:
-    using StringFormatter::StringFormatter;
-
-    size_t
-    operator()(OutputStream &stream, size_t n, const etl::istring &value)
+    operator()(OutputStream &stream, size_t n, const etl::string_view &value)
     {
         return Format(stream, n, value.data(), value.size());
     }
 };
 
+template <>
+struct FormatterTrait<const char *> {
+    using TFormatter = Formatter<etl::string_view>;
+};
+
+template <size_t size>
+struct FormatterTrait<char [size]> {
+    using TFormatter = Formatter<etl::string_view>;
+};
+
+template <>
+struct FormatterTrait<etl::istring> {
+    using TFormatter = Formatter<etl::string_view>;
+};
+
 template <size_t size>
 struct FormatterTrait<etl::string<size>> {
-    using TFormatter = Formatter<etl::istring>;
+    using TFormatter = Formatter<etl::string_view>;
 };
+
 
 namespace details {
 
@@ -224,7 +233,7 @@ public:
     }
 };
 
-template <typename Tuple, std::size_t... I>
+template <typename Tuple, size_t... I>
 inline void
 SetFormatArgs(const Tuple &argsTuple, const FormatArgBase *argsArray[], etl::index_sequence<I...>)
 {
@@ -269,7 +278,10 @@ template <typename... TArg>
 size_t
 FormatTo(etl::istring &out, etl::string_view format, TArg &&... args)
 {
-    return FormatTo(BufferOutputStream(out), out.max_size(), format, etl::forward<TArg>(args)...);
+    BufferOutputStream stream(out);
+    size_t size = FormatTo(stream, stream.RemainingSize(), format, etl::forward<TArg>(args)...);
+    out.uninitialized_resize(size);
+    return size;
 }
 
 #ifdef pulseConfig_FORMAT_ERROR
