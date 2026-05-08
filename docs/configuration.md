@@ -151,3 +151,10 @@ The most up-to-date list of configuration parameters is maintained in the codeba
    Highest interrupt priority at which system calls can be made (those which are allowed to be called from ISR). Pulse functions should never be called from ISR running on higher priorities.
 
    _Default value:_ _None_
+
+<a name="pulseConfig_FORMAT_ERROR"></a>
+ - [`pulseConfig_FORMAT_ERROR`](#pulseConfig_FORMAT_ERROR)
+
+   Invoked with string message argument in case of any error when formatting strings by `pulse::fmt` API.
+
+   _Default value:_ _None_

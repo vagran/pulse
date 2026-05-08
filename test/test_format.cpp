@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/format.h>
+#include <pulse/config.h>
 
 using namespace pulse;
 
@@ -35,6 +36,13 @@ private:
 };
 
 } // anonymous namespace
+
+
+void
+FormatError(const char *msg)
+{
+    UNSCOPED_INFO(msg);
+}
 
 
 TEST_CASE("FormatSpec::Parse") {

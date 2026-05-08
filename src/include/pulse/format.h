@@ -11,6 +11,7 @@
  * feature is the ability to provide formatters for custom user types.
  */
 
+#include <pulse/config.h>
 #include <etl/string_view.h>
 #include <etl/string.h>
 #include <etl/tuple.h>
@@ -26,6 +27,9 @@ class OutputStream {
 public:
     virtual void
     WriteChar(char c) = 0;
+
+    void
+    Write(etl::string_view s);
 };
 
 
@@ -86,6 +90,11 @@ public:
     bool
     Parse(etl::string_view s);
 };
+
+
+/// Report error from formatters. Passed to `pulseConfig_FORMAT_ERROR` if defined.
+void inline
+ReportError(const char *msg);
 
 
 class FormatterBase {
@@ -177,11 +186,11 @@ constexpr size_t SIZE_UNLIMITED = etl::numeric_limits<size_t>::max();
 class FormatArgBase {
 public:
     virtual size_t
-    Format(OutputStream &stream, size_t n, const FormatSpec &spec) = 0;
+    Format(OutputStream &stream, size_t n, const FormatSpec &spec) const = 0;
 
     /** Return integer value of argument which can be used as replacement field. */
     virtual etl::optional<int>
-    ReplacementField()
+    ReplacementField() const
     {
         return etl::nullopt;
     }
@@ -197,7 +206,7 @@ public:
     {}
 
     virtual size_t
-    Format(OutputStream &stream, size_t n, const FormatSpec &spec) override
+    Format(OutputStream &stream, size_t n, const FormatSpec &spec) const override
     {
         using TFormatter = FormatterTrait<T>::TFormatter;
         TFormatter formatter(spec);
@@ -205,7 +214,7 @@ public:
     }
 
     virtual etl::optional<int>
-    ReplacementField() override
+    ReplacementField() const override
     {
         if constexpr (etl::is_integral_v<T>) {
             return value;
@@ -229,9 +238,9 @@ FormatTo(OutputStream &stream, size_t n, etl::string_view format,
 } // namespace details
 
 
-/** Write formatted string into the provided stream, accounting specified size limit.
- * @return size_t Number of characters written. Zero is returned and nothing is written in case of
- *  any paremeters error.
+/** Write formatted string into the provided stream, accounting specified size limit. Errors if any
+ * are reported through `pulseConfig_FORMAT_ERROR` if defined.
+ * @return size_t Number of characters written.
  */
 template <typename... TArg>
 size_t
@@ -244,8 +253,7 @@ FormatTo(OutputStream &stream, size_t n, etl::string_view format, TArg &&... arg
 }
 
 /** Write formatted string into the provided stream.
- * @return size_t Number of characters written. Zero is returned and nothing is written in case of
- *  any paremeters error.
+ * @return size_t Number of characters written.
  */
 template <typename... TArg>
 size_t
@@ -255,8 +263,7 @@ FormatTo(OutputStream &stream, etl::string_view format, TArg &&... args)
 }
 
 /** Write formatted string into the provided string buffer.
- * @return size_t Number of characters written. Zero is returned and nothing is written in case of
- *  any paremeters error.
+ * @return size_t Number of characters written.
  */
 template <typename... TArg>
 size_t
@@ -264,6 +271,18 @@ FormatTo(etl::istring &out, etl::string_view format, TArg &&... args)
 {
     return FormatTo(BufferOutputStream(out), out.max_size(), format, etl::forward<TArg>(args)...);
 }
+
+#ifdef pulseConfig_FORMAT_ERROR
+void inline
+ReportError(const char *msg)
+{
+    pulseConfig_FORMAT_ERROR(msg);
+}
+#else
+void inline
+ReportError(const char *)
+{}
+#endif
 
 } // namespace fmt
 

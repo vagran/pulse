@@ -2,7 +2,6 @@
 #include <pulse/task.h>
 #include <pulse/token_queue.h>
 #include <pulse/timer.h>
-#include <iostream>
 
 
 using namespace pulse;
@@ -16,7 +15,7 @@ void
 CheckResult(size_t expectedSize, const std::string &expectedLast)
 {
     if (expectedSize != results.size()) {
-        std::cout << "Result size mismatch: " << expectedSize << " != " << results.size();
+        UNSCOPED_INFO("Result size mismatch: " << expectedSize << " != " << results.size());
     }
     REQUIRE(!results.empty());
     REQUIRE(expectedLast == results.back());

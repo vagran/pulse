@@ -1,4 +1,6 @@
 #include <pulse/format.h>
+#include <pulse/details/common.h>
+
 
 using namespace pulse::fmt;
 
@@ -15,7 +17,7 @@ ParseNumber(etl::string_view s, int &result)
         if (*it >= '0' && *it <= '9') {
             int value = result * 10 + static_cast<int>(*it - '0');
             if (value < result) {
-                // Result overflow
+                ReportError("Number overflow in format specifier");
                 return 0;
             }
             result = value;
@@ -45,7 +47,38 @@ ParseFieldRef(etl::string_view s, int &result)
     return n + 1;
 }
 
+/// Find where `{...}` expression ends.
+/// @param p Pointer to first character after opening `{`.
+/// @param size Number of available characters.
+/// @return Pointer to closing `}` character, null if not found.
+const char *
+FindFormatSpecEnd(const char *p, size_t size)
+{
+    int nesting = 0;
+    for (; size; p++, size--) {
+        char c = *p;
+        if (c == '{') {
+            nesting++;
+        } else if (c == '}') {
+            if (nesting) {
+                nesting--;
+            } else {
+                return p;
+            }
+        }
+    }
+    return nullptr;
+}
+
 } // anonymous namespace
+
+void
+OutputStream::Write(etl::string_view s)
+{
+    for (char c: s) {
+        WriteChar(c);
+    }
+}
 
 bool
 FormatSpec::Parse(etl::string_view s)
@@ -86,7 +119,7 @@ FormatSpec::Parse(etl::string_view s)
                     state = State::FILL_ALIGN;
                     continue;
                 } else {
-                    // ':' expected
+                    ReportError("':' expected");
                     return false;
                 }
             }
@@ -145,7 +178,7 @@ FormatSpec::Parse(etl::string_view s)
             if (c == '{') {
                 size_t n = ParseFieldRef(etl::string_view(p + 1, size - 1), value);
                 if (n == 0) {
-                    // Bad field reference
+                    ReportError("Bad field reference");
                     return false;
                 }
                 width = value;
@@ -171,7 +204,7 @@ FormatSpec::Parse(etl::string_view s)
             p++;
             size--;
             if (size == 0) {
-                // Precision value expected
+                ReportError("Precision value expected");
                 return false;
             }
             c = *p;
@@ -179,7 +212,7 @@ FormatSpec::Parse(etl::string_view s)
             if (c == '{') {
                 size_t n = ParseFieldRef(etl::string_view(p + 1, size - 1), value);
                 if (n == 0) {
-                    // Bad field reference
+                    ReportError("Bad field reference");
                     return false;
                 }
                 precision = value;
@@ -192,7 +225,7 @@ FormatSpec::Parse(etl::string_view s)
                     p += n;
                     size -= n;
                 } else {
-                    // Precision value expected
+                    ReportError("Precision value expected");
                     return false;
                 }
             }
@@ -218,7 +251,7 @@ FormatSpec::Parse(etl::string_view s)
                 p++;
                 size--;
             } else {
-                // Unrecognized type
+                ReportError("Unrecognized type");
                 return false;
             }
             state = State::DONE;
@@ -231,7 +264,7 @@ FormatSpec::Parse(etl::string_view s)
     }
 
     if (size) {
-        // Unexpected trailing characters
+        ReportError("Unexpected trailing characters");
         return false;
     }
 
@@ -242,9 +275,135 @@ size_t
 details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
                   etl::span<const FormatArgBase *> args)
 {
+    size_t curArgIdx = 0;
+    size_t resultSize = 0;
+    size_t size = format.size();
+    const char *p = format.data();
 
-    //XXX
-    return 0;
+    /// @param idx Argument index to check, -1 to obtain next auto argument.
+    /// @return True if obtained, false if violation.
+    auto GetArg = [&](int &idx) -> bool {
+        if (idx < 0) {
+            if (curArgIdx == etl::numeric_limits<size_t>::max()) {
+                return false;
+            }
+            idx = curArgIdx;
+            curArgIdx++;
+        } else {
+            if (curArgIdx != 0 && curArgIdx != etl::numeric_limits<size_t>::max()) {
+                return false;
+            }
+            curArgIdx = etl::numeric_limits<size_t>::max();
+        }
+        return true;
+    };
+
+    /// If field value is argument reference, replace it with its value.
+    auto ResolveField = [&](etl::optional<int> &value) -> bool {
+        if (!value) {
+            return true;
+        }
+        if (*value >= 0) {
+            // Immediate value specified
+            return true;
+        }
+        int argIdx = *value;
+        if (argIdx < -1) {
+            argIdx = -argIdx - 2;
+        }
+        if (!GetArg(argIdx)) {
+            ReportError("Mixing manual and automatic indexing");
+            return false;
+        }
+        if (argIdx >= args.size()) {
+            ReportError("Argument index out of bounds");
+            return false;
+        }
+        etl::optional<int> argValue = args[argIdx]->ReplacementField();
+        if (!argValue) {
+            ReportError("Argument is not suitable for replacement field");
+            return false;
+        }
+        if (*argValue < 0) {
+            ReportError("Negative value for replacement field");
+            return false;
+        }
+        value = argValue;
+        return true;
+    };
+
+    while (size && n) {
+        char c = *p;
+        if (c == '{') {
+            if (size > 1) {
+                if (p[1] == '{') {
+                    stream.WriteChar('{');
+                    resultSize++;
+                    p += 2;
+                    size -= 2;
+                    if (n != etl::numeric_limits<size_t>::max()) {
+                        n--;
+                    }
+                    continue;
+                } else {
+                    const char *end = FindFormatSpecEnd(p + 1, size - 1);
+                    if (!end) {
+                        ReportError("Unclosed format specified");
+                        break;
+                    }
+
+                    FormatSpec spec;
+                    if (!spec.Parse(etl::string_view())) {
+                        ReportError("Format specifier parsing failed");
+                        stream.Write(etl::string_view(p, end + 1));
+                        size -= end - p + 1;
+                        p = end + 1;
+                        continue;
+                    }
+                    int argIdx = spec.argId;
+                    if (!GetArg(argIdx)) {
+                        ReportError("Mixing manual and automatic indexing");
+                        break;
+                    }
+                    if (argIdx >= args.size()) {
+                        ReportError("Argument index out of bounds");
+                        break;
+                    }
+                    // Resolve width and precision references if any
+                    if (!ResolveField(spec.width)) {
+                        ReportError("Width field resolving failed");
+                        break;
+                    }
+                    if (!ResolveField(spec.precision)) {
+                        ReportError("Precision field resolving failed");
+                        break;
+                    }
+                    size_t numWritten = args[argIdx]->Format(stream, n, spec);
+                    PULSE_ASSERT(numWritten <= n);
+                    resultSize += numWritten;
+                    if (n != etl::numeric_limits<size_t>::max()) {
+                        n -= numWritten;
+                    }
+                    size -= end - p + 1;
+                    p = end + 1;
+                    continue;
+                }
+            } else {
+                stream.WriteChar('{');
+                resultSize++;
+                ReportError("Trailing unescaped '{'");
+                break;
+            }
+        }
+        stream.WriteChar(c);
+        resultSize++;
+        p++;
+        size--;
+        if (n != etl::numeric_limits<size_t>::max()) {
+            n--;
+        }
+    }
+    return resultSize;
 }
 
 
