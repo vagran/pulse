@@ -250,15 +250,12 @@ FormatSpec::Parse(etl::string_view s)
             continue;
 
         case State::TYPE:
-            if (c == 's' || c == 'b' || c == 'B' || c == 'd' || c == 'o' || c == 'x' || c == 'X' ||
-                c == 'a' || c == 'A' || c == 'e' || c == 'E' || c == 'f' || c == 'F' || c == 'g' ||
-                c == 'G' || c == 'p' || c == 'P' || c == 'c') {
-
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
                 type = c;
                 p++;
                 size--;
             } else {
-                ReportError("Unrecognized type");
+                ReportError("Bad type");
                 return false;
             }
             state = State::DONE;

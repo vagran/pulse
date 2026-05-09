@@ -1471,7 +1471,8 @@ TEST_CASE("FormatTo pointer formatting") {
         etl::string<128> out;
         int value = 42;
 
-        CHECK(FormatTo(out, "{{{:p}}}", &value) == out.size());
+        size_t n = FormatTo(out, "{{{:p}}}", &value);
+        CHECK(n == out.size());
         CHECK(out.front() == '{');
         CHECK(out.back() == '}');
         CHECK_FALSE(errorSeen);
