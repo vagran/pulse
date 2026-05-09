@@ -246,6 +246,22 @@ main()
 ```
 
 
+## Formatting library
+
+The [`format.h`](src/include/pulse/format.h) file provides Pulse’s string formatting library
+interface, implementing formatting semantics compatible with C++ `std::format`.
+
+It is designed with code-size efficiency as a primary goal and therefore favors polymorphism over
+extensive templating. This approach helps minimize binary size while still allowing type-specific
+formatting support. In addition, only the formatting functionality required by the argument types
+actually used in an application is retained, while unused components can be removed by linker
+garbage collection.
+
+For example, in one representative case, ETL’s formatting library increased code size by
+approximately 25 KB, whereas Pulse’s formatting library added roughly 4 KB for comparable
+functionality.
+
+
 ## Porting
 
 Pulse can be ported to any target platform with a working C++20 compiler. At present, it has been
