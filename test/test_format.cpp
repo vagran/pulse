@@ -39,13 +39,46 @@ private:
 
 bool errorSeen = false;
 
+class CustomType {
+public:
+    const int value;
+
+    CustomType(int value):
+        value(value)
+    {};
+};
+
 } // anonymous namespace
 
+template <>
+class pulse::fmt::Formatter<CustomType>: public FormatterBase {
+public:
+    using FormatterBase::FormatterBase;
+
+    size_t
+    operator()(OutputStream &stream, size_t n, const CustomType &value);
+};
+
+size_t
+pulse::fmt::Formatter<CustomType>::operator()(OutputStream &stream, size_t n,
+                                              const CustomType &value)
+{
+    etl::string<63> s;
+    if (spec.type == 'z') {
+        pulse::fmt::FormatTo(s, "custom_{}", value.value);
+    } else if (spec.type == 'Z') {
+        pulse::fmt::FormatTo(s, "CUSTOM_{}", value.value);
+    } else {
+        pulse::fmt::ReportError("Bad type for CustomType");
+        return 0;
+    }
+    return AlignString(stream, n, s);
+}
 
 void
 FormatError(const char *msg)
 {
-    UNSCOPED_INFO(msg);
+    UNSCOPED_INFO("FormatError: " << msg);
     errorSeen = true;
 }
 
@@ -429,7 +462,7 @@ TEST_CASE("FormatSpec::Parse") {
 }
 
 
-TEST_CASE("FormatTo integer formatting", "[single]") {
+TEST_CASE("FormatTo integer formatting") {
     using namespace pulse::fmt;
     errorSeen = false;
 
@@ -1296,6 +1329,14 @@ TEST_CASE("FormatTo string formatting") {
         CHECK(out == "");
         CHECK_FALSE(errorSeen);
     }
+
+    SECTION("Bad type") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:z}", 0) == 0);
+        CHECK(out == "");
+        CHECK(errorSeen);
+    }
 }
 
 
@@ -1508,6 +1549,228 @@ TEST_CASE("FormatTo pointer formatting") {
 
         size_t written = FormatTo(out, "{:p}", &value);
 
+        CHECK(written <= out.max_size());
+        CHECK_FALSE(errorSeen);
+    }
+}
+
+
+TEST_CASE("FormatTo CustomType formatting") {
+    using namespace pulse::fmt;
+    errorSeen = false;
+
+    SECTION("Lowercase custom type formatting") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:z}", value) == 9);
+        CHECK(out == "custom_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Uppercase custom type formatting") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:Z}", value) == 9);
+        CHECK(out == "CUSTOM_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Zero value lowercase") {
+        etl::string<64> out;
+        CustomType value(0);
+
+        CHECK(FormatTo(out, "{:z}", value) == 8);
+        CHECK(out == "custom_0");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Negative value lowercase") {
+        etl::string<64> out;
+        CustomType value(-42);
+
+        CHECK(FormatTo(out, "{:z}", value) == 10);
+        CHECK(out == "custom_-42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Negative value uppercase") {
+        etl::string<64> out;
+        CustomType value(-42);
+
+        CHECK(FormatTo(out, "{:Z}", value) == 10);
+        CHECK(out == "CUSTOM_-42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width default alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:12z}", value) == 12);
+        CHECK(out == "custom_42   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Left alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:<12z}", value) == 12);
+        CHECK(out == "custom_42   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Right alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:>12z}", value) == 12);
+        CHECK(out == "   custom_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Center alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:^13z}", value) == 13);
+        CHECK(out == "  custom_42  ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill left alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:_<12z}", value) == 12);
+        CHECK(out == "custom_42___");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill right alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:_>12z}", value) == 12);
+        CHECK(out == "___custom_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill center alignment") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:_^13z}", value) == 13);
+        CHECK(out == "__custom_42__");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width equal to formatted size") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:9z}", value) == 9);
+        CHECK(out == "custom_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width smaller than content") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:4z}", value) == 9);
+        CHECK(out == "custom_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Multiple custom values") {
+        etl::string<128> out;
+
+        CHECK(FormatTo(out, "{:z} {:Z}", CustomType(1), CustomType(2)) == 17);
+        CHECK(out == "custom_1 CUSTOM_2");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Repeated argument") {
+        etl::string<128> out;
+        CustomType value(7);
+
+        CHECK(FormatTo(out, "{0:z}-{0:Z}", value) == 17);
+        CHECK(out == "custom_7-CUSTOM_7");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Argument reordering") {
+        etl::string<128> out;
+
+        CHECK(FormatTo(out, "{1:Z} {0:z}", CustomType(10), CustomType(20)) == 19);
+        CHECK(out == "CUSTOM_20 custom_10");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed with integer") {
+        etl::string<128> out;
+
+        CHECK(FormatTo(out, "{} {:z}", 123, CustomType(42)) == 13);
+        CHECK(out == "123 custom_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed with string") {
+        etl::string<128> out;
+
+        CHECK(FormatTo(out, "{} {:Z}", "value:", CustomType(42)) == 16);
+        CHECK(out == "value: CUSTOM_42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Literal braces around custom type") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{{{:z}}}", CustomType(42)) == 11);
+        CHECK(out == "{custom_42}");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Large integer payload") {
+        etl::string<64> out;
+        CustomType value(123456789);
+
+        CHECK(FormatTo(out, "{:z}", value) == 16);
+        CHECK(out == "custom_123456789");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Bad type specifier should fail") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:x}", value) == 0);
+        CHECK(errorSeen);
+    }
+
+    SECTION("Missing type specifier should fail") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{}", value) == 0);
+        CHECK(errorSeen);
+    }
+
+    SECTION("Unsupported standard string type should fail") {
+        etl::string<64> out;
+        CustomType value(42);
+
+        CHECK(FormatTo(out, "{:s}", value) == 0);
+        CHECK(errorSeen);
+    }
+
+    SECTION("Small buffer truncation") {
+        etl::string<4> out;
+
+        size_t written = FormatTo(out, "{:z}", CustomType(42));
         CHECK(written <= out.max_size());
         CHECK_FALSE(errorSeen);
     }
