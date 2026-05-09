@@ -455,7 +455,7 @@ FormatterBase::AlignString(OutputStream &stream, size_t n, etl::string_view s,
                            char defaultAlignment)
 {
     size_t numWritten = 0;
-    if (!spec.width || *spec.width <= s.size()) {
+    if (!spec.width || static_cast<size_t>(*spec.width) <= s.size()) {
         // Alignment and fill does not matter if width is not specified or less than string width.
         numWritten = etl::min(n, s.size());
         stream.Write(etl::string_view(s.data(), numWritten));
