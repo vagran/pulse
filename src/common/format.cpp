@@ -532,8 +532,10 @@ details::IntegralFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
         break;
     case 'x':
     case 'X':
+    case 'p':
+    case 'P':
         toStringSpec.base(16);
-        toStringSpec.upper_case(spec.type == 'X');
+        toStringSpec.upper_case(spec.type == 'X' || spec.type == 'P');
         break;
     default:
         ReportError("Bad type for integral argument");
@@ -587,10 +589,11 @@ IntegralNumberStringProvider::GetSize(size_t numLen, int sign, const FormatSpec 
         size++;
     }
 
-    if (spec.alternate) {
+    if (spec.alternate || spec.type == 'p' || spec.type == 'P') {
         if (spec.type == 'o') {
             size++;
-        } else if (spec.type == 'b' || spec.type == 'B' || spec.type == 'x' || spec.type == 'X') {
+        } else if (spec.type == 'b' || spec.type == 'B' || spec.type == 'x' || spec.type == 'X' ||
+                   spec.type == 'p' || spec.type == 'P') {
             size += 2;
         }
     }
@@ -624,7 +627,7 @@ IntegralNumberStringProvider::GetNext()
             continue;
 
         case State::PREFIX:
-            if (!spec.alternate) {
+            if (!spec.alternate && spec.type != 'p' && spec.type != 'P') {
                 state = State::ZEROS;
                 continue;
             }
@@ -641,6 +644,12 @@ IntegralNumberStringProvider::GetNext()
             case 'x':
             case 'X':
                 prefix = spec.type;
+                return '0';
+            case 'p':
+                prefix = 'x';
+                return '0';
+            case 'P':
+                prefix = 'X';
                 return '0';
             }
             state = State::ZEROS;

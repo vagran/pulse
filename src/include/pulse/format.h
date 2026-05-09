@@ -282,6 +282,28 @@ struct FormatterTrait<etl::string<size>> {
 };
 
 
+template <>
+class Formatter<const void *>: public Formatter<uintptr_t> {
+public:
+    using Formatter<uintptr_t>::Formatter;
+
+    size_t
+    operator()(OutputStream &stream, size_t n, const void *value)
+    {
+        return Formatter<uintptr_t>::operator()(stream, n, reinterpret_cast<uintptr_t>(value));
+    }
+};
+
+template <typename T>
+struct FormatterTrait<const T *> {
+    using TFormatter = Formatter<const void *>;
+};
+
+template <typename T>
+struct FormatterTrait<T *> {
+    using TFormatter = Formatter<const void *>;
+};
+
 namespace details {
 
 constexpr size_t SIZE_UNLIMITED = etl::numeric_limits<size_t>::max();

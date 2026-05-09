@@ -437,174 +437,203 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{}", 42) == 2);
         CHECK(out == "42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Negative signed integer") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{}", -42) == 3);
         CHECK(out == "-42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Zero value") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{}", 0) == 1);
         CHECK(out == "0");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Explicit positive sign") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:+}", 42) == 3);
         CHECK(out == "+42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Space sign for positive") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{: }", 42) == 3);
         CHECK(out == " 42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Space sign for negative") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{: }", -42) == 3);
         CHECK(out == "-42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Binary formatting") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:b}", 10) == 4);
         CHECK(out == "1010");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Binary alternate form") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:#b}", 10) == 6);
         CHECK(out == "0b1010");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Upper binary alternate form") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:#B}", 10) == 6);
         CHECK(out == "0B1010");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Octal formatting") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:o}", 10) == 2);
         CHECK(out == "12");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Octal alternate form") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:#o}", 10) == 3);
         CHECK(out == "012");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Hex lowercase") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:x}", 255) == 2);
         CHECK(out == "ff");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Hex uppercase") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:X}", 255) == 2);
         CHECK(out == "FF");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Hex alternate lowercase") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:#x}", 255) == 4);
         CHECK(out == "0xff");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Hex alternate uppercase") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:#X}", 255) == 4);
         CHECK(out == "0XFF");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Width right align default") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:5}", 42) == 5);
         CHECK(out == "   42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Width left align") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:<5}", 42) == 5);
         CHECK(out == "42   ");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Width center align") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:^5}", 42) == 5);
         CHECK(out == " 42  ");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Custom fill right align") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:_>5}", 42) == 5);
         CHECK(out == "___42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Custom fill left align") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:_<5}", 42) == 5);
         CHECK(out == "42___");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Custom fill center align") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:_^5}", 42) == 5);
         CHECK(out == "_42__");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Leading zero padding") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:05}", 42) == 5);
         CHECK(out == "00042");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Leading zero padding with sign") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:+05}", 42) == 5);
         CHECK(out == "+0042");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Leading zero padding negative") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:05}", -42) == 5);
         CHECK(out == "-0042");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Leading zero padding with alternate hex") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:#06x}", 255) == 6);
         CHECK(out == "0x00ff");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Dynamic width") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:{}}", 42, 5) == 5);
         CHECK(out == "   42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Dynamic width left align") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{:<{}}", 42, 5) == 5);
         CHECK(out == "42   ");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Argument reordering") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{1} {0}", 10, 20) == 5);
         CHECK(out == "20 10");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Repeated argument") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{0} {0} {0}", 7) == 5);
         CHECK(out == "7 7 7");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Signed minimum int") {
@@ -612,6 +641,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
         int value = std::numeric_limits<int>::min();
         FormatTo(out, "{}", value);
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Signed maximum int") {
@@ -620,6 +650,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
         size_t n = FormatTo(out, "{}", value);
         CHECK(n == out.size());
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Unsigned maximum") {
@@ -628,30 +659,35 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
         size_t n = FormatTo(out, "{}", value);
         CHECK(n == out.size());
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Zero with alternate hex") {
         etl::string<64> out;
         FormatTo(out, "{:#x}", 0);
         CHECK((out == "0" || out == "0x0"));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Zero with alternate binary") {
         etl::string<64> out;
         FormatTo(out, "{:#b}", 0);
         CHECK((out == "0" || out == "0b0"));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Multiple integers in one format string") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{} {} {}", 1, 22, 333) == 8);
         CHECK(out == "1 22 333");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Literal braces escaped") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{{{}}}", 42) == 4);
         CHECK(out == "{42}");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("Buffer truncation behavior with small buffer") {
@@ -659,6 +695,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
         size_t written = FormatTo(out, "{}", 123456);
         CHECK(written <= out.max_size());
         CHECK(std::string(out.data(), out.size()) == "1234");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int16_t default decimal") {
@@ -667,6 +704,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 5);
         CHECK(out == "12345");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int16_t negative value") {
@@ -675,6 +713,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 6);
         CHECK(out == "-12345");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int16_t minimum value") {
@@ -683,6 +722,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 6);
         CHECK(out == "-32768");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int16_t maximum value") {
@@ -691,6 +731,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 5);
         CHECK(out == "32767");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int16_t hexadecimal alternate") {
@@ -699,6 +740,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:#x}", value) == 4);
         CHECK(out == "0xff");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int16_t binary formatting") {
@@ -707,6 +749,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:b}", value) == 4);
         CHECK(out == "1010");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint16_t default decimal") {
@@ -715,6 +758,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 5);
         CHECK(out == "65535");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint16_t hexadecimal uppercase") {
@@ -723,6 +767,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:X}", value) == 4);
         CHECK(out == "FFFF");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint16_t alternate binary") {
@@ -731,6 +776,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:#b}", value) == 6);
         CHECK(out == "0b1111");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint16_t width and zero padding") {
@@ -739,6 +785,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:05}", value) == 5);
         CHECK(out == "00042");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t default decimal") {
@@ -747,6 +794,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 19);
         CHECK(out == "1234567890123456789");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t negative decimal") {
@@ -755,6 +803,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 20);
         CHECK(out == "-1234567890123456789");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t minimum value") {
@@ -763,6 +812,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 20);
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t maximum value") {
@@ -771,6 +821,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 19);
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t hexadecimal lowercase") {
@@ -779,6 +830,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:x}", value) == 10);
         CHECK(out == "1234abcdef");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t alternate uppercase hexadecimal") {
@@ -787,6 +839,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:#X}", value) == 12);
         CHECK(out == "0X1234ABCDEF");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t width right align") {
@@ -795,6 +848,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:8}", value) == 8);
         CHECK(out == "      42");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("int64_t zero padded with sign") {
@@ -803,6 +857,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:+08}", value) == 8);
         CHECK(out == "+0000042");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint64_t default decimal") {
@@ -811,6 +866,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{}", value) == 20);
         CHECK(out == "18446744073709551615");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint64_t hexadecimal lowercase") {
@@ -819,6 +875,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:x}", value) == 16);
         CHECK(out == "ffffffffffffffff");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint64_t hexadecimal uppercase alternate") {
@@ -827,6 +884,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:#X}", value) == 18);
         CHECK(out == "0XFFFFFFFFFFFFFFFF");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint64_t binary formatting") {
@@ -835,6 +893,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:b}", value) == 64);
         CHECK(out == "1000000000000000000000000000000000000000000000000000000000000000");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint64_t octal formatting") {
@@ -843,6 +902,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:o}", value) == 3);
         CHECK(out == "777");
+        CHECK_FALSE(errorSeen);
     }
 
     SECTION("uint64_t dynamic width") {
@@ -851,6 +911,7 @@ TEST_CASE("FormatTo integer formatting", "[single]") {
 
         CHECK(FormatTo(out, "{:>{}}", value, 6) == 6);
         CHECK(out == "    42");
+        CHECK_FALSE(errorSeen);
     }
 }
 
@@ -1233,6 +1294,220 @@ TEST_CASE("FormatTo string formatting") {
 
         CHECK(FormatTo(out, "{0:.{1}}", "abc", 0) == 0);
         CHECK(out == "");
+        CHECK_FALSE(errorSeen);
+    }
+}
+
+
+TEST_CASE("FormatTo pointer formatting") {
+    using namespace pulse::fmt;
+    errorSeen = false;
+
+    SECTION("Null pointer default formatting") {
+        etl::string<64> out;
+        void* ptr = nullptr;
+
+        size_t written = FormatTo(out, "{}", ptr);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Null pointer explicit pointer type") {
+        etl::string<64> out;
+        void* ptr = nullptr;
+
+        size_t written = FormatTo(out, "{:p}", ptr);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Object pointer formatting") {
+        etl::string<64> out;
+        int value = 42;
+        int* ptr = &value;
+
+        size_t written = FormatTo(out, "{}", ptr);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Object pointer explicit type") {
+        etl::string<64> out;
+        int value = 42;
+        int* ptr = &value;
+
+        size_t written = FormatTo(out, "{:p}", ptr);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Const pointer formatting") {
+        etl::string<64> out;
+        const int value = 123;
+        const int* ptr = &value;
+
+        size_t written = FormatTo(out, "{:p}", ptr);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Pointer should contain hexadecimal digits") {
+        etl::string<64> out;
+        int value = 1;
+        int* ptr = &value;
+
+        FormatTo(out, "{:p}", ptr);
+
+        CHECK_FALSE(out.empty());
+
+        CHECK(out.starts_with("0x"));
+        for (char c : out) {
+            bool isValid = (c >= '0' && c <= '9') ||
+                (c >= 'a' && c <= 'f') ||
+                (c >= 'A' && c <= 'F') ||
+                c == 'x' || c == 'X';
+            CHECK(isValid);
+        }
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Pointer width right align") {
+        etl::string<128> base;
+        etl::string<128> padded;
+        int value = 42;
+        int* ptr = &value;
+
+        FormatTo(base, "{:p}", ptr);
+        CHECK(FormatTo(padded, "{:>20p}", ptr) == 20);
+
+        REQUIRE(padded.size() == 20);
+        CHECK(padded.substr(20 - base.size()) == base);
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Pointer width left align") {
+        etl::string<128> base;
+        etl::string<128> padded;
+        int value = 42;
+        int* ptr = &value;
+
+        FormatTo(base, "{:p}", ptr);
+        CHECK(FormatTo(padded, "{:<20p}", ptr) == 20);
+
+        REQUIRE(padded.size() == 20);
+        CHECK(padded.substr(0, base.size()) == base);
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Pointer width center align") {
+        etl::string<128> out;
+        int value = 42;
+        int* ptr = &value;
+
+        CHECK(FormatTo(out, "{:^20p}", ptr) == 20);
+        CHECK(out.size() == 20);
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Pointer custom fill") {
+        etl::string<128> base;
+        etl::string<128> out;
+        int value = 42;
+        int* ptr = &value;
+
+        FormatTo(base, "{:p}", ptr);
+        CHECK(FormatTo(out, "{:_>20p}", ptr) == 20);
+
+        REQUIRE(out.size() == 20);
+        CHECK(out.substr(20 - base.size()) == base);
+
+        for (size_t i = 0; i < 20 - base.size(); ++i) {
+            CHECK(out[i] == '_');
+        }
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Repeated pointer argument") {
+        etl::string<256> out;
+        int value = 42;
+        int* ptr = &value;
+
+        size_t written = FormatTo(out, "{0:p} {0:p}", ptr);
+
+        CHECK(written == out.size());
+
+        auto spacePos = out.find(' ');
+        REQUIRE(spacePos != etl::string<256>::npos);
+
+        CHECK(out.substr(0, spacePos) == out.substr(spacePos + 1));
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Pointer argument reordering") {
+        etl::string<256> out;
+        int a = 1;
+        int b = 2;
+
+        FormatTo(out, "{1:p} {0:p}", &a, &b);
+
+        auto spacePos = out.find(' ');
+        REQUIRE(spacePos != etl::string<256>::npos);
+
+        CHECK(out.substr(0, spacePos) != out.substr(spacePos + 1));
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Literal braces around pointer") {
+        etl::string<128> out;
+        int value = 42;
+
+        CHECK(FormatTo(out, "{{{:p}}}", &value) == out.size());
+        CHECK(out.front() == '{');
+        CHECK(out.back() == '}');
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Void pointer formatting") {
+        etl::string<64> out;
+        int value = 42;
+        void* ptr = static_cast<void*>(&value);
+
+        size_t written = FormatTo(out, "{:p}", ptr);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Function pointer formatting if supported") {
+        etl::string<128> out;
+
+        auto fn = +[]() {};
+
+        size_t written = FormatTo(out, "{}", reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(fn)));
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Small buffer truncation") {
+        etl::string<4> out;
+        int value = 42;
+
+        size_t written = FormatTo(out, "{:p}", &value);
+
+        CHECK(written <= out.max_size());
         CHECK_FALSE(errorSeen);
     }
 }
