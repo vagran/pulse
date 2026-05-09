@@ -429,8 +429,9 @@ TEST_CASE("FormatSpec::Parse") {
 }
 
 
-TEST_CASE("FormatTo integer formatting") {
+TEST_CASE("FormatTo integer formatting", "[single]") {
     using namespace pulse::fmt;
+    errorSeen = false;
 
     SECTION("Default decimal formatting") {
         etl::string<64> out;
@@ -616,14 +617,16 @@ TEST_CASE("FormatTo integer formatting") {
     SECTION("Signed maximum int") {
         etl::string<64> out;
         int value = std::numeric_limits<int>::max();
-        CHECK(FormatTo(out, "{}", value) == out.size());
+        size_t n = FormatTo(out, "{}", value);
+        CHECK(n == out.size());
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 
     SECTION("Unsigned maximum") {
         etl::string<64> out;
         unsigned value = std::numeric_limits<unsigned>::max();
-        CHECK(FormatTo(out, "{}", value) == out.size());
+        size_t n = FormatTo(out, "{}", value);
+        CHECK(n == out.size());
         CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 

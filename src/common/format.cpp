@@ -16,12 +16,11 @@ ParseNumber(etl::string_view s, int &result)
     size_t size = 0;
     for (auto it = s.begin(); it < s.end(); it++, size++) {
         if (*it >= '0' && *it <= '9') {
-            int value = result * 10 + static_cast<int>(*it - '0');
-            if (value < result) {
+            if (result > (etl::numeric_limits<int>::max() - 9) / 10) {
                 ReportError("Number overflow in format specifier");
                 return 0;
             }
-            result = value;
+            result = result * 10 + static_cast<int>(*it - '0');
         } else {
             break;
         }
@@ -180,7 +179,6 @@ FormatSpec::Parse(etl::string_view s)
             }
             state = State::WIDTH;
             continue;
-
 
         case State::WIDTH: {
             int value;
