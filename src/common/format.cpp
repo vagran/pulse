@@ -504,20 +504,46 @@ FormatterBase::AlignString(OutputStream &stream, size_t n, etl::string_view s,
     return numWritten;
 }
 
-
-size_t
-Formatter<int>::operator()(OutputStream &stream, size_t n, int value)
+bool
+details::IntegralFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
 {
-    //XXX
-    etl::string<20> s;
-    etl::to_string(value, s);
-    stream.Write(s);
-    return s.size();
+    if (spec.precision) {
+        ReportError("Precision specified for integral value");
+        return false;
+    }
+    switch (spec.type) {
+    case 0:
+    case 'd':
+        toStringSpec.base(10);
+        break;
+    case 'b':
+    case 'B':
+        toStringSpec.base(2);
+        break;
+    case 'o':
+    case 'O':
+        toStringSpec.base(8);
+        break;
+    case 'x':
+    case 'X':
+        toStringSpec.base(16);
+        break;
+    default:
+        ReportError("Bad type for integral argument");
+        return false;
+    }
+    return true;
 }
 
+size_t
+details::IntegralFormatter::FormatNumber(OutputStream &stream, size_t n, etl::string_view number)
+{
+    //XXX
+    return AlignString(stream, n, number);
+}
 
 size_t
-StringFormatter::Format(OutputStream &stream, size_t n, const char *value, size_t size)
+details::StringFormatter::Format(OutputStream &stream, size_t n, const char *value, size_t size)
 {
     if (spec.precision) {
         if (*spec.precision < size) {

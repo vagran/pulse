@@ -17,6 +17,8 @@
 #include <etl/tuple.h>
 #include <etl/span.h>
 #include <etl/vector.h>
+#include <etl/concepts.h>
+#include <etl/to_string.h>
 
 
 namespace pulse {
@@ -136,15 +138,23 @@ struct FormatterTrait {
     using TFormatter = Formatter<T>;
 };
 
-template <>
-class Formatter<int>: public FormatterBase {
+
+namespace details {
+
+class IntegralFormatter: public FormatterBase {
 public:
     using FormatterBase::FormatterBase;
 
-    size_t
-    operator()(OutputStream &stream, size_t n, int value);
-};
+protected:
+    /// @return False if error occurred.
+    bool
+    GetToStringSpec(etl::format_spec &toStringSpec);
 
+    /// Format number which was converted to string using `etl::to_string()` with format specifier
+    /// created by `GetToStringSpec()`.
+    size_t
+    FormatNumber(OutputStream &stream, size_t n, etl::string_view number);
+};
 
 class StringFormatter: public FormatterBase {
 public:
@@ -155,8 +165,20 @@ protected:
     Format(OutputStream &stream, size_t n, const char *value, size_t size);
 };
 
+} // namespace details
+
+
+template <etl::integral T>
+class Formatter<T>: public details::IntegralFormatter {
+public:
+    using IntegralFormatter::IntegralFormatter;
+
+    size_t
+    operator()(OutputStream &stream, size_t n, T value);
+};
+
 template <>
-class Formatter<etl::string_view>: public StringFormatter {
+class Formatter<etl::string_view>: public details::StringFormatter {
 public:
     using StringFormatter::StringFormatter;
 
@@ -295,6 +317,20 @@ void inline
 ReportError(const char *)
 {}
 #endif
+
+template <etl::integral T>
+size_t
+Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
+{
+    etl::format_spec toStringSpec;
+    if (!GetToStringSpec(toStringSpec)) {
+        return 0;
+    }
+    // Maximal size is binary representation with sign and `0b` prefix.
+    etl::string<sizeof(T) * 8 + 3> s;
+    etl::to_string(value, s, toStringSpec);
+    return FormatNumber(stream, n, s);
+}
 
 } // namespace fmt
 
