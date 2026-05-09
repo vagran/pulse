@@ -3,9 +3,7 @@
 
 #include <stm32f1xx_hal.h>
 #include <pulse/ring_buffer.h>
-
-#include <etl/string_view.h>
-#include <etl/format.h>
+#include <pulse/format.h>
 
 
 extern "C" void
@@ -13,51 +11,35 @@ USART1_IRQHandler();
 
 class Uart {
 public:
-    class WriteIterator {
+    class OutputStream: public pulse::fmt::OutputStream {
     public:
-        WriteIterator(const WriteIterator &) = default;
+        OutputStream(const OutputStream &) = default;
 
-        WriteIterator(Uart &uart):
+        OutputStream(Uart &uart):
             uart(&uart)
         {
             GetRegion();
         }
 
-        uint8_t &
-        operator *()
+        virtual void
+        WriteChar(char c) override
         {
-            if (writeSize) {
-                return *writePtr;
-            } else {
-                return sink;
+            if (!writeSize) {
+                GetRegion();
             }
-        }
-
-        WriteIterator &
-        operator++(int)
-        {
             if (writeSize) {
+                *writePtr = c;
                 writeSize--;
                 writePtr++;
                 uart->buffer->CommitWrite(1);
                 uart->CommitWrite();
-            } else {
-                GetRegion();
             }
-            return *this;
-        }
-
-        WriteIterator &
-        operator++()
-        {
-            return (*this)++;
         }
 
     private:
         Uart *uart;
         uint8_t *writePtr = nullptr;
         size_t writeSize = 0;
-        uint8_t sink;
 
         void
         GetRegion()
@@ -81,9 +63,10 @@ public:
 
     template<class... Args>
     void
-    Format(etl::format_string<Args...> fmt, Args&&... args)
+    Format(etl::string_view fmt, Args&&... args)
     {
-        etl::format_to(WriteIterator(*this), fmt, etl::forward<Args>(args)...);
+        auto stream = OutputStream(*this);
+        pulse::fmt::FormatTo(stream, fmt, etl::forward<Args>(args)...);
     }
 
     /** Flush current buffer in case of Panic engaged. Should be called with interrupts disabled. */
