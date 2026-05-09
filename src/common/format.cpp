@@ -316,7 +316,7 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
             ReportError("Mixing manual and automatic indexing");
             return false;
         }
-        if (argIdx >= args.size()) {
+        if (static_cast<size_t>(argIdx) >= args.size()) {
             ReportError("Argument index out of bounds");
             return false;
         }
@@ -371,7 +371,7 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
                         ReportError("Mixing manual and automatic indexing");
                         break;
                     }
-                    if (argIdx >= args.size()) {
+                    if (static_cast<size_t>(argIdx) >= args.size()) {
                         ReportError("Argument index out of bounds");
                         break;
                     }
@@ -546,7 +546,7 @@ size_t
 details::StringFormatter::Format(OutputStream &stream, size_t n, const char *value, size_t size)
 {
     if (spec.precision) {
-        if (*spec.precision < size) {
+        if (static_cast<size_t>(*spec.precision) < size) {
             size = *spec.precision;
         }
     }
