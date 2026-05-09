@@ -428,7 +428,7 @@ TEST_CASE("FormatSpec::Parse") {
     }
 }
 
-#if 0
+
 TEST_CASE("FormatTo integer formatting") {
     using namespace pulse::fmt;
 
@@ -610,21 +610,21 @@ TEST_CASE("FormatTo integer formatting") {
         etl::string<64> out;
         int value = std::numeric_limits<int>::min();
         FormatTo(out, "{}", value);
-        CHECK_FALSE(out.empty());
+        CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 
     SECTION("Signed maximum int") {
         etl::string<64> out;
         int value = std::numeric_limits<int>::max();
         CHECK(FormatTo(out, "{}", value) == out.size());
-        CHECK_FALSE(out.empty());
+        CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 
     SECTION("Unsigned maximum") {
         etl::string<64> out;
         unsigned value = std::numeric_limits<unsigned>::max();
         CHECK(FormatTo(out, "{}", value) == out.size());
-        CHECK_FALSE(out.empty());
+        CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 
     SECTION("Zero with alternate hex") {
@@ -655,6 +655,7 @@ TEST_CASE("FormatTo integer formatting") {
         etl::string<4> out;
         size_t written = FormatTo(out, "{}", 123456);
         CHECK(written <= out.max_size());
+        CHECK(std::string(out.data(), out.size()) == "1234");
     }
 
     SECTION("int16_t default decimal") {
@@ -758,7 +759,7 @@ TEST_CASE("FormatTo integer formatting") {
         int64_t value = std::numeric_limits<int64_t>::min();
 
         CHECK(FormatTo(out, "{}", value) == 20);
-        CHECK(out == "-9223372036854775808");
+        CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 
     SECTION("int64_t maximum value") {
@@ -766,7 +767,7 @@ TEST_CASE("FormatTo integer formatting") {
         int64_t value = std::numeric_limits<int64_t>::max();
 
         CHECK(FormatTo(out, "{}", value) == 19);
-        CHECK(out == "9223372036854775807");
+        CHECK(std::string(out.data(), out.size()) == std::to_string(value));
     }
 
     SECTION("int64_t hexadecimal lowercase") {
@@ -849,10 +850,9 @@ TEST_CASE("FormatTo integer formatting") {
         CHECK(out == "    42");
     }
 }
-#endif
 
 
-TEST_CASE("FormatTo string formatting", "[single]") {
+TEST_CASE("FormatTo string formatting") {
     using namespace pulse::fmt;
     errorSeen = false;
 

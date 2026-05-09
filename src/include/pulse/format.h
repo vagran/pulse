@@ -11,7 +11,7 @@
  * feature is the ability to provide formatters for custom user types.
  */
 
-#include <pulse/config.h>
+#include <pulse/details/common.h>
 #include <etl/string_view.h>
 #include <etl/string.h>
 #include <etl/tuple.h>
@@ -25,6 +25,68 @@ namespace pulse {
 
 namespace fmt {
 
+
+class StringProvider {
+public:
+    /// Initial size.
+    const size_t size;
+
+    StringProvider(size_t size):
+        size(size),
+        remaining(size)
+    {}
+
+    char
+    Next()
+    {
+        PULSE_ASSERT(remaining);
+        remaining--;
+        return GetNext();
+    }
+
+    size_t
+    Remaining() const
+    {
+        return remaining;
+    }
+
+    void
+    Truncate(size_t newSize)
+    {
+        PULSE_ASSERT(newSize <= remaining);
+        remaining = newSize;
+    }
+
+protected:
+    size_t remaining;
+
+    virtual char
+    GetNext() = 0;
+};
+
+class BufferStringProvider: public StringProvider {
+public:
+    BufferStringProvider(const char *s, size_t size):
+        StringProvider(size),
+        p(s)
+    {}
+
+    BufferStringProvider(etl::string_view s):
+        StringProvider(s.size()),
+        p(s.data())
+    {}
+
+private:
+    const char *p;
+
+protected:
+    virtual char
+    GetNext() override
+    {
+        return *p++;
+    }
+};
+
 class OutputStream {
 public:
     virtual void
@@ -32,6 +94,9 @@ public:
 
     void
     Write(etl::string_view s);
+
+    void
+    Write(StringProvider &s);
 };
 
 
@@ -115,7 +180,14 @@ protected:
 
     /// Write the provided string applying fill, alignment and width from the format specifier.
     size_t
-    AlignString(OutputStream &stream, size_t n, etl::string_view s, char defaultAlignment = '<');
+    AlignString(OutputStream &stream, size_t n, StringProvider &chars, char defaultAlignment = '<');
+
+    size_t
+    AlignString(OutputStream &stream, size_t n, etl::string_view chars, char defaultAlignment = '<')
+    {
+        BufferStringProvider provider(chars);
+        return AlignString(stream, n, provider, defaultAlignment);
+    }
 };
 
 /// Formatter for each supported type (including any custom user types) should be implemented by
@@ -150,10 +222,10 @@ protected:
     bool
     GetToStringSpec(etl::format_spec &toStringSpec);
 
-    /// Format number which was converted to string using `etl::to_string()` with format specifier
-    /// created by `GetToStringSpec()`.
+    /// Format number (absolute value) which was converted to string using `etl::to_string()` with
+    // format specifier created by `GetToStringSpec()`.
     size_t
-    FormatNumber(OutputStream &stream, size_t n, etl::string_view number);
+    FormatNumber(OutputStream &stream, size_t n, etl::string_view number, int sign);
 };
 
 class StringFormatter: public FormatterBase {
@@ -326,10 +398,13 @@ Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
     if (!GetToStringSpec(toStringSpec)) {
         return 0;
     }
-    // Maximal size is binary representation with sign and `0b` prefix.
-    etl::string<sizeof(T) * 8 + 3> s;
+    // Maximal size is binary representation and sign character.
+    etl::string<sizeof(T) * 8 + 1> s;
+    // Cannot pass abs(value) because it will not work for `numeric_limits::min()`.
     etl::to_string(value, s, toStringSpec);
-    return FormatNumber(stream, n, s);
+    size_t isNeg = value < 0;
+    return FormatNumber(stream, n, etl::string_view(s.data() + isNeg, s.size() - isNeg),
+                        isNeg ? -1 : (value > 0 ? 1 : 0));
 }
 
 } // namespace fmt

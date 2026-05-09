@@ -81,6 +81,14 @@ OutputStream::Write(etl::string_view s)
     }
 }
 
+void
+OutputStream::Write(StringProvider &s)
+{
+    for (size_t n = s.Remaining(); n > 0; n--) {
+        WriteChar(s.Next());
+    }
+}
+
 bool
 FormatSpec::Parse(etl::string_view s)
 {
@@ -451,18 +459,18 @@ details::FormatTo(OutputStream &stream, size_t n, etl::string_view format,
 }
 
 size_t
-FormatterBase::AlignString(OutputStream &stream, size_t n, etl::string_view s,
-                           char defaultAlignment)
+FormatterBase::AlignString(OutputStream &stream, size_t n, StringProvider &s, char defaultAlignment)
 {
     size_t numWritten = 0;
-    if (!spec.width || static_cast<size_t>(*spec.width) <= s.size()) {
+    if (!spec.width || static_cast<size_t>(*spec.width) <= s.Remaining()) {
         // Alignment and fill does not matter if width is not specified or less than string width.
-        numWritten = etl::min(n, s.size());
-        stream.Write(etl::string_view(s.data(), numWritten));
+        numWritten = etl::min(n, s.Remaining());
+        s.Truncate(numWritten);
+        stream.Write(s);
         return numWritten;
     }
 
-    size_t margin = *spec.width - s.size();
+    size_t margin = *spec.width - s.Remaining();
     char fill = spec.fill ? spec.fill : ' ';
 
     size_t leftMargin;
@@ -485,8 +493,9 @@ FormatterBase::AlignString(OutputStream &stream, size_t n, etl::string_view s,
         return numWritten;
     }
 
-    size_t writeSize = etl::min(n, s.size());
-    stream.Write(etl::string_view(s.data(), writeSize));
+    size_t writeSize = etl::min(n, s.Remaining());
+    s.Truncate(writeSize);
+    stream.Write(s);
     n -= writeSize;
     numWritten += writeSize;
 
@@ -521,12 +530,12 @@ details::IntegralFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
         toStringSpec.base(2);
         break;
     case 'o':
-    case 'O':
         toStringSpec.base(8);
         break;
     case 'x':
     case 'X':
         toStringSpec.base(16);
+        toStringSpec.upper_case(spec.type == 'X');
         break;
     default:
         ReportError("Bad type for integral argument");
@@ -535,11 +544,147 @@ details::IntegralFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
     return true;
 }
 
+namespace {
+
+class IntegralNumberStringProvider: public StringProvider {
+public:
+    IntegralNumberStringProvider(etl::string_view number, int sign, const FormatSpec &spec):
+        StringProvider(GetSize(number.size(), sign, spec)),
+        spec(spec),
+        pNumber(number.data()),
+        numLen(number.size()),
+        sign(sign)
+    {}
+
+protected:
+    virtual char
+    GetNext() override;
+
+private:
+    enum class State {
+        SIGN,
+        PREFIX,
+        ZEROS,
+        NUMBER
+    };
+
+    const FormatSpec &spec;
+    const char *pNumber;
+    size_t numLen;
+    size_t stateLen = 0;
+    State state = State::SIGN;
+    const int8_t sign;
+    char prefix = 0;
+
+    static size_t
+    GetSize(size_t numLen, int sign, const FormatSpec &spec);
+};
+
 size_t
-details::IntegralFormatter::FormatNumber(OutputStream &stream, size_t n, etl::string_view number)
+IntegralNumberStringProvider::GetSize(size_t numLen, int sign, const FormatSpec &spec)
 {
-    //XXX
-    return AlignString(stream, n, number);
+    size_t size = 0;
+
+    if (spec.sign != '-' || sign < 0) {
+        size++;
+    }
+
+    if (spec.alternate) {
+        if (spec.type == 'o') {
+            size++;
+        } else if (spec.type == 'b' || spec.type == 'B' || spec.type == 'x' || spec.type == 'X') {
+            size += 2;
+        }
+    }
+
+    size += numLen;
+
+    if (spec.width && spec.leadingZeros && !spec.align && static_cast<size_t>(*spec.width) > size) {
+        size = *spec.width;
+    }
+
+    return size;
+}
+
+char
+IntegralNumberStringProvider::GetNext()
+{
+    while (true) {
+        switch (state) {
+
+        case State::SIGN:
+            state = State::PREFIX;
+            if (sign < 0) {
+                return '-';
+            }
+            if (spec.sign != '-') {
+                if (sign > 0 && spec.sign == '+') {
+                    return '+';
+                }
+                return ' ';
+            }
+            continue;
+
+        case State::PREFIX:
+            if (!spec.alternate) {
+                state = State::ZEROS;
+                continue;
+            }
+            if (prefix) {
+                state = State::ZEROS;
+                return prefix;
+            }
+            switch (spec.type) {
+            case 'o':
+                state = State::ZEROS;
+                return '0';
+            case 'b':
+            case 'B':
+            case 'x':
+            case 'X':
+                prefix = spec.type;
+                return '0';
+            }
+            state = State::ZEROS;
+            continue;
+
+        case State::ZEROS:
+            if (stateLen) {
+                stateLen--;
+                if (!stateLen) {
+                    state = State::NUMBER;
+                    stateLen = numLen;
+                }
+                return '0';
+            }
+            // `remaining` is decremented before this method is called.
+            if (spec.leadingZeros && !spec.align && remaining + 1 > numLen) {
+                stateLen = remaining + 1 - numLen;
+                continue;
+            }
+            state = State::NUMBER;
+            stateLen = numLen;
+            continue;
+
+        case State::NUMBER:
+            PULSE_ASSERT(stateLen);
+            if (stateLen) {
+                stateLen--;
+                return *pNumber++;
+            }
+            return '?';
+        }
+    }
+}
+
+} // anonymous namespace
+
+size_t
+details::IntegralFormatter::FormatNumber(OutputStream &stream, size_t n, etl::string_view number,
+                                         int sign)
+{
+    IntegralNumberStringProvider provider(number, sign, spec);
+    return AlignString(stream, n, provider, '>');
 }
 
 size_t
