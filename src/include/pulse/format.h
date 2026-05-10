@@ -26,6 +26,8 @@ namespace pulse {
 namespace fmt {
 
 
+/// Helper type mostly used to implement formatters. Dynamically provides string content of
+// pre-defined size.
 class StringProvider {
 public:
     /// Initial size.
@@ -64,6 +66,7 @@ protected:
     GetNext() = 0;
 };
 
+/// StringProvider implementation for pre-allocated buffer.
 class BufferStringProvider: public StringProvider {
 public:
     BufferStringProvider(const char *s, size_t size):
@@ -87,6 +90,8 @@ protected:
     }
 };
 
+
+/// Formatting result is fed to this interface.
 class OutputStream {
 public:
     virtual void
@@ -100,6 +105,7 @@ public:
 };
 
 
+/// OutputStream implementation for pre-allocated buffer.
 class BufferOutputStream: public OutputStream {
 public:
     BufferOutputStream(const BufferOutputStream &) = delete;
@@ -170,6 +176,7 @@ void inline
 ReportError(const char *msg);
 
 
+/// Base class for all formatters.
 class FormatterBase {
 public:
     FormatterBase(const FormatSpec &spec):
@@ -190,6 +197,7 @@ protected:
     }
 };
 
+
 /// Formatter for each supported type (including any custom user types) should be implemented by
 // specializing this class.
 template <typename T>
@@ -201,8 +209,9 @@ class Formatter {
     // Formatter(const FormatSpec &spec);
 
     // size_t
-    // operator()(OutputStream &stream, size_t n, const T &value);
+    // operator()(OutputStream &stream, size_t n, U value);
 };
+
 
 // Use this trait to map formatter type to value type if necessary.
 template <typename T>
@@ -441,6 +450,7 @@ FormatTo(etl::istring &out, etl::string_view format, TArg &&... args)
     out.uninitialized_resize(size);
     return size;
 }
+
 
 #ifdef pulseConfig_FORMAT_ERROR
 void inline
