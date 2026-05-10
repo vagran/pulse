@@ -2,7 +2,6 @@
 #include <pulse/timer.h>
 #include <functional>
 #include <format>
-#include <iostream>
 
 
 using namespace pulse;
@@ -76,7 +75,7 @@ TestTimer(std::vector<TestEntry> tests)
     for (auto &e: tests) {
         REQUIRE(e.complete);
     }
-    std::cout << Timer::GetTime() - startTime << " ticks emulated\n";
+    UNSCOPED_INFO(Timer::GetTime() - startTime << " ticks emulated\n");
 }
 
 } // anonymous namespace

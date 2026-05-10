@@ -1,5 +1,5 @@
-#ifndef COMMON_H
-#define COMMON_H
+#ifndef PULSE_DETAILS_COMMON_H
+#define PULSE_DETAILS_COMMON_H
 
 #include <pulse/config.h>
 #include <etl/type_traits.h>
@@ -59,4 +59,4 @@ BitWidth(T value)
 
 } // namespace pulse
 
-#endif /* COMMON_H */
+#endif /* PULSE_DETAILS_COMMON_H */

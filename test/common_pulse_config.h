@@ -30,4 +30,8 @@ extern "C" void Panic(const char *msg);
 
 #define pulseConfig_DEFINE_CPP_NEW                  0
 
+extern "C" void FormatError(const char *msg);
+
+#define pulseConfig_FORMAT_ERROR(msg)               FormatError(msg)
+
 #endif /* COMMON_PULSE_CONFIG_H */

@@ -148,5 +148,11 @@
  * called from ISR). Pulse functions should never be called from ISR running on higher priorities.
  */
 
+ 
+/** pulseConfig_FORMAT_ERROR
+ * Invoked with string message argument in case of any error when formatting strings by `pulse::fmt`
+ * API.
+ */
+
 
 #endif /* DEFAULT_CONFIG_H */
