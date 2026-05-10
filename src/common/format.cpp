@@ -713,11 +713,13 @@ details::FloatFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
     switch (spec.type) {
     case 0:
     case 'f':
-    case 'F':
     case 'e': // not implemented
-    case 'E':
     case 'g':
+        break;
+    case 'F':
+    case 'E':
     case 'G':
+        toStringSpec.upper_case(true);
         break;
     default:
         ReportError("Bad type for floating point argument");

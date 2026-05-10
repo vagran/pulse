@@ -2014,6 +2014,17 @@ TEST_CASE("FormatTo floating point formatting") {
         CHECK_FALSE(errorSeen);
     }
 
+    // SECTION("NaN formatting uppercase") {
+    //     etl::string<64> out;
+    //     double value = std::numeric_limits<double>::quiet_NaN();
+
+    //     size_t written = FormatTo(out, "{:F}", value);
+
+    //     CHECK(written == out.size());
+    //     CHECK(out == "NAN");
+    //     CHECK_FALSE(errorSeen);
+    // }
+
     SECTION("Infinity formatting") {
         etl::string<64> out;
         double value = std::numeric_limits<double>::infinity();
@@ -2024,6 +2035,17 @@ TEST_CASE("FormatTo floating point formatting") {
         CHECK(out == "inf");
         CHECK_FALSE(errorSeen);
     }
+
+    // SECTION("Infinity formatting uppercase") {
+    //     etl::string<64> out;
+    //     double value = std::numeric_limits<double>::infinity();
+
+    //     size_t written = FormatTo(out, "{:F}", value);
+
+    //     CHECK(written == out.size());
+    //     CHECK(out == "INF");
+    //     CHECK_FALSE(errorSeen);
+    // }
 
     SECTION("Negative infinity formatting") {
         etl::string<64> out;
