@@ -2109,3 +2109,306 @@ TEST_CASE("FormatTo floating point formatting") {
         CHECK_FALSE(errorSeen);
     }
 }
+
+
+TEST_CASE("FormatTo boolean formatting") {
+    using namespace pulse::fmt;
+    errorSeen = false;
+
+    SECTION("Default true formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}", true) == 4);
+        CHECK(out == "true");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Default false formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}", false) == 5);
+        CHECK(out == "false");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("String type explicit true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:s}", true) == 4);
+        CHECK(out == "true");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("String type explicit false") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:s}", false) == 5);
+        CHECK(out == "false");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Decimal true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:d}", true) == 1);
+        CHECK(out == "1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Decimal false") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:d}", false) == 1);
+        CHECK(out == "0");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Binary true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:b}", true) == 1);
+        CHECK(out == "1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Binary false") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:b}", false) == 1);
+        CHECK(out == "0");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Binary alternate true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:#b}", true) == 3);
+        CHECK(out == "0b1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Binary alternate false") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:#b}", false) == 3);
+        CHECK(out == "0b0");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Hex true lowercase") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:x}", true) == 1);
+        CHECK(out == "1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Hex false uppercase") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:X}", false) == 1);
+        CHECK(out == "0");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Octal true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:o}", true) == 1);
+        CHECK(out == "1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Explicit positive sign") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:+d}", true) == 2);
+        CHECK(out == "+1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Space sign") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{: d}", true) == 2);
+        CHECK(out == " 1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width default string true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:8}", true) == 8);
+        CHECK(out == "true    ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width default string false") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:8}", false) == 8);
+        CHECK(out == "false   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width right align string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:>8}", true) == 8);
+        CHECK(out == "    true");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width left align string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:<8}", false) == 8);
+        CHECK(out == "false   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width center align string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:^8}", true) == 8);
+        CHECK(out == "  true  ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:_>8}", true) == 8);
+        CHECK(out == "____true");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width numeric bool") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:4d}", true) == 4);
+        CHECK(out == "   1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Leading zero numeric bool") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:04d}", true) == 4);
+        CHECK(out == "0001");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Precision string true") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.2}", true) == 2);
+        CHECK(out == "tr");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Precision string false") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.3}", false) == 3);
+        CHECK(out == "fal");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width and precision string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:8.2}", true) == 8);
+        CHECK(out == "tr      ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:{}}", true, 8) == 8);
+        CHECK(out == "true    ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic precision string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.{}}", false, 4) == 4);
+        CHECK(out == "fals");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width and precision") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:{}.{}}", true, 8, 2) == 8);
+        CHECK(out == "tr      ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Explicit indexed dynamic width and precision") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{0:{1}.{2}}", false, 8, 3) == 8);
+        CHECK(out == "fal     ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Repeated argument") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{0} {0:d} {0:b}", true) == 8);
+        CHECK(out == "true 1 1");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Argument reordering") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{1} {0}", false, true) == 10);
+        CHECK(out == "true false");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Literal braces") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{{{}}}", true) == 6);
+        CHECK(out == "{true}");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed boolean and integer") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{} {}", true, 42) == 7);
+        CHECK(out == "true 42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed boolean and string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{} {}", false, "ok") == 8);
+        CHECK(out == "false ok");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Zero precision string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.0}", true) == 0);
+        CHECK(out == "");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Small buffer truncation") {
+        etl::string<4> out;
+
+        size_t written = FormatTo(out, "{}", false);
+
+        CHECK(written <= out.max_size());
+        CHECK_FALSE(errorSeen);
+    }
+}

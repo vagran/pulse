@@ -336,6 +336,16 @@ struct FormatterTrait<T *> {
 };
 
 
+template <>
+class Formatter<bool>: public details::IntegralFormatter {
+public:
+    using IntegralFormatter::IntegralFormatter;
+
+    size_t
+    operator()(OutputStream &stream, size_t n, bool value);
+};
+
+
 namespace details {
 
 constexpr size_t SIZE_UNLIMITED = etl::numeric_limits<size_t>::max();

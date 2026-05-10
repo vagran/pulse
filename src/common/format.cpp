@@ -733,3 +733,20 @@ details::FloatFormatter::FormatNumber(OutputStream &stream, size_t n, etl::strin
     NumberStringProvider provider(number, sign, spec);
     return AlignString(stream, n, provider, '>');
 }
+
+
+size_t
+Formatter<bool>::operator()(OutputStream &stream, size_t n, bool value)
+{
+    if (!spec.type || spec.type == 's') {
+        const char *s = value ? "true" : "false";
+        size_t size = value ? 4 : 5;
+        if (spec.precision) {
+            if (static_cast<size_t>(*spec.precision) < size) {
+                size = *spec.precision;
+            }
+        }
+        return AlignString(stream, n, etl::string_view(s, size));
+    }
+    return FormatNumber(stream, n, value ? "1" : "0", 1);
+}
