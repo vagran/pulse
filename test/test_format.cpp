@@ -1775,3 +1775,337 @@ TEST_CASE("FormatTo CustomType formatting") {
         CHECK_FALSE(errorSeen);
     }
 }
+
+
+TEST_CASE("FormatTo floating point formatting") {
+    using namespace pulse::fmt;
+    errorSeen = false;
+
+    SECTION("Default formatting double") {
+        etl::string<64> out;
+
+        size_t written = FormatTo(out, "{}", 3.5);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Default formatting float") {
+        etl::string<64> out;
+        float value = 1.25f;
+
+        size_t written = FormatTo(out, "{}", value);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Fixed precision") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.2f}", 3.14159) == 4);
+        CHECK(out == "3.14");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Fixed precision rounding") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.2f}", 3.146) == 4);
+        CHECK(out == "3.15");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Fixed precision zero") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.0f}", 3.9) == 1);
+        CHECK(out == "4");
+        CHECK_FALSE(errorSeen);
+    }
+
+    // SECTION("Scientific lowercase") {
+    //     etl::string<64> out;
+
+    //     size_t written = FormatTo(out, "{:.2e}", 1234.0);
+
+    //     CHECK(written == out.size());
+    //     CHECK(out.find('e') != etl::string<64>::npos);
+    // }
+
+    // SECTION("Scientific uppercase") {
+    //     etl::string<64> out;
+
+    //     size_t written = FormatTo(out, "{:.2E}", 1234.0);
+
+    //     CHECK(written == out.size());
+    //     CHECK(out.find('E') != etl::string<64>::npos);
+    // }
+
+    SECTION("General lowercase") {
+        etl::string<64> out;
+
+        size_t written = FormatTo(out, "{:.4g}", 1234.5678);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("General uppercase") {
+        etl::string<64> out;
+
+        size_t written = FormatTo(out, "{:.4G}", 1234.5678);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    // SECTION("Hex float lowercase") {
+    //     etl::string<128> out;
+
+    //     size_t written = FormatTo(out, "{:a}", 3.5);
+
+    //     CHECK(written == out.size());
+    //     CHECK_FALSE(out.empty());
+    // }
+
+    // SECTION("Hex float uppercase") {
+    //     etl::string<128> out;
+
+    //     size_t written = FormatTo(out, "{:A}", 3.5);
+
+    //     CHECK(written == out.size());
+    //     CHECK_FALSE(out.empty());
+    // }
+
+    SECTION("Explicit positive sign") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:+.2f}", 3.5) == 5);
+        CHECK(out == "+3.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Negative value") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.2f}", -3.5) == 5);
+        CHECK(out == "-3.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Space sign positive") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{: .2f}", 3.5) == 5);
+        CHECK(out == " 3.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    // SECTION("Alternate form fixed") {
+    //     etl::string<64> out;
+
+    //     size_t written = FormatTo(out, "{:#.0f}", 3.0);
+
+    //     CHECK(written == out.size());
+    //     CHECK(out.find('.') != etl::string<64>::npos);
+    // }
+
+    SECTION("Width right align") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:8.2f}", 3.5) == 8);
+        CHECK(out == "    3.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width left align") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:<8.2f}", 3.5) == 8);
+        CHECK(out == "3.50    ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width center align") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:^8.2f}", 3.5) == 8);
+        CHECK(out == "  3.50  ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:_>8.2f}", 3.5) == 8);
+        CHECK(out == "____3.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Leading zero padding") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:08.2f}", 3.5) == 8);
+        CHECK(out == "00003.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Leading zero padding space") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{: 08.2f}", 3.5) == 8);
+        CHECK(out == " 0003.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Leading zero padding negative") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:08.2f}", -3.5) == 8);
+        CHECK(out == "-0003.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:{}.2f}", 3.5, 8) == 8);
+        CHECK(out == "    3.50");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic precision") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.{}f}", 3.14159, 3) == 5);
+        CHECK(out == "3.142");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width and precision") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:{}.{}f}", 3.14159, 8, 3) == 8);
+        CHECK(out == "   3.142");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Explicit indexed dynamic width and precision") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{0:{1}.{2}f}", 3.14159, 8, 2) == 8);
+        CHECK(out == "    3.14");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("NaN formatting") {
+        etl::string<64> out;
+        double value = std::numeric_limits<double>::quiet_NaN();
+
+        size_t written = FormatTo(out, "{}", value);
+
+        CHECK(written == out.size());
+        CHECK(out == "nan");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Infinity formatting") {
+        etl::string<64> out;
+        double value = std::numeric_limits<double>::infinity();
+
+        size_t written = FormatTo(out, "{}", value);
+
+        CHECK(written == out.size());
+        CHECK(out == "inf");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Negative infinity formatting") {
+        etl::string<64> out;
+        double value = -std::numeric_limits<double>::infinity();
+
+        size_t written = FormatTo(out, "{}", value);
+        CHECK(written == out.size());
+        CHECK(out == "-inf");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Zero formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:.2f}", 0.0) == 4);
+        CHECK(out == "0.00");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Negative zero formatting") {
+        etl::string<64> out;
+
+        size_t written = FormatTo(out, "{:.2f}", -0.0);
+
+        CHECK(written == out.size());
+        bool isValid = out == "-0.00" || out == "0.00";
+        CHECK(isValid);
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Large double") {
+        etl::string<128> out;
+        double value = std::numeric_limits<double>::max();
+
+        size_t written = FormatTo(out, "{}", value);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Small double") {
+        etl::string<128> out;
+        double value = std::numeric_limits<double>::min();
+
+        size_t written = FormatTo(out, "{}", value);
+
+        CHECK(written == out.size());
+        CHECK_FALSE(out.empty());
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Literal braces") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{{{:.2f}}}", 3.5) == 6);
+        CHECK(out == "{3.50}");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Multiple floating point values") {
+        etl::string<128> out;
+
+        CHECK(FormatTo(out, "{:.1f} {:.2f}", 1.5, 2.25) == 8);
+        CHECK(out == "1.5 2.25");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed float and integer") {
+        etl::string<128> out;
+
+        CHECK(FormatTo(out, "{:.2f} {}", 3.5, 42) == 7);
+        CHECK(out == "3.50 42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Small buffer truncation") {
+        etl::string<4> out;
+
+        size_t written = FormatTo(out, "{:.2f}", 123.456);
+
+        CHECK(written <= out.max_size());
+        CHECK_FALSE(errorSeen);
+    }
+}

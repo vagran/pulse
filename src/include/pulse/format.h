@@ -228,6 +228,21 @@ protected:
     FormatNumber(OutputStream &stream, size_t n, etl::string_view number, int sign);
 };
 
+class FloatFormatter: public FormatterBase {
+public:
+    using FormatterBase::FormatterBase;
+
+protected:
+    /// @return False if error occurred.
+    bool
+    GetToStringSpec(etl::format_spec &toStringSpec);
+
+    /// Format number (absolute value) which was converted to string using `etl::to_string()` with
+    // format specifier created by `GetToStringSpec()`.
+    size_t
+    FormatNumber(OutputStream &stream, size_t n, etl::string_view number, int sign);
+};
+
 class StringFormatter: public FormatterBase {
 public:
     using FormatterBase::FormatterBase;
@@ -249,6 +264,17 @@ public:
     operator()(OutputStream &stream, size_t n, T value);
 };
 
+
+template <etl::floating_point T>
+class Formatter<T>: public details::FloatFormatter {
+public:
+    using FloatFormatter::FloatFormatter;
+
+    size_t
+    operator()(OutputStream &stream, size_t n, T value);
+};
+
+
 template <>
 class Formatter<etl::string_view>: public details::StringFormatter {
 public:
@@ -263,6 +289,11 @@ public:
 
 template <>
 struct FormatterTrait<const char *> {
+    using TFormatter = Formatter<etl::string_view>;
+};
+
+template <>
+struct FormatterTrait<char *> {
     using TFormatter = Formatter<etl::string_view>;
 };
 
@@ -303,6 +334,7 @@ template <typename T>
 struct FormatterTrait<T *> {
     using TFormatter = Formatter<const void *>;
 };
+
 
 namespace details {
 
@@ -412,6 +444,7 @@ ReportError(const char *)
 {}
 #endif
 
+
 template <etl::integral T>
 size_t
 Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
@@ -427,6 +460,20 @@ Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
     size_t isNeg = value < 0;
     return FormatNumber(stream, n, etl::string_view(s.data() + isNeg, s.size() - isNeg),
                         isNeg ? -1 : (value > 0 ? 1 : 0));
+}
+
+
+template <etl::floating_point T>
+size_t
+Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
+{
+    etl::format_spec toStringSpec;
+    if (!GetToStringSpec(toStringSpec)) {
+        return 0;
+    }
+    etl::string<etl::numeric_limits<T>::max_digits10 + 1> s;
+    etl::to_string(abs(value), s, toStringSpec);
+    return FormatNumber(stream, n, s, value < 0 ? -1 : (value > 0 ? 1 : 0));
 }
 
 } // namespace fmt

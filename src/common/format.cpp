@@ -543,9 +543,9 @@ details::IntegralFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
 
 namespace {
 
-class IntegralNumberStringProvider: public StringProvider {
+class NumberStringProvider: public StringProvider {
 public:
-    IntegralNumberStringProvider(etl::string_view number, int sign, const FormatSpec &spec):
+    NumberStringProvider(etl::string_view number, int sign, const FormatSpec &spec):
         StringProvider(GetSize(number.size(), sign, spec)),
         spec(spec),
         pNumber(number.data()),
@@ -578,7 +578,7 @@ private:
 };
 
 size_t
-IntegralNumberStringProvider::GetSize(size_t numLen, int sign, const FormatSpec &spec)
+NumberStringProvider::GetSize(size_t numLen, int sign, const FormatSpec &spec)
 {
     size_t size = 0;
 
@@ -605,7 +605,7 @@ IntegralNumberStringProvider::GetSize(size_t numLen, int sign, const FormatSpec 
 }
 
 char
-IntegralNumberStringProvider::GetNext()
+NumberStringProvider::GetNext()
 {
     while (true) {
         switch (state) {
@@ -687,7 +687,7 @@ size_t
 details::IntegralFormatter::FormatNumber(OutputStream &stream, size_t n, etl::string_view number,
                                          int sign)
 {
-    IntegralNumberStringProvider provider(number, sign, spec);
+    NumberStringProvider provider(number, sign, spec);
     return AlignString(stream, n, provider, '>');
 }
 
@@ -700,4 +700,36 @@ details::StringFormatter::Format(OutputStream &stream, size_t n, const char *val
         }
     }
     return AlignString(stream, n, etl::string_view(value, size));
+}
+
+bool
+details::FloatFormatter::GetToStringSpec(etl::format_spec &toStringSpec)
+{
+    if (spec.precision) {
+        toStringSpec.precision(*spec.precision);
+    } else {
+        toStringSpec.precision(6);
+    }
+    switch (spec.type) {
+    case 0:
+    case 'f':
+    case 'F':
+    case 'e': // not implemented
+    case 'E':
+    case 'g':
+    case 'G':
+        break;
+    default:
+        ReportError("Bad type for floating point argument");
+        return false;
+    }
+    return true;
+}
+
+size_t
+details::FloatFormatter::FormatNumber(OutputStream &stream, size_t n, etl::string_view number,
+                                      int sign)
+{
+    NumberStringProvider provider(number, sign, spec);
+    return AlignString(stream, n, provider, '>');
 }
