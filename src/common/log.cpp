@@ -12,7 +12,7 @@ details::WriteLogPrefix(Level level)
     //XXX support timestamp
 
     switch (level) {
-    case Level::DEBUG:
+    case Level::DEBUG_:
         output.WriteChar('D');
         break;
     case Level::INFO:
