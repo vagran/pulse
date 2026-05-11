@@ -27,7 +27,8 @@ enum class Level {
     ERROR = PULSE_LOG_LEVEL_ERROR,
     WARNING = PULSE_LOG_LEVEL_WARNING,
     INFO = PULSE_LOG_LEVEL_INFO,
-    DEBUG = PULSE_LOG_LEVEL_DEBUG
+    // Prevent conflict with DEBUG macro typically defined in debug builds
+    DEBUG_ = PULSE_LOG_LEVEL_DEBUG
 };
 
 
@@ -79,7 +80,7 @@ Write(Level level, etl::string_view fmt, Args&&... args)
 } // namespace pulse
 
 #if PULSE_LOG_ENABLED && pulseConfig_LOG_LEVEL >= PULSE_LOG_LEVEL_DEBUG
-#define LOG_DEBUG(fmt, ...) pulse::log::Write(pulse::log::Level::DEBUG, fmt, ## __VA_ARGS__)
+#define LOG_DEBUG(fmt, ...) pulse::log::Write(pulse::log::Level::DEBUG_, fmt, ## __VA_ARGS__)
 #else
 #define LOG_DEBUG(fmt, ...)
 #endif

@@ -2,6 +2,8 @@
 
 using namespace pulse::log;
 
+#if PULSE_LOG_ENABLED
+
 details::LogOutputStream details::output;
 
 void
@@ -27,3 +29,5 @@ details::WriteLogPrefix(Level level)
     }
     output.WriteChar(' ');
 }
+
+#endif // PULSE_LOG_ENABLED
