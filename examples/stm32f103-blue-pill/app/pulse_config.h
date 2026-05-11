@@ -14,6 +14,9 @@ MallocLock();
 void
 MallocUnlock();
 
+void
+LogPutc(char c);
+
 #ifdef __cplusplus
 }
 #endif
@@ -43,5 +46,7 @@ MallocUnlock();
 #define pulseConfig_MALLOC_UNLOCK()                 MallocUnlock()
 
 #define pulseConfig_MALLOC_STATS                    1
+
+#define pulseConfig_LOG_PUT_CHAR(c)                 LogPutc(c)
 
 #endif /* PULSE_CONFIG_H */

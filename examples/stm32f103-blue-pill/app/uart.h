@@ -16,50 +16,33 @@ public:
         OutputStream(const OutputStream &) = default;
 
         OutputStream(Uart &uart):
-            uart(&uart)
-        {
-            GetRegion();
-        }
+            uart(uart)
+        {}
 
         virtual void
         WriteChar(char c) override
         {
-            if (!writeSize) {
-                GetRegion();
-            }
-            if (writeSize) {
-                *writePtr = c;
-                writeSize--;
-                writePtr++;
-                uart->buffer->CommitWrite(1);
-                uart->CommitWrite();
-            }
+            uart.WriteChar(c);
         }
 
     private:
-        Uart *uart;
-        uint8_t *writePtr = nullptr;
-        size_t writeSize = 0;
-
-        void
-        GetRegion()
-        {
-            auto region = uart->buffer->GetWriteRegion();
-            if (!region.empty()) {
-                writePtr = region.data();
-                writeSize = region.size();
-            }
-        }
+        Uart &uart;
     };
+
+    Uart()
+    {}
 
     void
     Initialize(int baudRate, uint8_t *buffer, size_t bufferSize);
 
     void
+    WriteChar(char c);
+
+    void
     Write(etl::string_view s);
 
     void
-    WriteCharSync(uint8_t c);
+    WriteCharSync(char c);
 
     template<class... Args>
     void
@@ -77,7 +60,10 @@ private:
     friend void USART1_IRQHandler();
 
     UART_HandleTypeDef h;
-    etl::optional<pulse::RingBuffer<uint8_t>> buffer;
+
+    union {
+        pulse::RingBuffer<uint8_t> buffer;
+    };
 
     void
     CommitWrite();

@@ -4,13 +4,12 @@
 #include <pulse/port.h>
 #include <pulse/token_queue.h>
 #include <pulse/discard_queue.h>
+#include <pulse/log.h>
 
 #include <stm32f1xx_hal.h>
 #include <stm32f103xb.h>
 
 #include <uart.h>
-
-#include <etl/to_string.h>
 
 
 using namespace pulse;
@@ -21,6 +20,10 @@ Panic(const char *msg)
 {
     DisableInterrupts();
     uart.PanicFlush();
+
+    for (const char *p = msg; *p; p++) {
+        uart.WriteCharSync(*p);
+    }
 
     /* Stop in debug build, reset after delay in release build. */
 #ifdef DEBUG
@@ -269,7 +272,8 @@ ButtonTask()
         }
         blinkTimer.Cancel();
 
-        uart.Format("New interval: {}\n", blinkIntervalIndex);
+        LOG_INFO("New interval: {}", blinkIntervalIndex);
+
         MallocStats stats;
         pulse::GetMallocStats(&stats);
         uart.Format("Total free: {}\n", stats.totalFree);
@@ -409,7 +413,7 @@ RotaryEncoderTask()
 {
     while (true) {
         int8_t clicks = co_await rotEnc.WaitClick();
-        uart.Format("Rotary encoder: {}\n", clicks);
+        LOG_INFO("Rotary encoder: {}", clicks);
     }
 }
 
@@ -435,6 +439,12 @@ HAL_GPIO_EXTI_Callback(uint16_t gpioPin)
     }
 }
 
+void
+LogPutc(char c)
+{
+    uart.WriteChar(c);
+}
+
 extern "C" [[noreturn]] int
 main()
 {
@@ -446,7 +456,7 @@ main()
     static uint8_t uartBuffer[1024];
     uart.Initialize(230400, uartBuffer, sizeof(uartBuffer));
 
-    uart.Write("Application started\n");
+    LOG_INFO("Application started - " PULSE_STR(BUILDER));
 
     InitLed();
     InitRotaryEncoder();

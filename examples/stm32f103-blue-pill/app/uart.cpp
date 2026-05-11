@@ -8,7 +8,7 @@ Uart uart;
 void
 Uart::Initialize(int baudRate, uint8_t *buffer, size_t bufferSize)
 {
-    this->buffer.emplace(buffer, bufferSize);
+    etl::construct_at(&this->buffer, buffer, bufferSize);
 
     memset(&h, 0, sizeof(h));
 
@@ -29,14 +29,21 @@ Uart::Initialize(int baudRate, uint8_t *buffer, size_t bufferSize)
 void
 Uart::Write(etl::string_view s)
 {
-    buffer->Write({reinterpret_cast<const uint8_t *>(s.data()), s.size()});
+    buffer.Write(reinterpret_cast<const uint8_t *>(s.data()), s.size());
     CommitWrite();
 }
 
 void
-Uart::WriteCharSync(uint8_t c)
+Uart::WriteChar(char c)
 {
-    HAL_UART_Transmit(&h, &c, 1, 0xFFFF);
+    buffer.Write(reinterpret_cast<const uint8_t *>(&c), 1);
+    CommitWrite();
+}
+
+void
+Uart::WriteCharSync(char c)
+{
+    HAL_UART_Transmit(&h, reinterpret_cast<const uint8_t *>(&c), 1, 0xFFFF);
 }
 
 void
@@ -49,7 +56,7 @@ void
 Uart::PanicFlush()
 {
     while (true) {
-        auto region = this->buffer->GetReadRegion();
+        auto region = this->buffer.GetReadRegion();
         if (region.empty()) {
             break;
         }
@@ -73,7 +80,7 @@ USART1_IRQHandler()
         __HAL_UART_GET_FLAG(&uart.h, UART_FLAG_TXE)) {
 
         uint8_t c = 0;
-        if (uart.buffer->Read(&c, 1)) {
+        if (uart.buffer.Read(&c, 1)) {
             /* Transmit Data */
             uart.h.Instance->DR = c;
         } else {

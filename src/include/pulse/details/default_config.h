@@ -148,10 +148,23 @@
  * called from ISR). Pulse functions should never be called from ISR running on higher priorities.
  */
 
- 
+
 /** pulseConfig_FORMAT_ERROR
  * Invoked with string message argument in case of any error when formatting strings by `pulse::fmt`
  * API.
+ */
+
+
+/** pulseConfig_LOG_LEVEL
+ * Threshold log level for `LOG_*` macros, one of `PULSE_LOG_LEVEL_*` macro.
+ */
+#ifndef pulseConfig_LOG_LEVEL
+#   define pulseConfig_LOG_LEVEL    PULSE_LOG_LEVEL_INFO
+#endif
+
+
+/** pulseConfig_LOG_PUT_CHAR
+ * Macro to use for outputting next character of log message. Logs are disabled if not defined.
  */
 
 

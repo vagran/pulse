@@ -23,6 +23,8 @@ add_compile_definitions(STM32F103xB)
 
 add_compile_options(-Werror -Wall -Wno-pedantic)
 
+add_compile_definitions(BUILDER=${CMAKE_CXX_COMPILER_ID}_${CMAKE_BUILD_TYPE})
+
 
 set(CUBE_DIR "${CMAKE_SOURCE_DIR}/STM32CubeF1")
 
@@ -42,7 +44,7 @@ file(GLOB_RECURSE SOURCES
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F103CBTX_FLASH.ld)
 
-add_link_options(-mcpu=cortex-m3 -mthumb)
+add_link_options(-mcpu=cortex-m3 -mthumb -mfloat-abi=soft)
 
 add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map,--sort-section=alignment)
 add_link_options(-T ${LINKER_SCRIPT})
