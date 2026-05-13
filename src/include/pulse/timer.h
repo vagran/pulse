@@ -250,6 +250,29 @@ private:
 };
 
 
+namespace duration_await {
+
+/// Equivalent of `co_await Timer::Delay()`.
+/// Use it like this:
+/// @code
+/// using namespace etl::chrono_literal;
+/// using namespace pulse::duration_await;
+///
+/// co_await 42_s;
+/// @endcode
+inline TaskAwaiter<void>
+operator co_await(Timer::Duration duration)
+{
+    auto func = [](Timer::Duration duration) -> Awaitable<void> {
+        Timer timer(duration);
+        co_await timer;
+    };
+    return func(duration).Wait();
+}
+
+} // namespace duration_await
+
+
 namespace details {
 
 /** Fire all ready timers if any. Called by scheduler.

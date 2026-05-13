@@ -107,6 +107,22 @@ TEST_CASE("Basic delay")
 }
 
 
+TEST_CASE("co_await literal")
+{
+    using namespace etl::chrono_literals;
+    using namespace pulse::duration_await;
+
+    Timer::SetTime(0);
+
+    auto MakeDelay = []() -> Awaitable<bool> {
+        co_await 1_s;
+        co_return true;
+    };
+
+    TestTimer({TestEntry{MakeDelay, TICK_FREQ}});
+}
+
+
 TEST_CASE("Basic delay - time point")
 {
     Timer::SetTime(100);
