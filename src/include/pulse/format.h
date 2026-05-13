@@ -281,6 +281,10 @@ public:
 
     size_t
     operator()(OutputStream &stream, size_t n, T value);
+
+private:
+    bool
+    CheckRange(T value);
 };
 
 
@@ -487,6 +491,10 @@ template <etl::floating_point T>
 size_t
 Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
 {
+    if (!CheckRange(value)) {
+        // Currently etl::to_string() has limitation on supported FP numbers range.
+        return AlignString(stream, n, "OVERFLOW", '>');
+    }
     etl::format_spec toStringSpec;
     if (!GetToStringSpec(toStringSpec)) {
         return 0;
@@ -494,6 +502,21 @@ Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
     etl::string<etl::numeric_limits<T>::max_digits10 + 1> s;
     etl::to_string(abs(value), s, toStringSpec);
     return FormatNumber(stream, n, s, value < 0 ? -1 : (value > 0 ? 1 : 0));
+}
+
+template <etl::floating_point T>
+bool
+Formatter<T>::CheckRange(T value)
+{
+    if (etl::is_nan(value) || etl::is_infinity(value)) {
+        // These are properly handled in to_string().
+        return true;
+    }
+    if (value < static_cast<T>(0)) {
+        value = -value;
+    }
+    value = floor(value);
+    return value <= static_cast<T>(etl::numeric_limits<uint64_t>::max());
 }
 
 } // namespace fmt

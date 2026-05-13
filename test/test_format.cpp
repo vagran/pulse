@@ -2083,7 +2083,8 @@ TEST_CASE("FormatTo floating point formatting") {
         size_t written = FormatTo(out, "{}", value);
 
         CHECK(written == out.size());
-        CHECK_FALSE(out.empty());
+        // For now it is not supported due to etl::to_string() limitations.
+        CHECK(out == "OVERFLOW");
         CHECK_FALSE(errorSeen);
     }
 

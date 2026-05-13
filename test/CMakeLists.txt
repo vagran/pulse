@@ -12,7 +12,7 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 if (${SANITIZE})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address,undefined -fno-sanitize-recover=all")
 endif()
 
 add_compile_options(-Werror -Wall)
