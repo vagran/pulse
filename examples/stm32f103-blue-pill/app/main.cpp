@@ -445,6 +445,15 @@ LogPutc(char c)
     uart.WriteChar(c);
 }
 
+size_t
+LogGetTimestamp(char *buffer, size_t bufferSize)
+{
+    uint32_t tick = HAL_GetTick();
+    ldiv_t r = ldiv(tick, pulseConfig_TICK_FREQ);
+    pulse::fmt::BufferOutputStream stream(buffer, bufferSize);
+    return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, r.rem);
+}
+
 extern "C" [[noreturn]] int
 main()
 {

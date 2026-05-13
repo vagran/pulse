@@ -167,5 +167,12 @@
  * Macro to use for outputting next character of log message. Logs are disabled if not defined.
  */
 
+/** pulseConfig_LOG_GET_TIMESTAMP
+ * Logs will include timestamp if defined. Macro should expand to function call with the following
+ * signature:
+ * size_t LogGetTimestamp(char *buffer, size_t bufferSize);
+ * The function should fill the buffer with the timestamp string representation and return result
+ * size.
+ */
 
 #endif /* DEFAULT_CONFIG_H */

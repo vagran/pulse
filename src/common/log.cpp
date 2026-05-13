@@ -9,7 +9,12 @@ details::LogOutputStream details::output;
 void
 details::WriteLogPrefix(Level level)
 {
-    //XXX support timestamp
+#ifdef pulseConfig_LOG_GET_TIMESTAMP
+    char buffer[64];
+    size_t size = pulseConfig_LOG_GET_TIMESTAMP(buffer, sizeof(buffer));
+    output.Write(etl::string_view(buffer, size));
+    output.WriteChar(' ');
+#endif
 
     switch (level) {
     case Level::DEBUG_:

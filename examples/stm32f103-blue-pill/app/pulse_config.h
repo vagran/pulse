@@ -3,6 +3,8 @@
 
 #include <panic.h>
 #include <pulse/defs.h>
+#include <stddef.h>
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +18,9 @@ MallocUnlock();
 
 void
 LogPutc(char c);
+
+size_t
+LogGetTimestamp(char *buffer, size_t bufferSize);
 
 #ifdef __cplusplus
 }
@@ -48,5 +53,7 @@ LogPutc(char c);
 #define pulseConfig_MALLOC_STATS                    1
 
 #define pulseConfig_LOG_PUT_CHAR(c)                 LogPutc(c)
+
+#define pulseConfig_LOG_GET_TIMESTAMP               LogGetTimestamp
 
 #endif /* PULSE_CONFIG_H */
