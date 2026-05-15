@@ -482,6 +482,7 @@ main()
 }
 
 
+// Normally provided by libgcc
 #ifdef __clang__
 extern "C" void
 _init()
