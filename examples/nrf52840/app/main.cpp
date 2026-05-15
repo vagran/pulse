@@ -109,8 +109,8 @@ delay(uint32_t count)
 
 } // anonymous namespace
 
-extern "C" void
-_start()
+extern "C" [[noreturn]] int
+main()
 {
     gpio_init();
 
@@ -124,15 +124,3 @@ _start()
         delay(500000);
     }
 }
-
-
-// Normally provided by libgcc
-#ifdef __clang__
-extern "C" void
-_init()
-{}
-
-extern "C" void
-_fini()
-{}
-#endif // __clang__

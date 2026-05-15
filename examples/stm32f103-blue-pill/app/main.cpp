@@ -482,8 +482,6 @@ main()
 }
 
 
-// Normally provided by libgcc
-#ifdef __clang__
 extern "C" void
 _init()
 {}
@@ -491,4 +489,3 @@ _init()
 extern "C" void
 _fini()
 {}
-#endif // __clang__

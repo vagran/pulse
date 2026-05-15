@@ -69,6 +69,8 @@ target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-th
 
 target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:-Wno-unused-command-line-argument>)
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:__START=main>)
+
 
 add_subdirectory("${CMAKE_SOURCE_DIR}/../../modules/etl" "${CMAKE_BINARY_DIR}/etl")
 
