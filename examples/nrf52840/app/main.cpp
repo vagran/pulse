@@ -1,3 +1,4 @@
+#include <nrf52840.h>
 #include <pulse/port.h>
 
 
@@ -20,22 +21,18 @@ Panic(const char *msg)
     for(;;);
 #else
     /* Make delay before reset */
-    // CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    // DWT->CYCCNT = 0;
-    // DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-    // if (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) {
-    //     /* 1 second delay. */
-    //     uint32_t cycles = SystemCoreClock;
-    //     uint32_t start = DWT->CYCCNT;
-    //     while ((DWT->CYCCNT - start) < cycles);
-    // }
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    if (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) {
+        /* 1 second delay. */
+        uint32_t cycles = SystemCoreClock;
+        uint32_t start = DWT->CYCCNT;
+        while ((DWT->CYCCNT - start) < cycles);
+    }
 
-    //XXX
-    // NVIC_SystemReset();
+    NVIC_SystemReset();
 #endif
-
-    //XXX
-    for(;;);
 }
 
 void
