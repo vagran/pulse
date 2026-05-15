@@ -124,3 +124,11 @@ main()
         delay(500000);
     }
 }
+
+extern "C" void
+_init()
+{}
+
+extern "C" void
+_fini()
+{}

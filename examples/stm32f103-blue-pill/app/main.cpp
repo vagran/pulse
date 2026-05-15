@@ -481,7 +481,6 @@ main()
     Panic("Scheduler exited");
 }
 
-
 extern "C" void
 _init()
 {}
