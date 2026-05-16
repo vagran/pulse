@@ -57,5 +57,35 @@
             }
         ],
         "miDebuggerPath": "/usr/bin/gdb",
+    }, {
+        "name": "Debug Firmware (nRF52840 + OpenOCD)",
+        "type": "cortex-debug",
+        "request": "launch",
+
+        "cwd": "${workspaceFolder}",
+        "executable": "${workspaceFolder}/build/firmware.elf",
+
+        "servertype": "openocd",
+
+        "gdbPath": "/usr/bin/gdb",
+
+        "configFiles": [
+            "interface/ftdi/ft232h-module-swd.cfg",
+            "target/nrf52.cfg"
+        ],
+
+        "searchDir": [
+            "/usr/share/openocd/scripts"
+        ],
+
+        "runToEntryPoint": "main",
+
+        "svdFile": "${workspaceFolder}/examples/nrf52840/NRF5_SDK/modules/nrfx/mdk/nrf52840.svd",
+
+        "postRestartCommands": [
+            "monitor reset halt"
+        ],
+
+        "showDevDebugOutput": "raw"
     }]
 }

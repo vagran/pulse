@@ -488,3 +488,10 @@ _init()
 extern "C" void
 _fini()
 {}
+
+// Prevent memory wasting for libc atexit.
+extern "C" int
+__wrap_atexit(void (*)())
+{
+    return -1;
+}

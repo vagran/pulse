@@ -1,5 +1,6 @@
-#include <nrf52840.h>
 #include <pulse/port.h>
+#include <nrf52840.h>
+#include <nrfx.h>
 
 
 using namespace pulse;
@@ -96,14 +97,6 @@ gpio_init(void)
     P0_OUTSET = (1UL << LED_PIN);
 }
 
-static void
-delay(uint32_t count)
-{
-    while (count--) {
-        __asm__ volatile("nop");
-    }
-}
-
 } // anonymous namespace
 
 extern "C" [[noreturn]] int
@@ -114,11 +107,11 @@ main()
     while (1) {
         // LED ON (active low)
         P0_OUTCLR = (1UL << LED_PIN);
-        delay(500000);
+        NRFX_DELAY_US(500000);
 
         // LED OFF
         P0_OUTSET = (1UL << LED_PIN);
-        delay(500000);
+        NRFX_DELAY_US(500000);
     }
 }
 
@@ -129,3 +122,10 @@ _init()
 extern "C" void
 _fini()
 {}
+
+// Prevent memory wasting for libc atexit.
+extern "C" int
+__wrap_atexit(void (*)())
+{
+    return -1;
+}

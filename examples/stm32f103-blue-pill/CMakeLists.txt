@@ -48,7 +48,7 @@ set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F103CBTX_FLASH.ld)
 
 add_link_options(${CPU_FLAGS})
 
-add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map,--sort-section=alignment)
+add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map,--sort-section=alignment,--wrap=atexit)
 add_link_options(-T ${LINKER_SCRIPT})
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${LINKER_SCRIPT})
