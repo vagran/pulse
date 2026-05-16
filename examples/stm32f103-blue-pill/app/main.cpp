@@ -481,8 +481,6 @@ main()
     Panic("Scheduler exited");
 }
 
-
-#ifdef __clang__
 extern "C" void
 _init()
 {}
@@ -490,4 +488,10 @@ _init()
 extern "C" void
 _fini()
 {}
-#endif // __clang__
+
+// Prevent memory wasting for libc atexit.
+extern "C" int
+__wrap_atexit(void (*)())
+{
+    return -1;
+}

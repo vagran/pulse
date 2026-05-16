@@ -29,9 +29,17 @@
             "command": "cmake --build build --target run_malloc_tests -j 16"
         },
         {
-            "label": "Upload firmware",
+            "label": "Upload firmware (STM32)",
             "type": "shell",
             "command": "st-flash --connect-under-reset write ${workspaceFolder}/build/firmware.bin 0x08000000"
+        },
+        {
+            "label": "Upload firmware (nRF52)",
+            "type": "shell",
+            "command": [
+                "openocd -f interface/ftdi/ft232h-module-swd.cfg -f target/nrf52.cfg",
+                "-c 'program ${workspaceFolder}/build/firmware.bin 0x0 verify reset exit'"
+            ]
         },
         {
             "label": "Reset MCU",

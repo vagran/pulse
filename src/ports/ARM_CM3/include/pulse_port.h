@@ -13,15 +13,14 @@
 static inline void
 pulsePort_RaiseBASEPRI()
 {
-    uint32_t newBASEPRI;
+    uint32_t newBASEPRI = pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY;
 
     asm volatile (
-        "mov %0, %1        \n"
         "msr basepri, %0   \n"
-        "isb               \n"
         "dsb               \n"
-        : "=r" (newBASEPRI)
-        : "i" (pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY)
+        "isb               \n"
+        :
+        : "r" (newBASEPRI)
         : "memory"
     );
 }
@@ -29,16 +28,15 @@ pulsePort_RaiseBASEPRI()
 static inline uint32_t
 pulsePort_GetAndRaiseBASEPRI()
 {
-    uint32_t prevBASEPRI, newBASEPRI;
+    uint32_t prevBASEPRI, newBASEPRI = pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY;
 
     asm volatile (
         "mrs %0, basepri   \n" \
-        "mov %1, %2        \n" \
         "msr basepri, %1   \n" \
-        "isb               \n" \
         "dsb               \n" \
-        : "=r" (prevBASEPRI), "=r" (newBASEPRI)
-        : "i" (pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY)
+        "isb               \n" \
+        : "=r" (prevBASEPRI)
+        : "r" (newBASEPRI)
         : "memory"
     );
 
@@ -49,7 +47,9 @@ static inline void
 pulsePort_SetBASEPRI(uint32_t newMaskValue)
 {
     asm volatile (
-        "msr basepri, %0 "
+        "msr basepri, %0    \n"
+        "dsb                \n"
+        "isb                \n"
         ::"r" (newMaskValue) : "memory"
     );
 }

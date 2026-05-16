@@ -78,8 +78,9 @@ jobs:
       matrix:
         compiler: [gcc, clang]
         build_type: [Debug, Release, MinSizeRel]
+        example: [stm32f103-blue-pill, nrf52840]
 
-    name: Examples cross-compilation ${{ matrix.compiler }}-${{ matrix.build_type }}
+    name: Examples cross-compilation ${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.example }}
 
     steps:
       - name: Checkout repository
@@ -88,11 +89,11 @@ jobs:
           submodules: recursive
 
       - name: Set build directory
-        run: echo "BUILD_DIR=build/${{ matrix.compiler }}-${{ matrix.build_type }}" >> $GITHUB_ENV
+        run: echo "BUILD_DIR=build/${{ matrix.example }}-${{ matrix.compiler }}-${{ matrix.build_type }}" >> $GITHUB_ENV
 
       - name: Configure
         run: >
-          cmake -S examples/stm32f103-blue-pill -B $BUILD_DIR
+          cmake -S examples/${{ matrix.example }} -B $BUILD_DIR
           -G Ninja
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
           -DCMAKE_TOOLCHAIN_FILE=$PWD/examples/arm-${{ matrix.compiler }}-toolchain.cmake

@@ -16,7 +16,9 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(DEBUG)
 endif()
 
-add_compile_options(-mcpu=cortex-m3 -mthumb -mfloat-abi=soft)
+set(CPU_FLAGS -mcpu=cortex-m3 -mthumb -mfloat-abi=soft)
+
+add_compile_options(${CPU_FLAGS})
 add_compile_options(-ffunction-sections -fdata-sections -fno-common -fmessage-length=0)
 
 add_compile_definitions(STM32F103xB)
@@ -44,9 +46,9 @@ file(GLOB_RECURSE SOURCES
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/STM32F103CBTX_FLASH.ld)
 
-add_link_options(-mcpu=cortex-m3 -mthumb -mfloat-abi=soft)
+add_link_options(${CPU_FLAGS})
 
-add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map,--sort-section=alignment)
+add_link_options(-Wl,-gc-sections,--print-memory-usage,-Map=${PROJECT_BINARY_DIR}/${PROJECT_NAME}.map,--sort-section=alignment,--wrap=atexit)
 add_link_options(-T ${LINKER_SCRIPT})
 
 add_executable(${PROJECT_NAME} ${SOURCES} ${LINKER_SCRIPT})
@@ -65,15 +67,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # Need libgcc for software FP functions
     find_program(ARM_GCC arm-none-eabi-gcc REQUIRED)
     execute_process(
-        COMMAND ${ARM_GCC} -mcpu=cortex-m3 -mthumb -mfloat-abi=soft -print-libgcc-file-name
+        COMMAND ${ARM_GCC} ${CPU_FLAGS} -print-libgcc-file-name
         OUTPUT_VARIABLE LIBGCC_FILE
         OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     get_filename_component(LIBGCC_DIR "${LIBGCC_FILE}" DIRECTORY)
 
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L${LIBGCC_DIR} -lgcc")
-
-    include_directories(${CMAKE_SOURCE_DIR}/app/clang)
 endif()
 
 
