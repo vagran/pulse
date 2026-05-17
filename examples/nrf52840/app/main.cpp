@@ -1,6 +1,7 @@
 #include <pulse/port.h>
 #include <nrf52840.h>
 #include <nrfx.h>
+#include <nrf_gpio.h>
 
 
 using namespace pulse;
@@ -66,52 +67,24 @@ LogGetTimestamp(char *buffer, size_t bufferSize)
     // return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, r.rem);
 }
 
+#define LED_PORT 0
+#define LED_PIN 15 // P0.15 = LED on Nice!Nano
 
-#define NRF_P0_BASE 0x50000000UL
-
-#define P0_OUT (*(volatile uint32_t *)(NRF_P0_BASE + 0x504))
-#define P0_OUTSET (*(volatile uint32_t *)(NRF_P0_BASE + 0x508))
-#define P0_OUTCLR (*(volatile uint32_t *)(NRF_P0_BASE + 0x50C))
-#define P0_DIRSET (*(volatile uint32_t *)(NRF_P0_BASE + 0x518))
-#define P0_PIN_CNF(pin) (*(volatile uint32_t *)(NRF_P0_BASE + 0x700 + ((pin) * 4)))
-
-#define LED_PIN 15 // P0.13 = LED1 on nRF52840 DK
-
-namespace {
-
-// PIN_CNF fields:
-// [1:0] DIR     1 = output
-// [2]   INPUT   disconnect for output
-// [10:8] PULL   disabled
-// [17:16] DRIVE standard
-// [18]  SENSE   disabled
-static void
-gpio_init(void)
-{
-    P0_PIN_CNF(LED_PIN) = (1 << 0) | // DIR = Output
-                          (1 << 1);  // INPUT = Disconnect
-
-    P0_DIRSET = (1UL << LED_PIN);
-
-    // LED off initially (active low)
-    P0_OUTSET = (1UL << LED_PIN);
-}
-
-} // anonymous namespace
 
 extern "C" [[noreturn]] int
 main()
 {
-    gpio_init();
+    nrf_gpio_cfg(
+        NRF_GPIO_PIN_MAP(LED_PORT, LED_PIN),
+        NRF_GPIO_PIN_DIR_OUTPUT,
+        NRF_GPIO_PIN_INPUT_DISCONNECT,
+        NRF_GPIO_PIN_NOPULL,
+        NRF_GPIO_PIN_D0H1,
+        NRF_GPIO_PIN_NOSENSE);
 
-    while (1) {
-        // LED ON (active low)
-        P0_OUTCLR = (1UL << LED_PIN);
+    while (true) {
         NRFX_DELAY_US(500000);
-
-        // LED OFF
-        P0_OUTSET = (1UL << LED_PIN);
-        NRFX_DELAY_US(500000);
+        nrf_gpio_pin_toggle(NRF_GPIO_PIN_MAP(LED_PORT, LED_PIN));
     }
 }
 
