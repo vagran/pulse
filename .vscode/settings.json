@@ -23,6 +23,7 @@
         "huart",
         "HWCONTROL",
         "IWDG",
+        "lfclk",
         "MALLOC",
         "noconfirm",
         "NRFX",

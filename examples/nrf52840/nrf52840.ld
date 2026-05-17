@@ -34,46 +34,7 @@ SECTIONS
 
         *(.rodata*)
 
-        KEEP(*(.eh_frame*))
     } > FLASH
-
-    .mem_section_dummy_rom :
-    {
-    }
-
-    .log_const_data :
-    {
-        PROVIDE(__start_log_const_data = .);
-        KEEP(*(SORT(.log_const_data*)))
-        PROVIDE(__stop_log_const_data = .);
-    } > FLASH
-
-    .log_backends :
-    {
-        PROVIDE(__start_log_backends = .);
-        KEEP(*(SORT(.log_backends*)))
-        PROVIDE(__stop_log_backends = .);
-    } > FLASH
-
-    .nrf_balloc :
-    {
-        PROVIDE(__start_nrf_balloc = .);
-        KEEP(*(.nrf_balloc))
-        PROVIDE(__stop_nrf_balloc = .);
-    } > FLASH
-
-    .ARM.extab :
-    {
-        *(.ARM.extab* .gnu.linkonce.armextab.*)
-    } > FLASH
-
-    __exidx_start = .;
-    .ARM.exidx :
-    {
-        *(.ARM.exidx* .gnu.linkonce.armexidx.*)
-    } > FLASH
-
-    __exidx_end = .;
 
     . = ALIGN(4);
     __etext = .;
@@ -105,28 +66,10 @@ SECTIONS
         KEEP(*(.fini_array))
         PROVIDE_HIDDEN (__fini_array_end = .);
 
-        KEEP(*(.jcr*))
         . = ALIGN(4);
         /* All data end */
         __data_end__ = .;
 
-    } > RAM
-
-    . = ALIGN(4);
-    .mem_section_dummy_ram :
-    {
-    }
-    .log_dynamic_data :
-    {
-        PROVIDE(__start_log_dynamic_data = .);
-        KEEP(*(SORT(.log_dynamic_data*)))
-        PROVIDE(__stop_log_dynamic_data = .);
-    } > RAM
-    .log_filter_data :
-    {
-        PROVIDE(__start_log_filter_data = .);
-        KEEP(*(SORT(.log_filter_data*)))
-        PROVIDE(__stop_log_filter_data = .);
     } > RAM
 
     .bss :

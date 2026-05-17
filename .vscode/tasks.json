@@ -42,9 +42,17 @@
             ]
         },
         {
-            "label": "Reset MCU",
+            "label": "Reset MCU (STM32)",
             "type": "shell",
             "command": "st-flash --connect-under-reset reset"
+        },
+        {
+            "label": "Reset MCU (nRF52)",
+            "type": "shell",
+            "command": [
+                "openocd -f interface/ftdi/ft232h-module-swd.cfg -f target/nrf52.cfg",
+                "-c 'init; reset run; exit'"
+            ]
         },
         {
             "label": "Build docker image (build container)",

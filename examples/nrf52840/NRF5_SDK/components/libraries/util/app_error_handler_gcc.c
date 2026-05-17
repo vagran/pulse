@@ -37,9 +37,9 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-#include "sdk_common.h"
 #include "compiler_abstraction.h"
 #include "app_error.h"
+#include "app_util.h"
 
 #if defined (__CORTEX_M) && (__CORTEX_M == 0x04)
 void app_error_handler(ret_code_t error_code, uint32_t line_num, const uint8_t * p_file_name) __attribute__(( naked ));

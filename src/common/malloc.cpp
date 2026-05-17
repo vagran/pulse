@@ -851,11 +851,11 @@ pulse_add_heap_region(void *region, size_t size)
             StatsFree(prevBlock);
             PoisonFreeBlock(prevBlock);
         }
-        size_t numBlocks = BlockHeader::FitPayload(end - block->data, true);
-        if (numBlocks > MAX_ALLOC_UNITS) {
-            numBlocks = MAX_ALLOC_UNITS;
+        size_t numUnits = BlockHeader::FitPayload(end - block->data, true);
+        if (numUnits > MAX_ALLOC_UNITS) {
+            numUnits = MAX_ALLOC_UNITS;
         }
-        block->SetBlockSize(numBlocks);
+        block->SetBlockSize(numUnits);
         block->SetFree();
         block->SetPrevBlockSize(prevBlock ? prevBlock->blockSize() : 0);
         block->ClearLast();

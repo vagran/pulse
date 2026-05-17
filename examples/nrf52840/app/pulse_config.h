@@ -26,7 +26,7 @@ LogGetTimestamp(char *buffer, size_t bufferSize);
 }
 #endif
 
-#define pulseConfig_TICK_FREQ                       1000
+#define pulseConfig_TICK_FREQ                       1024
 
 #define pulseConfig_MALLOC_GRANULARITY              8
 #define pulseConfig_MALLOC_BLOCK_SIZE_WORD_SIZE     2
