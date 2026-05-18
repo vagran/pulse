@@ -60,13 +60,13 @@ pulsePort_SetBASEPRI(uint32_t newMaskValue)
 static inline void
 pulsePort_DisableIrq()
 {
-  asm volatile ("cpsid i" : : : "memory");
+    asm volatile ("cpsid i" : : : "memory");
 }
 
 static inline void
 pulsePort_EnableIrq()
 {
-  __ASM volatile ("cpsie i" : : : "memory");
+    asm volatile ("cpsie i" : : : "memory");
 }
 
 #ifdef __cplusplus

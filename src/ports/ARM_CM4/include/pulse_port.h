@@ -66,7 +66,7 @@ pulsePort_DisableIrq()
 static inline void
 pulsePort_EnableIrq()
 {
-    __ASM volatile("cpsie i" : : : "memory");
+    asm volatile("cpsie i" : : : "memory");
 }
 
 #ifdef __cplusplus
