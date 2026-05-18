@@ -2,6 +2,9 @@
 #include <pulse/details/common.h>
 
 
+static_assert(pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY > 0, "Cannot be zero on ARM");
+
+
 namespace {
 
 unsigned csNesting = 0;

@@ -9,6 +9,9 @@
 #   error pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY must be set
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 static inline void
 pulsePort_RaiseBASEPRI()
@@ -65,6 +68,10 @@ pulsePort_EnableIrq()
 {
     __ASM volatile("cpsie i" : : : "memory");
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #define pulsePort_DisableInterrupts             pulsePort_RaiseBASEPRI
