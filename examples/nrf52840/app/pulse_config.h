@@ -4,6 +4,7 @@
 #include <panic.h>
 #include <pulse/defs.h>
 #include <stddef.h>
+#include <nrf52840.h>
 
 
 #ifdef __cplusplus
@@ -43,7 +44,7 @@ LogGetTimestamp(char *buffer, size_t bufferSize);
 
 #define pulseConfig_PANIC(msg)                      Panic(msg)
 
-#define pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY  0x8F
+#define pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY  (4 << (8U - __NVIC_PRIO_BITS))
 
 #define pulseConfig_MALLOC_FAILED_PANIC             1
 

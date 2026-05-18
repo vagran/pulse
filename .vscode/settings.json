@@ -39,6 +39,7 @@
         "SMARTCARD",
         "SYSCLK",
         "SYSCLKSOURCE",
+        "UICR",
         "USART",
         "vagran",
         "WWDG"

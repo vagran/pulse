@@ -1605,7 +1605,7 @@
 // <7=> 7
 
 #ifndef NRFX_RTC_DEFAULT_CONFIG_IRQ_PRIORITY
-#define NRFX_RTC_DEFAULT_CONFIG_IRQ_PRIORITY 7
+#define NRFX_RTC_DEFAULT_CONFIG_IRQ_PRIORITY 4
 #endif
 
 // <e> NRFX_RTC_CONFIG_LOG_ENABLED - Enables logging in the module.
@@ -2862,7 +2862,7 @@
 // <e> NRFX_UART_ENABLED - nrfx_uart - UART peripheral driver
 //==========================================================
 #ifndef NRFX_UART_ENABLED
-#define NRFX_UART_ENABLED 0
+#define NRFX_UART_ENABLED 1
 #endif
 // <q> NRFX_UART0_ENABLED - Enable UART0 instance
 #ifndef NRFX_UART0_ENABLED

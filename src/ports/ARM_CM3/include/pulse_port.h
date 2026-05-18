@@ -54,6 +54,18 @@ pulsePort_SetBASEPRI(uint32_t newMaskValue)
     );
 }
 
+static inline void
+pulsePort_DisableIrq()
+{
+  asm volatile ("cpsid i" : : : "memory");
+}
+
+static inline void
+pulsePort_EnableIrq()
+{
+  __ASM volatile ("cpsie i" : : : "memory");
+}
+
 
 #define pulsePort_DisableInterrupts             pulsePort_RaiseBASEPRI
 #define pulsePort_EnableInterrupts()            pulsePort_SetBASEPRI(0)

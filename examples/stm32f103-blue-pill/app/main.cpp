@@ -18,12 +18,13 @@ using namespace pulse;
 [[noreturn]] void
 Panic(const char *msg)
 {
-    DisableInterrupts();
+    DisableIrq();
     uart.PanicFlush();
 
     for (const char *p = msg; *p; p++) {
         uart.WriteCharSync(*p);
     }
+    uart.WriteCharSync('\n');
 
     /* Stop in debug build, reset after delay in release build. */
 #ifdef DEBUG

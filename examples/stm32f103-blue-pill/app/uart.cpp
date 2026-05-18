@@ -1,5 +1,6 @@
 #include <uart.h>
 #include <panic.h>
+#include <pulse/port.h>
 
 
 Uart uart;
@@ -29,14 +30,20 @@ Uart::Initialize(int baudRate, uint8_t *buffer, size_t bufferSize)
 void
 Uart::Write(etl::string_view s)
 {
-    buffer.Write(reinterpret_cast<const uint8_t *>(s.data()), s.size());
+    {
+        pulse::CriticalSection cs;
+        buffer.Write(reinterpret_cast<const uint8_t *>(s.data()), s.size());
+    }
     CommitWrite();
 }
 
 void
 Uart::WriteChar(char c)
 {
-    buffer.Write(reinterpret_cast<const uint8_t *>(&c), 1);
+    {
+        pulse::CriticalSection cs;
+        buffer.Write(reinterpret_cast<const uint8_t *>(&c), 1);
+    }
     CommitWrite();
 }
 
