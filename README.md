@@ -131,8 +131,8 @@ the following behavior:
 ```cpp
 pulse::Timer blinkTimer;
 int blinkIntervalIndex = 0;
-// Published from the button ISR
-pulse::TokenQueue<uint8_t> buttonEvents(5);
+// Published from the button ISR, `true` for pressed event, `false` for release.
+InlineDiscardQueue<bool, true, 8> buttonEvents;
 
 /// Make mode switch confirmation indication
 pulse::Awaitable<void>
@@ -175,42 +175,74 @@ BlinkTask()
 }
 
 // Handles button debouncing
-pulse::TaskV
+TaskV
 ButtonTask()
 {
-    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(20);
-    pulse::Timer jitterTimer;
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(50);
+    Timer jitterTimer;
 
     while (true) {
-        co_await buttonEvents;
-        // Suppress jitter - wait until active level is stable for a long period.
-        bool pressed = false;
-        while (true) {
-            jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await pulse::Task::WhenAny(buttonEvents, jitterTimer);
-            if (idx == 0) {
-                // Button pressed again, restart anti-jitter delay
-                continue;
-            }
-            // Anti-jitter delay expired with no new presses. Check if button was not released
-            // before delay expired.
-            if (!IsButtonPressed()) {
-                break;
-            }
-            pressed = true;
-            break;
-        }
+        // Wait for press
+        while (!co_await buttonEvents.Pop());
 
-        if (!pressed) {
-            // Ignore too short press
-            continue;
-        }
-
+        // Do action here. In case long presses supported, should differentiate from long press
+        // first.
         blinkIntervalIndex++;
         if (blinkIntervalIndex > 3) {
             blinkIntervalIndex = 0;
         }
         blinkTimer.Cancel();
+
+        LOG_INFO("New interval: {}", blinkIntervalIndex);
+
+        MallocStats stats;
+        pulse::GetMallocStats(&stats);
+        uart.Format("Total free: {}\n", stats.totalFree);
+        uart.Format("Total used: {}\n", stats.totalUsed);
+        uart.Format("Min free: {}\n", stats.minFree);
+        uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
+
+        // Suppress jitter - wait until inactive level is stable for a long period
+        bool isPressed = true;
+        while (true) {
+            jitterTimer.ExpiresAfter(JITTER_DELAY);
+            size_t idx = co_await Task::WhenAny(
+                Task::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+            if (idx == 0) {
+                // Button toggled again, restart anti-jitter delay
+                continue;
+            }
+            // Anti-jitter delay expired with no new toggles
+            break;
+        }
+        if (!isPressed) {
+            // Release debounced
+            continue;
+        }
+
+        // Potential long press, not handled currently, just debounce release
+        while (true) {
+            // Wait for release
+            while (co_await buttonEvents.Pop());
+
+            // Suppress release jitter
+            bool isPressed = false;
+            while (true) {
+                jitterTimer.ExpiresAfter(JITTER_DELAY);
+                size_t idx = co_await Task::WhenAny(
+                    Task::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+                if (idx == 0) {
+                    continue;
+                }
+                // Anti-jitter delay expired with no new toggles
+                break;
+            }
+            if (!isPressed) {
+                // Release debounced
+                break;
+            }
+            // Long press continues
+        }
     }
 }
 
@@ -224,7 +256,9 @@ void
 HAL_GPIO_EXTI_Callback(uint16_t gpioPin)
 {
     if (gpioPin == ioButton.pin) {
-        buttonEvents.Push();
+        // May produce wrong value on fast bouncing. However last release will always be detected as
+        // release.
+        buttonEvents.Push(IsButtonPressed());
     }
 }
 

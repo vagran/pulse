@@ -209,7 +209,7 @@ private:
 };
 
 
-class TimerAwaiter {
+class TimerAwaiter: public Awaiter<bool> {
 public:
     ~TimerAwaiter();
 

@@ -4,10 +4,12 @@
 #include <pulse/timer.h>
 #include <pulse/malloc.h>
 #include <pulse/log.h>
+#include <pulse/discard_queue.h>
 
 #include <nrf52840.h>
 #include <nrfx.h>
 #include <nrf_gpio.h>
+#include <nrfx_gpiote.h>
 #include <nrfx_clock.h>
 #include <nrfx_rtc.h>
 #include <nrf_power.h>
@@ -66,9 +68,6 @@ LogGetTimestamp(char *buffer, size_t bufferSize)
     return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, r.rem);
 }
 
-#define LED_PORT 0
-#define LED_PIN 15 // P0.15 = LED on Nice!Nano
-
 namespace {
 
 MallocUnit heap[PULSE_HEAP_UNITS_SIZE_KB(10)];
@@ -80,8 +79,8 @@ struct GpioLine {
 #define DEF_IO(port, pin) NRF_GPIO_PIN_MAP(port, pin)
 
 constexpr GpioLine
-    ioLed       DEF_IO(0, 15);
-    // ioButton    DEF_IO(0, 17),
+    ioLed       DEF_IO(0, 15),
+    ioButton    DEF_IO(0, 17);
     // ioRotEncA   DEF_IO(0, 6),
     // ioRotEncB   DEF_IO(0, 8);
 
@@ -146,17 +145,67 @@ InitTicks()
     nrfx_rtc_enable(&rtc0);
 }
 
-// void
-// LedOn()
-// {
-//     nrf_gpio_pin_set(ioLed.pin);
-// }
+void
+InitLed()
+{
+    nrf_gpio_cfg(
+        ioLed.pin,
+        NRF_GPIO_PIN_DIR_OUTPUT,
+        NRF_GPIO_PIN_INPUT_DISCONNECT,
+        NRF_GPIO_PIN_NOPULL,
+        NRF_GPIO_PIN_D0H1,
+        NRF_GPIO_PIN_NOSENSE);
+}
 
-// void
-// LedOff()
-// {
-//     nrf_gpio_pin_clear(ioLed.pin);
-// }
+Timer blinkTimer;
+int blinkIntervalIndex = 0;
+// Published from the button ISR, `true` for pressed event, `false` for release.
+InlineDiscardQueue<bool, true, 8> buttonEvents;
+
+bool
+IsButtonPressed()
+{
+    return !nrf_gpio_pin_read(ioButton.pin);
+}
+
+void
+PinStateHandler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
+{
+    if (pin == ioButton.pin) {
+        // May produce wrong value on fast bouncing. However last release will always be detected as
+        // release.
+        buttonEvents.Push(IsButtonPressed());
+    }
+}
+
+void
+InitButton()
+{
+    if (nrfx_gpiote_init() != NRFX_SUCCESS) {
+        Panic("GPIOTE init failed");
+    }
+
+    nrfx_gpiote_in_config_t config = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(true);
+    config.pull = NRF_GPIO_PIN_PULLUP;
+
+    if (nrfx_gpiote_in_init(ioButton.pin, &config, PinStateHandler) != NRFX_SUCCESS) {
+        Panic("Pin init failed");
+    }
+
+    nrfx_gpiote_in_event_enable(ioButton.pin, true);
+}
+
+void
+LedOn()
+{
+    nrf_gpio_pin_set(ioLed.pin);
+}
+
+void
+LedOff()
+{
+    nrf_gpio_pin_clear(ioLed.pin);
+}
 
 void
 LedToggle()
@@ -164,14 +213,114 @@ LedToggle()
     nrf_gpio_pin_toggle(ioLed.pin);
 }
 
+Awaitable<void>
+ConfirmSwitch(int intervalIndex)
+{
+    LedOff();
+    co_await Timer::Delay(etl::chrono::milliseconds(500));
+    for (int i = 0; i <= intervalIndex; i++) {
+        LedOn();
+        co_await Timer::Delay(etl::chrono::milliseconds(100));
+        LedOff();
+        co_await Timer::Delay(etl::chrono::milliseconds(200));
+    }
+    co_await Timer::Delay(etl::chrono::milliseconds(500));
+}
+
+// Handles LED blinking
 TaskV
 BlinkTask()
 {
-    while (true) {
-        LedToggle();
-        LOG_INFO("toggle");
+    int intervalIndex = blinkIntervalIndex;
 
-        co_await Timer::Delay(etl::chrono::milliseconds(500));
+    while (true) {
+        if (intervalIndex != blinkIntervalIndex) {
+            intervalIndex = blinkIntervalIndex;
+            co_await ConfirmSwitch(intervalIndex);
+            LedOn();
+            continue;
+        }
+        blinkTimer.ExpiresAfter(etl::chrono::milliseconds(250 << intervalIndex));
+        if (!co_await blinkTimer) {
+            // Timer cancelled, so interval is definitely changed
+            intervalIndex = blinkIntervalIndex;
+            co_await ConfirmSwitch(intervalIndex);
+            LedOn();
+        } else {
+            LedToggle();
+        }
+    }
+}
+
+// Handles button debouncing
+TaskV
+ButtonTask()
+{
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(50);
+    Timer jitterTimer;
+
+    while (true) {
+        // Wait for press
+        while (!co_await buttonEvents.Pop());
+
+        // Do action here. In case long presses supported, should differentiate from long press
+        // first.
+        blinkIntervalIndex++;
+        if (blinkIntervalIndex > 3) {
+            blinkIntervalIndex = 0;
+        }
+        blinkTimer.Cancel();
+
+        LOG_INFO("New interval: {}", blinkIntervalIndex);
+
+        MallocStats stats;
+        pulse::GetMallocStats(&stats);
+        uart.Format("Total free: {}\n", stats.totalFree);
+        uart.Format("Total used: {}\n", stats.totalUsed);
+        uart.Format("Min free: {}\n", stats.minFree);
+        uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
+
+        // Suppress jitter - wait until inactive level is stable for a long period
+        bool isPressed = true;
+        while (true) {
+            jitterTimer.ExpiresAfter(JITTER_DELAY);
+            size_t idx = co_await Task::WhenAny(
+                Task::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+            if (idx == 0) {
+                // Button toggled again, restart anti-jitter delay
+                continue;
+            }
+            // Anti-jitter delay expired with no new toggles
+            break;
+        }
+        if (!isPressed) {
+            // Release debounced
+            continue;
+        }
+
+        // Potential long press, not handled currently, just debounce release
+        while (true) {
+            // Wait for release
+            while (co_await buttonEvents.Pop());
+
+            // Suppress release jitter
+            bool isPressed = false;
+            while (true) {
+                jitterTimer.ExpiresAfter(JITTER_DELAY);
+                size_t idx = co_await Task::WhenAny(
+                    Task::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+                if (idx == 0) {
+                    continue;
+                }
+                // Anti-jitter delay expired with no new toggles
+                break;
+            }
+            if (!isPressed) {
+                // Release debounced
+                break;
+            }
+            // Long press continues
+        }
     }
 }
 
@@ -190,17 +339,13 @@ main()
 
     LOG_INFO("Application started - " PULSE_STR(BUILDER));
 
-    nrf_gpio_cfg(
-        NRF_GPIO_PIN_MAP(LED_PORT, LED_PIN),
-        NRF_GPIO_PIN_DIR_OUTPUT,
-        NRF_GPIO_PIN_INPUT_DISCONNECT,
-        NRF_GPIO_PIN_NOPULL,
-        NRF_GPIO_PIN_D0H1,
-        NRF_GPIO_PIN_NOSENSE);
-
     InitTicks();
 
+    InitLed();
+    InitButton();
+
     Task::Spawn(BlinkTask()).Pin();
+    Task::Spawn(ButtonTask()).Pin();
 
     Task::RunScheduler();
 

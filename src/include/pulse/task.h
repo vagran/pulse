@@ -7,7 +7,7 @@
 #include <pulse/list.h>
 #include <pulse/shared_ptr.h>
 
-#include <etl/memory.h>
+#include <etl/optional.h>
 #include <etl/span.h>
 #include <etl/invoke.h>
 
@@ -336,6 +336,17 @@ public:
     static inline Task
     Make(T &&obj);
 
+    /** Helper to save arbitrary awaiter result into the specified variable. Useful when waiting on
+     * multiple tasks by `WhenAll` or `WhenAny`.
+     */
+    template <typename TResult, typename TAwaiter>
+    static Awaitable<void>
+    SaveResult(TAwaiter &&awaiter, etl::optional<TResult> &result);
+
+    template <typename TResult, typename TAwaiter>
+    static Awaitable<void>
+    SaveResult(TAwaiter &&awaiter, TResult &result);
+
 protected:
     friend class TaskPromise;
 
@@ -553,7 +564,7 @@ public:
     return_value(From&& from)
     {
         isFinished = 1;
-        etl::construct_at<TRet>(reinterpret_cast<TRet *>(result.data), etl::forward<From>(from));
+        etl::construct_at<TRet>(reinterpret_cast<TRet *>(result), etl::forward<From>(from));
         NotifyWaiters();
     }
 
@@ -561,7 +572,7 @@ public:
     GetResult() const
     {
         PULSE_ASSERT(isFinished);
-        return *reinterpret_cast<const TRet *>(result.data);
+        return *reinterpret_cast<const TRet *>(result);
     }
 
     /** Move result out of stored value. */
@@ -569,13 +580,11 @@ public:
     MoveResult()
     {
         PULSE_ASSERT(isFinished);
-        return etl::move(*reinterpret_cast<TRet *>(result.data));
+        return etl::move(*reinterpret_cast<TRet *>(result));
     }
 
 private:
-    struct alignas(TRet) {
-        uint8_t data[sizeof(TRet)];
-    } result;
+    alignas(TRet) uint8_t result[sizeof(TRet)];
 };
 
 template <bool initialSuspend>
@@ -1118,6 +1127,20 @@ Task
 Task::Make(T &&obj)
 {
     return details::AwaitableWrapper<etl::remove_cvref_t<T>>::MakeTask(etl::forward<T>(obj));
+}
+
+template <typename TResult, typename TAwaiter>
+Awaitable<void>
+Task::SaveResult(TAwaiter &&awaiter, etl::optional<TResult> &result)
+{
+    result.emplace(co_await awaiter);
+}
+
+template <typename TResult, typename TAwaiter>
+Awaitable<void>
+Task::SaveResult(TAwaiter &&awaiter, TResult &result)
+{
+    result = co_await awaiter;
 }
 
 void

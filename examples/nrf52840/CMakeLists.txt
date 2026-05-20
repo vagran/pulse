@@ -72,6 +72,22 @@ target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:-Wno-un
 target_compile_definitions(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:ASM>:__START=main __STARTUP_CLEAR_BSS=1>)
 
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-fno-c++-static-destructors>)
+
+    # Need libgcc for software FP functions
+    find_program(ARM_GCC arm-none-eabi-gcc REQUIRED)
+    execute_process(
+        COMMAND ${ARM_GCC} ${CPU_FLAGS} -print-libgcc-file-name
+        OUTPUT_VARIABLE LIBGCC_FILE
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    get_filename_component(LIBGCC_DIR "${LIBGCC_FILE}" DIRECTORY)
+
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L${LIBGCC_DIR} -lgcc")
+endif()
+
+
 add_subdirectory("${CMAKE_SOURCE_DIR}/../../modules/etl" "${CMAKE_BINARY_DIR}/etl")
 
 set(PULSE_PORT ARM_CM4)
