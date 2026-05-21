@@ -64,8 +64,14 @@ LogGetTimestamp(char *buffer, size_t bufferSize)
 {
     uint32_t tick = Timer::GetTime();
     ldiv_t r = ldiv(tick, pulseConfig_TICK_FREQ);
+    uint32_t ms;
+    if constexpr (pulseConfig_TICK_FREQ != 1000) {
+        ms = r.rem * 1000 / pulseConfig_TICK_FREQ;
+    } else {
+        ms = r.rem;
+    }
     pulse::fmt::BufferOutputStream stream(buffer, bufferSize);
-    return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, r.rem);
+    return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, ms);
 }
 
 namespace {
@@ -80,9 +86,9 @@ struct GpioLine {
 
 constexpr GpioLine
     ioLed       DEF_IO(0, 15),
-    ioButton    DEF_IO(0, 17);
-    // ioRotEncA   DEF_IO(0, 6),
-    // ioRotEncB   DEF_IO(0, 8);
+    ioButton    DEF_IO(0, 17),
+    ioRotEncA   DEF_IO(0, 6),
+    ioRotEncB   DEF_IO(0, 8);
 
 /// Configure UICR_REGOUT0 register to set GPIO output voltage to 2.7V. Setting 3.0V makes OpenOCD
 /// with FT232H unable to upload firmware.
@@ -169,14 +175,7 @@ IsButtonPressed()
 }
 
 void
-PinStateHandler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
-{
-    if (pin == ioButton.pin) {
-        // May produce wrong value on fast bouncing. However last release will always be detected as
-        // release.
-        buttonEvents.Push(IsButtonPressed());
-    }
-}
+PinStateHandler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action);
 
 void
 InitButton()
@@ -193,6 +192,22 @@ InitButton()
     }
 
     nrfx_gpiote_in_event_enable(ioButton.pin, true);
+}
+
+void
+InitRotaryEncoder()
+{
+    nrfx_gpiote_in_config_t config = NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(true);
+    config.pull = NRF_GPIO_PIN_PULLUP;
+
+    if (nrfx_gpiote_in_init(ioRotEncA.pin, &config, PinStateHandler) != NRFX_SUCCESS ||
+        nrfx_gpiote_in_init(ioRotEncB.pin, &config, PinStateHandler) != NRFX_SUCCESS) {
+
+        Panic("Rotary encoder init failed");
+    }
+
+    nrfx_gpiote_in_event_enable(ioRotEncA.pin, true);
+    nrfx_gpiote_in_event_enable(ioRotEncB.pin, true);
 }
 
 void
@@ -324,6 +339,179 @@ ButtonTask()
     }
 }
 
+class RotaryEncoder {
+public:
+    void
+    Initialize();
+
+    void
+    OnLineInterrupt(bool isA);
+
+    /** Get next click event. Value is number of clicked accumulated in given direction. Direction
+     * represented by sign.
+     */
+    Awaitable<int8_t>
+    WaitClick()
+    {
+        co_return co_await clicks.Pop();
+    }
+
+private:
+    InlineDiscardQueue<bool, true, 8> lineAEvents, lineBEvents;
+    etl::optional<bool> lastDir;
+    bool lastLine = false, halfClick = false;
+    InlineDiscardQueue<int8_t, true, 16> clicks;
+
+    TaskV
+    LineTask(bool isA);
+
+    static bool
+    GetLineState(bool isA)
+    {
+        GpioLine line = isA ? ioRotEncA : ioRotEncB;
+        return !nrf_gpio_pin_read(line.pin);
+    }
+
+    void
+    CommitEvent(bool triggerLineA, bool adjLineState);
+
+    void
+    CommitClick(bool dir);
+};
+
+RotaryEncoder rotEnc;
+
+void
+RotaryEncoder::OnLineInterrupt(bool isA)
+{
+    (isA ? lineAEvents : lineBEvents).Push(GetLineState(isA));
+}
+
+void
+RotaryEncoder::Initialize()
+{
+    Task::Spawn(LineTask(true), Task::HIGHEST_PRIORITY).Pin();
+    Task::Spawn(LineTask(false), Task::HIGHEST_PRIORITY).Pin();
+}
+
+TaskV
+RotaryEncoder::LineTask(bool isA)
+{
+    constexpr auto JITTER_DELAY = etl::chrono::milliseconds(1);
+    Timer jitterTimer;
+
+    auto &lineEvents = isA ? lineAEvents : lineBEvents;
+
+    while (true) {
+        // Wait for press
+        while (!co_await lineEvents.Pop());
+
+        CommitEvent(isA, GetLineState(!isA));
+
+        // Suppress jitter - wait until inactive level is stable for a long period
+        bool isPressed = true;
+        while (true) {
+            jitterTimer.ExpiresAfter(JITTER_DELAY);
+            size_t idx = co_await Task::WhenAny(
+                Task::SaveResult(lineEvents.Pop(), isPressed), jitterTimer);
+            if (idx == 0) {
+                // Button toggled again, restart anti-jitter delay
+                continue;
+            }
+            // Anti-jitter delay expired with no new toggles
+            break;
+        }
+        if (!isPressed) {
+            // Release debounced
+            continue;
+        }
+
+        // Still active, debounce release
+        while (true) {
+            // Wait for release
+            while (co_await lineEvents.Pop());
+
+            // Suppress release jitter
+            bool isPressed = false;
+            while (true) {
+                jitterTimer.ExpiresAfter(JITTER_DELAY);
+                size_t idx = co_await Task::WhenAny(
+                    Task::SaveResult(lineEvents.Pop(), isPressed), jitterTimer);
+                if (idx == 0) {
+                    continue;
+                }
+                // Anti-jitter delay expired with no new toggles
+                break;
+            }
+            if (!isPressed) {
+                // Release debounced
+                break;
+            }
+            // Still active
+        }
+    }
+}
+
+void
+RotaryEncoder::CommitEvent(bool triggerLineA, bool adjLineState)
+{
+    bool dir = triggerLineA == adjLineState;
+    if (!lastDir || *lastDir != dir) {
+        lastDir = dir;
+        lastLine = triggerLineA;
+        halfClick = true;
+        return;
+    }
+    if (lastLine == triggerLineA) {
+        return;
+    }
+    lastLine = triggerLineA;
+    if (halfClick) {
+        CommitClick(dir);
+        halfClick = false;
+    } else {
+        halfClick = true;
+    }
+}
+
+void
+RotaryEncoder::CommitClick(bool dir)
+{
+    if (clicks.IsEmpty()) {
+        clicks.Push(dir ? 1 : -1);
+        return;
+    }
+    bool lastDir = clicks.PeekLast() > 0;
+    if (dir == lastDir) {
+        clicks.PeekLast() += dir ? 1 : -1;
+    } else {
+        clicks.Push(dir ? 1 : -1);
+    }
+}
+
+TaskV
+RotaryEncoderTask()
+{
+    while (true) {
+        int8_t clicks = co_await rotEnc.WaitClick();
+        LOG_INFO("Rotary encoder: {}", clicks);
+    }
+}
+
+void
+PinStateHandler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
+{
+    if (pin == ioButton.pin) {
+        // May produce wrong value on fast bouncing. However last release will always be detected as
+        // release.
+        buttonEvents.Push(IsButtonPressed());
+    } else if (pin == ioRotEncA.pin) {
+        rotEnc.OnLineInterrupt(true);
+    } else if (pin == ioRotEncB.pin) {
+        rotEnc.OnLineInterrupt(false);
+    }
+}
+
 } // anonymous namespace
 
 
@@ -343,9 +531,12 @@ main()
 
     InitLed();
     InitButton();
+    InitRotaryEncoder();
+    rotEnc.Initialize();
 
     Task::Spawn(BlinkTask()).Pin();
     Task::Spawn(ButtonTask()).Pin();
+    Task::Spawn(RotaryEncoderTask()).Pin();
 
     Task::RunScheduler();
 
