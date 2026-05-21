@@ -10,7 +10,8 @@ extern "C" {
 #endif
 
 /** pulsePort_DisableInterrupts
- * Either macro or function to disable interrupts.
+ * Either macro or function to disable interrupts (only with
+ * pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY and lower).
  */
 #ifndef pulsePort_DisableInterrupts
 void
@@ -43,6 +44,23 @@ pulsePort_GetAndDisableInterrupts();
 #ifndef pulsePort_SetInterrupts
 void
 pulsePort_SetInterrupts(unsigned state);
+#endif
+
+
+/** pulsePort_DisableIrq
+ * Either macro or function to disable interrupts completely (all levels).
+ */
+#ifndef pulsePort_DisableIrq
+void
+pulsePort_DisableIrq();
+#endif
+
+/** pulsePort_EnableIrq
+ * Either macro or function to enable all interrupts after pulsePort_DisableIrq().
+ */
+#ifndef pulsePort_EnableIrq
+void
+pulsePort_EnableIrq();
 #endif
 
 
@@ -80,6 +98,7 @@ namespace pulse {
 
 // C++ wrappers for port C macros/functions
 
+/// This disables only interrupts with pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY and lower.
 inline void
 DisableInterrupts()
 {
@@ -102,6 +121,18 @@ inline void
 SetInterrupts(unsigned state)
 {
     pulsePort_SetInterrupts(state);
+}
+
+inline void
+DisableIrq()
+{
+    pulsePort_DisableIrq();
+}
+
+inline void
+EnableIrq()
+{
+    pulsePort_EnableIrq();
 }
 
 inline void

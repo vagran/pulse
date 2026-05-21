@@ -64,6 +64,39 @@ public:
     }
 };
 
+class MoveableOnly {
+public:
+    // Use dynamic allocation to help troubleshooting with Valgrind.
+    std::unique_ptr<int> value;
+
+    MoveableOnly()
+    {
+        numConstructed++;
+    }
+
+    MoveableOnly(int value):
+        value(std::make_unique<int>(value))
+    {
+        numConstructed++;
+        numValuesConstructed++;
+    }
+
+    MoveableOnly(MoveableOnly &&other):
+        value(std::move(other.value))
+    {
+        numConstructed++;
+    }
+
+    ~MoveableOnly()
+    {
+        numDestructed++;
+        if (value) {
+            numValuesDestructed++;
+        }
+    }
+};
+
+
 std::vector<std::string> results;
 
 void
@@ -130,6 +163,110 @@ TEST_CASE("Discard queue")
             Task::RunSome();
 
             CheckResult(6, "T2:4");
+        }
+
+        SECTION("Save result") {
+            InlineDiscardQueue<A, true, 2> q;
+            etl::optional<A> result;
+
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     etl::optional<A> &result) -> TaskV {
+
+                REQUIRE(!result);
+                q.Push(42);
+                while (co_await Task::Switch());
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            auto t2 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     etl::optional<A> &result) -> TaskV {
+
+                co_await Task::SaveResult(q.Pop(), result);
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            Task::RunSome();
+            REQUIRE(*result->value == 42);
+        }
+
+        SECTION("Save result (lvalue awaiter)") {
+            InlineDiscardQueue<A, true, 2> q;
+            etl::optional<A> result;
+
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     etl::optional<A> &result) -> TaskV {
+
+                REQUIRE(!result);
+                q.Push(42);
+                while (co_await Task::Switch());
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            auto t2 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     etl::optional<A> &result) -> TaskV {
+                auto awaiter = q.Pop();
+                co_await Task::SaveResult(awaiter, result);
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            Task::RunSome();
+            REQUIRE(*result->value == 42);
+        }
+
+        SECTION("Save result (MoveableOnly)") {
+            InlineDiscardQueue<MoveableOnly, true, 2> q;
+            etl::optional<MoveableOnly> result;
+
+            auto t1 = Task::Spawn([](InlineDiscardQueue<MoveableOnly, true, 2> &q,
+                                     etl::optional<MoveableOnly> &result) -> TaskV {
+
+                REQUIRE(!result);
+                q.Push(42);
+                while (co_await Task::Switch());
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            auto t2 = Task::Spawn([](InlineDiscardQueue<MoveableOnly, true, 2> &q,
+                                     etl::optional<MoveableOnly> &result) -> TaskV {
+
+                co_await Task::SaveResult(q.Pop(), result);
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            Task::RunSome();
+            REQUIRE(*result->value == 42);
+        }
+
+        SECTION("Save result (lvalue awaiter)") {
+            InlineDiscardQueue<A, true, 2> q;
+            etl::optional<A> result;
+
+            auto t1 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     etl::optional<A> &result) -> TaskV {
+
+                REQUIRE(!result);
+                q.Push(42);
+                while (co_await Task::Switch());
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            auto t2 = Task::Spawn([](InlineDiscardQueue<A, true, 2> &q,
+                                     etl::optional<A> &result) -> TaskV {
+                auto awaiter = q.Pop();
+                co_await Task::SaveResult(awaiter, result);
+                REQUIRE(*result->value == 42);
+
+            }, q, result);
+
+            Task::RunSome();
+            REQUIRE(*result->value == 42);
         }
 
         SECTION("Basic head drop") {

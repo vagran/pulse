@@ -18,12 +18,13 @@ using namespace pulse;
 [[noreturn]] void
 Panic(const char *msg)
 {
-    DisableInterrupts();
+    DisableIrq();
     uart.PanicFlush();
 
     for (const char *p = msg; *p; p++) {
         uart.WriteCharSync(*p);
     }
+    uart.WriteCharSync('\n');
 
     /* Stop in debug build, reset after delay in release build. */
 #ifdef DEBUG
@@ -301,7 +302,7 @@ public:
     }
 
 private:
-    TokenQueue<uint8_t> lineAEvent{5}, lineBEvents{5};
+    TokenQueue<uint8_t> lineAEvents{5}, lineBEvents{5};
     etl::optional<bool> lastDir;
     bool lastLine = false, halfClick = false;
     InlineDiscardQueue<int8_t, true, 16> clicks;
@@ -328,7 +329,7 @@ RotaryEncoder rotEnc;
 void
 RotaryEncoder::OnLineInterrupt(bool isA)
 {
-    (isA ? lineAEvent : lineBEvents).Push();
+    (isA ? lineAEvents : lineBEvents).Push();
 }
 
 void
@@ -345,12 +346,12 @@ RotaryEncoder::LineTask(bool isA)
     Timer jitterTimer;
 
     while (true) {
-        co_await (isA ? lineAEvent : lineBEvents);
+        co_await (isA ? lineAEvents : lineBEvents);
         // Suppress jitter - wait until active level is stable for a long period.
         bool pressed = false;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await Task::WhenAny((isA ? lineAEvent : lineBEvents), jitterTimer);
+            size_t idx = co_await Task::WhenAny((isA ? lineAEvents : lineBEvents), jitterTimer);
             if (idx == 0) {
                 // Activated again, restart anti-jitter delay
                 continue;
@@ -450,8 +451,14 @@ LogGetTimestamp(char *buffer, size_t bufferSize)
 {
     uint32_t tick = HAL_GetTick();
     ldiv_t r = ldiv(tick, pulseConfig_TICK_FREQ);
+    uint32_t ms;
+    if constexpr (pulseConfig_TICK_FREQ != 1000) {
+        ms = r.rem * 1000 / pulseConfig_TICK_FREQ;
+    } else {
+        ms = r.rem;
+    }
     pulse::fmt::BufferOutputStream stream(buffer, bufferSize);
-    return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, r.rem);
+    return pulse::fmt::FormatTo(stream, "{:7}.{:03}", r.quot, ms);
 }
 
 extern "C" [[noreturn]] int
@@ -481,8 +488,6 @@ main()
     Panic("Scheduler exited");
 }
 
-
-#ifdef __clang__
 extern "C" void
 _init()
 {}
@@ -490,4 +495,10 @@ _init()
 extern "C" void
 _fini()
 {}
-#endif // __clang__
+
+// Prevent memory wasting for libc atexit.
+extern "C" int
+__wrap_atexit(void (*)())
+{
+    return -1;
+}
