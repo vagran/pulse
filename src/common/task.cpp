@@ -99,6 +99,65 @@ DescheduleTask(const Task &task)
 
 } // anonymous namespace
 
+
+class pulse::TaskImpl {
+public:
+    /**
+     * @param nextTimerTicks If specified, the method prepares for sleeping until next interrupt
+     *  (interrupts are disabled on exit). Number of ticks until next scheduled timer is stored in
+     *  this variable, MAX_TICK_COUNT if no next timer.
+     * @return Guard for disabled interrupts if any.
+     */
+    static InterruptsGuard
+    RunSomeImpl(Timer::TickCount *nextTimerTicks);
+};
+
+InterruptsGuard
+TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
+{
+    Timer::TickCount ticks = details::CheckTimers();
+    bool timersChecked = true,
+         shouldRecheckTimers = false;
+
+    while (true) {
+        if (shouldRecheckTimers) {
+            ticks = details::CheckTimers();
+            timersChecked = true;
+            shouldRecheckTimers = false;
+        }
+        InterruptsGuard ig;
+        if (!readyTasksBitmap) {
+            if (!timersChecked) {
+                // Some tasks were run since last timer check, new timers might be scheduled so need
+                // to re-check them.
+                shouldRecheckTimers = true;
+                continue;
+            }
+            if (nextTimerTicks) {
+                *nextTimerTicks = ticks;
+                return ig;
+            }
+            break;
+        }
+        timersChecked = false;
+        uint8_t pri = readyTasksBitmap.FirstSet();
+        PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
+        TaskTailedList &list = readyTasks[pri];
+        currentTask = list.PopFirst();
+        PULSE_ASSERT(currentTask);
+        if (list.IsEmpty()) {
+            readyTasksBitmap.Clear(pri);
+        }
+        PULSE_ASSERT(currentTask.GetPromise().isRunnable);
+        currentTask.GetPromise().isRunnable = 0;
+        ig.Exit();
+        currentTask.Resume();
+        currentTask.ReleaseHandle();
+    }
+    return InterruptsGuard(false);
+}
+
+
 bool
 Task::Unpin()
 {
@@ -170,35 +229,25 @@ void
 Task::RunScheduler()
 {
     while (true) {
-        RunSome();
-        pulsePort_EnableInterrupts();
+        Timer::TickCount nextTimerTicks;
+        InterruptsGuard ig = TaskImpl::RunSomeImpl(&nextTimerTicks);
+#if pulseConfig_TICKLESS_IDLE
+        if (nextTimerTicks < pulseConfig_TICKLESS_MIN_TICKS) {
+            pulsePort_Sleep();
+        } else {
+            Timer::TickCount passed = pulsePort_TicklessSleep(nextTimerTicks);
+            Timer::SetTime(Timer::GetTime() + passed);
+        }
+#else // pulseConfig_TICKLESS_IDLE
         pulsePort_Sleep();
+#endif // pulseConfig_TICKLESS_IDLE
     }
 }
 
 void
 Task::RunSome()
 {
-    while (true) {
-        details::CheckTimers();
-        CriticalSection cs;
-        if (!readyTasksBitmap) {
-            break;
-        }
-        uint8_t pri = readyTasksBitmap.FirstSet();
-        PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
-        TaskTailedList &list = readyTasks[pri];
-        currentTask = list.PopFirst();
-        PULSE_ASSERT(currentTask);
-        if (list.IsEmpty()) {
-            readyTasksBitmap.Clear(pri);
-        }
-        PULSE_ASSERT(currentTask.GetPromise().isRunnable);
-        currentTask.GetPromise().isRunnable = 0;
-        cs.Exit();
-        currentTask.Resume();
-        currentTask.ReleaseHandle();
-    }
+    TaskImpl::RunSomeImpl(nullptr);
 }
 
 Task

@@ -96,7 +96,7 @@ void
 GpioOutputVoltageSetup(void)
 {
     uint32_t targetVoltage = UICR_REGOUT0_VOUT_2V7;
-    // Configure UICR_REGOUT0 register only if it is set to default value.
+    // Configure UICR_REGOUT0 register only if it is not already properly set.
     if ((NRF_UICR->REGOUT0 & UICR_REGOUT0_VOUT_Msk) !=
         (targetVoltage << UICR_REGOUT0_VOUT_Pos)) {
 
@@ -117,9 +117,9 @@ GpioOutputVoltageSetup(void)
 void
 RtcInterruptHandler(nrfx_rtc_int_type_t intType)
 {
-    if (intType == nrfx_rtc_int_type_t::NRFX_RTC_INT_TICK) {
-        pulse::Timer::Tick();
-    }
+    // if (intType == nrfx_rtc_int_type_t::NRFX_RTC_INT_TICK) {
+    //     pulse::Timer::Tick();
+    // }
 }
 
 void
@@ -138,7 +138,7 @@ InitTicks()
     nrfx_clock_lfclk_start();
 
     nrfx_rtc_config_t config = {
-        .prescaler = RTC_FREQ_TO_PRESCALER(pulseConfig_TICK_FREQ),
+        .prescaler          = RTC_FREQ_TO_PRESCALER(pulseConfig_TICK_FREQ),
         .interrupt_priority = NRFX_RTC_DEFAULT_CONFIG_IRQ_PRIORITY,
         .tick_latency       = 1,
         .reliable           = NRFX_RTC_DEFAULT_CONFIG_RELIABLE
@@ -147,7 +147,7 @@ InitTicks()
         Panic("RTC init failed");
     }
 
-    nrfx_rtc_tick_enable(&rtc0, true);
+    // nrfx_rtc_tick_enable(&rtc0, true);
     nrfx_rtc_enable(&rtc0);
 }
 
@@ -556,4 +556,35 @@ extern "C" int
 __wrap_atexit(void (*)())
 {
     return -1;
+}
+
+uint32_t
+pulsePort_TicklessSleep(uint32_t duration)
+{
+    static constexpr uint32_t RTC_COUNTER_BITS = 24;
+    static constexpr uint32_t RTC_COUNTER_MASK = (1u << RTC_COUNTER_BITS) - 1;
+
+    if (duration == 0) {
+        return 0;
+    }
+
+    uint32_t start = nrfx_rtc_counter_get(&rtc0);
+
+    uint32_t target = (start + duration) & RTC_COUNTER_MASK;
+
+    nrfx_rtc_cc_set(&rtc0, 0, target, true);
+
+    pulsePort_Sleep();
+
+    uint32_t end = nrfx_rtc_counter_get(&rtc0);
+
+    nrfx_rtc_cc_disable(&rtc0, 0);
+
+    uint32_t elapsed = (end - start) & RTC_COUNTER_MASK;
+
+    if (elapsed > duration) {
+        elapsed = duration;
+    }
+
+    return elapsed;
 }

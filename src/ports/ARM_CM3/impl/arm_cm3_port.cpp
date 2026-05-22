@@ -8,6 +8,7 @@ static_assert(pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY > 0, "Cannot be zero on
 namespace {
 
 unsigned csNesting = 0;
+uint32_t csPrevState;
 
 } // anonymous namespace
 
@@ -15,7 +16,7 @@ unsigned csNesting = 0;
 void
 pulsePort_EnterCriticalSection()
 {
-    pulsePort_DisableInterrupts();
+    csPrevState = pulsePort_GetAndDisableInterrupts();
     csNesting++;
 }
 
@@ -25,7 +26,7 @@ pulsePort_ExitCriticalSection()
     PULSE_ASSERT(csNesting);
     csNesting--;
     if (csNesting == 0) {
-        pulsePort_EnableInterrupts();
+        pulsePort_SetInterrupts(csPrevState);
     }
 }
 

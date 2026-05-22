@@ -300,7 +300,8 @@ functionality.
 
 Pulse can be ported to any target platform with a working C++20 compiler. At present, it has been
 primarily tested on STM32-series MCUs. The provided examples target the STM32F103 development board
-("Blue Pill"). See the [porting guide](docs/porting.md) for details.
+("Blue Pill") and nRF52840 (I used cheap Nice!Nano clones). See the [porting guide](docs/porting.md)
+for details.
 
 
 ## License

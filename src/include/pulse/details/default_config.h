@@ -12,19 +12,24 @@
 #   define pulseConfig_ENABLE_TIMER 1
 #endif
 
+#if pulseConfig_ENABLE_TIMER && !defined(pulseConfig_TICK_FREQ)
+#   error pulseConfig_TICK_FREQ must be defined in order to use timer API.
+#endif
+
 /*
  * pulseConfig_TICK_FREQ
  * pulseConfig_TICK_FREQ must be defined in order to use timer API. Should be equal to system tick
  * frequency.
  */
 
- /** pulseConfig_MAX_TIMERS
-  * Maximal number of simultaneously scheduled timers. This includes active Timer::Delay() and
-  * Timer::WaitUntil() calls.
-  */
- #ifndef pulseConfig_MAX_TIMERS
+
+/** pulseConfig_MAX_TIMERS
+ * Maximal number of simultaneously scheduled timers. This includes active Timer::Delay() and
+ * Timer::WaitUntil() calls.
+ */
+#ifndef pulseConfig_MAX_TIMERS
 #   define pulseConfig_MAX_TIMERS 16
- #endif
+#endif
 
 
 /* pulseConfig_MALLOC_GRANULARITY
@@ -150,6 +155,26 @@
  */
 
 
+/** pulseConfig_TICKLESS_IDLE
+ * Suspend ticks when waiting for next event. Timers should also be enabled to use this feature.
+ */
+#ifndef pulseConfig_TICKLESS_IDLE
+#   define pulseConfig_TICKLESS_IDLE 0
+#endif
+
+#if pulseConfig_TICKLESS_IDLE && !pulseConfig_ENABLE_TIMER
+#   error Timers should be enabled if using pulseConfig_TICKLESS_IDLE
+#endif
+
+
+/** pulseConfig_TICKLESS_MIN_TICKS
+ * Minimal number of ticks expected to next event to allow ticks suspension in tickless mode.
+ */
+#ifndef pulseConfig_TICKLESS_MIN_TICKS
+#   define pulseConfig_TICKLESS_MIN_TICKS 1
+#endif
+
+
 /** pulseConfig_FORMAT_ERROR
  * Invoked with string message argument in case of any error when formatting strings by `pulse::fmt`
  * API.
@@ -167,6 +192,7 @@
 /** pulseConfig_LOG_PUT_CHAR
  * Macro to use for outputting next character of log message. Logs are disabled if not defined.
  */
+
 
 /** pulseConfig_LOG_GET_TIMESTAMP
  * Logs will include timestamp if defined. Macro should expand to function call with the following

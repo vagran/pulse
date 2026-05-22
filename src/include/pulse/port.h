@@ -9,6 +9,15 @@
 extern "C" {
 #endif
 
+
+/** pulsePort_TickCountType
+ * Type used to store time duration in ticks.
+ */
+#ifndef pulsePort_TickCountType
+#define pulsePort_TickCountType uint32_t
+#endif
+
+
 /** pulsePort_DisableInterrupts
  * Either macro or function to disable interrupts (only with
  * pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY and lower).
@@ -91,6 +100,23 @@ pulsePort_Sleep();
 #endif
 
 
+#if pulseConfig_TICKLESS_IDLE
+
+/** pulsePort_Sleep
+ * Either macro or function to enter low-power mode sleep until next interrupt for the specified
+ * duration. It should return number of ticks actually passed. It is called with kernel level
+ * interrupts disabled.
+ */
+#ifndef pulsePort_TicklessSleep
+
+pulsePort_TickCountType
+pulsePort_TicklessSleep(pulsePort_TickCountType duration);
+
+#endif
+
+#endif // pulseConfig_TICKLESS_IDLE
+
+
 #ifdef __cplusplus
 } // extern "C"
 
@@ -155,10 +181,12 @@ public:
 
     InterruptsGuard(const InterruptsGuard &) = delete;
 
-    InterruptsGuard()
+    InterruptsGuard(bool acquire = true)
     {
-        state = pulsePort_GetAndDisableInterrupts();
-        acquired = true;
+        if (acquire) {
+            state = pulsePort_GetAndDisableInterrupts();
+            acquired = true;
+        }
     }
 
     InterruptsGuard(InterruptsGuard &&other):

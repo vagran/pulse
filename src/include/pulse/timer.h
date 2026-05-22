@@ -1,6 +1,7 @@
 #ifndef TIMER_H
 #define TIMER_H
 
+
 #ifdef __cplusplus
 
 #include <pulse/details/common.h>
@@ -8,17 +9,12 @@
 #include <pulse/shared_ptr.h>
 #include <pulse/task.h>
 #include <pulse/compare.h>
+#include <pulse/port.h>
 #include <etl/chrono.h>
 #include <etl/optional.h>
 
 
-#ifndef pulseConfig_TICK_FREQ
-#error pulseConfig_TICK_FREQ must be defined in order to use timer API.
-#endif
-
-
 namespace pulse {
-
 
 class DelayAwaiter;
 class TimerAwaiter;
@@ -31,7 +27,8 @@ struct TimerEntry;
 
 class Timer {
 public:
-    using TickCount = uint32_t;
+    using TickCount = pulsePort_TickCountType;
+    static constexpr TickCount MAX_TICK_COUNT = etl::numeric_limits<TickCount>::max();
 
     /** Duration unit representing timer tick. */
     using Ticks = etl::chrono::duration<TickCount, etl::ratio<1, pulseConfig_TICK_FREQ>>;
@@ -144,8 +141,7 @@ public:
     static TickCount
     GetTime();
 
-    /** Set current time. May cause scheduled timers immediate firing if new time is past their
-     * scheduled time.
+    /** Set current time.
      * @return Previous value of current time.
      */
     static TickCount
@@ -276,7 +272,7 @@ operator co_await(Timer::Duration duration)
 namespace details {
 
 /** Fire all ready timers if any. Called by scheduler.
- * @return Time left until next timer. Maximal representable value if no timers.
+ * @return Time left until next timer. MAX_TICK_COUNT if no timers.
  */
 Timer::TickCount
 CheckTimers();

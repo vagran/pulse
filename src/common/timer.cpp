@@ -96,7 +96,6 @@ Timer::SetTime(TickCount time)
 {
     TickCount ret = curTime;
     curTime = time;
-    details::CheckTimers();
     return ret;
 }
 
@@ -225,7 +224,7 @@ details::CheckTimers()
         e.Fire();
         timers.PopTop();
     }
-    return etl::numeric_limits<TickCount>::max();
+    return Timer::MAX_TICK_COUNT;
 }
 
 

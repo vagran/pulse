@@ -349,6 +349,7 @@ public:
 
 protected:
     friend class TaskPromise;
+    friend class TaskImpl;
 
     template <typename, bool>
     friend class TTaskPromise;
