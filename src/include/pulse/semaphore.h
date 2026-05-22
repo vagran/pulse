@@ -216,6 +216,7 @@ Semaphore<TSize>::Release()
 template <etl::unsigned_integral TSize>
 SemaphoreAwaiter<TSize>::~SemaphoreAwaiter()
 {
+    CriticalSection cs;
     if (sem && task) {
         sem->waiters.Remove(this);
     }

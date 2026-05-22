@@ -13,14 +13,18 @@ uint32_t csPrevState;
 } // anonymous namespace
 
 
-void
+PULSE_WEAK void
 pulsePort_EnterCriticalSection()
 {
-    csPrevState = pulsePort_GetAndDisableInterrupts();
+    if (csNesting == 0) {
+        // Interrupt may happen before this line, however, if it uses CS, it will enter and exit it
+        // before return.
+        csPrevState = pulsePort_GetAndDisableInterrupts();
+    }
     csNesting++;
 }
 
-void
+PULSE_WEAK void
 pulsePort_ExitCriticalSection()
 {
     PULSE_ASSERT(csNesting);
@@ -30,10 +34,19 @@ pulsePort_ExitCriticalSection()
     }
 }
 
-void
+PULSE_WEAK void
 pulsePort_Sleep()
 {
     asm volatile ("dsb" ::: "memory");
-    asm volatile ("wfi");
+    asm volatile ("sev");
+    asm volatile ("wfe");
+    asm volatile ("wfe");
     asm volatile ("isb");
+}
+
+PULSE_WEAK void
+pulsePort_InitScheduler()
+{
+    // Pending interrupts set event register, required for WFE-based sleep.
+    SCB->SCR |= SCB_SCR_SEVONPEND_Msk;
 }

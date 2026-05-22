@@ -57,12 +57,13 @@ pulsePort_SetInterrupts(unsigned state);
 
 
 /** pulsePort_DisableIrq
- * Either macro or function to disable interrupts completely (all levels).
+ * Either macro or function to disable interrupts completely (all levels by global flag).
  */
 #ifndef pulsePort_DisableIrq
 void
 pulsePort_DisableIrq();
 #endif
+
 
 /** pulsePort_EnableIrq
  * Either macro or function to enable all interrupts after pulsePort_DisableIrq().
@@ -70,6 +71,15 @@ pulsePort_DisableIrq();
 #ifndef pulsePort_EnableIrq
 void
 pulsePort_EnableIrq();
+#endif
+
+
+/** pulsePort_IsIrqEnabled
+ * Either macro or function to check if IRQ not masked by global flag.
+ */
+#ifndef pulsePort_IsIrqEnabled
+bool
+pulsePort_IsIrqEnabled();
 #endif
 
 
@@ -88,6 +98,15 @@ pulsePort_EnterCriticalSection();
 #ifndef pulsePort_ExitCriticalSection
 void
 pulsePort_ExitCriticalSection();
+#endif
+
+
+/** pulsePort_InitScheduler
+ * Either macro or function called before running scheduler.
+ */
+#ifndef pulsePort_InitScheduler
+void
+pulsePort_InitScheduler();
 #endif
 
 
@@ -206,6 +225,47 @@ public:
     {
         if (acquired) {
             pulsePort_SetInterrupts(state);
+            acquired = false;
+        }
+    }
+};
+
+/** Helper class to disable IRQs in this class instance scope. */
+class IrqGuard {
+public:
+    bool acquired = false;
+    bool state;
+
+    IrqGuard(const IrqGuard &) = delete;
+
+    IrqGuard(bool acquire = true)
+    {
+        if (acquire) {
+            state = pulsePort_IsIrqEnabled();
+            pulsePort_DisableIrq();
+            acquired = true;
+        }
+    }
+
+    IrqGuard(InterruptsGuard &&other):
+        acquired(other.acquired),
+        state(other.state)
+    {
+        other.acquired = false;
+    }
+
+    ~IrqGuard()
+    {
+        Exit();
+    }
+
+    void
+    Exit()
+    {
+        if (acquired) {
+            if (state) {
+                pulsePort_EnableIrq();
+            }
             acquired = false;
         }
     }

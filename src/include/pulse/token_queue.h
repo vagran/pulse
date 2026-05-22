@@ -166,6 +166,7 @@ TokenQueue<TCounter>::operator co_await()
 template <etl::integral TCounter>
 TokenQueueAwaiter<TCounter>::~TokenQueueAwaiter()
 {
+    CriticalSection cs;
     if (task) {
         queue.waiters.Remove(this);
     }

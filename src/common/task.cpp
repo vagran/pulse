@@ -100,7 +100,7 @@ DescheduleTask(const Task &task)
 } // anonymous namespace
 
 
-class pulse::TaskImpl {
+class pulse::details::TaskImpl {
 public:
     /**
      * @param nextTimerTicks If specified, the method prepares for sleeping until next interrupt
@@ -113,7 +113,7 @@ public:
 };
 
 InterruptsGuard
-TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
+pulse::details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
 {
     Timer::TickCount ticks = details::CheckTimers();
     bool timersChecked = true,
@@ -228,9 +228,10 @@ Task::RaisePriority(Priority priority)
 void
 Task::RunScheduler()
 {
+    pulsePort_InitScheduler();
     while (true) {
         Timer::TickCount nextTimerTicks;
-        InterruptsGuard ig = TaskImpl::RunSomeImpl(&nextTimerTicks);
+        InterruptsGuard ig = details::TaskImpl::RunSomeImpl(&nextTimerTicks);
 #if pulseConfig_TICKLESS_IDLE
         if (nextTimerTicks < pulseConfig_TICKLESS_MIN_TICKS) {
             pulsePort_Sleep();
@@ -247,7 +248,7 @@ Task::RunScheduler()
 void
 Task::RunSome()
 {
-    TaskImpl::RunSomeImpl(nullptr);
+    details::TaskImpl::RunSomeImpl(nullptr);
 }
 
 Task

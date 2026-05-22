@@ -174,8 +174,6 @@ private:
     Task::WeakPtr task;
     alignas(T) uint8_t storage[sizeof(T)];
 
-    DiscardQueuePopAwaiter() = default;
-
     DiscardQueuePopAwaiter(DiscardQueue<T, tailDrop, TIndex> *queue):
         queue(queue)
     {}
@@ -332,7 +330,8 @@ template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 DiscardQueuePopAwaiter<T, tailDrop, TIndex>::~DiscardQueuePopAwaiter()
 {
     if (queue) {
-        if (task) {
+        CriticalSection cs;
+        if (queue && task) {
             queue->popWaiters.Remove(this);
         }
     } else {

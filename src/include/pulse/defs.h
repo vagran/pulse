@@ -33,4 +33,7 @@
 /** Check if non-null integer value is power of two. */
 #define PULSE_IS_POW2(__x)              ((((__x) - 1) & (__x)) == 0)
 
+/** Weak symbol linkage. */
+#define PULSE_WEAK                      __attribute__((weak))
+
 #endif /* PULSE_DEFS_H_ */

@@ -60,6 +60,8 @@ struct TaskTraits<TTask<TRet_, initialSuspend_>> {
     static constexpr bool initialSuspend = initialSuspend_;
 };
 
+class TaskImpl;
+
 class TaskAwaiterBase;
 
 class TaskWeakPtr;
@@ -349,7 +351,7 @@ public:
 
 protected:
     friend class TaskPromise;
-    friend class TaskImpl;
+    friend class details::TaskImpl;
 
     template <typename, bool>
     friend class TTaskPromise;

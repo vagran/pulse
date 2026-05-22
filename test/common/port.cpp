@@ -17,6 +17,15 @@ void
 pulsePort_EnableInterrupts()
 {}
 
+unsigned
+pulsePort_GetAndDisableInterrupts()
+{
+    return 0;
+}
+
+void
+pulsePort_SetInterrupts(unsigned)
+{}
 
 void
 pulsePort_EnterCriticalSection()
@@ -33,4 +42,8 @@ pulsePort_ExitCriticalSection()
 
 void
 pulsePort_Sleep()
+{}
+
+void
+pulsePort_InitScheduler()
 {}

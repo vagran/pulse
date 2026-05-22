@@ -375,6 +375,7 @@ TEST_CASE("Move time forward")
         bool ret = co_await timer2;
         REQUIRE(Timer::GetTime() == 2);
         Timer::SetTime(20);
+        details::CheckTimers();
         co_return ret;
     };
 

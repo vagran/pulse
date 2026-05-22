@@ -69,6 +69,12 @@ pulsePort_EnableIrq()
     asm volatile ("cpsie i" : : : "memory");
 }
 
+static inline bool
+pulsePort_IsIrqEnabled()
+{
+    return (__get_PRIMASK() & 1) == 0;
+}
+
 #ifdef __cplusplus
 }
 #endif
