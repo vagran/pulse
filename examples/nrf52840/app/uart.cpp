@@ -77,6 +77,7 @@ Uart::PanicFlush()
         for (uint8_t c: region) {
             WriteCharSync(c);
         }
+        this->buffer.CommitRead(region.size());
     }
 }
 
