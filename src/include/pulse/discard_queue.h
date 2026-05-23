@@ -329,12 +329,13 @@ DiscardQueue<T, tailDrop, TIndex>::CommitPop()
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 DiscardQueuePopAwaiter<T, tailDrop, TIndex>::~DiscardQueuePopAwaiter()
 {
+    CriticalSection cs;
     if (queue) {
-        CriticalSection cs;
-        if (queue && task) {
+        if (task) {
             queue->popWaiters.Remove(this);
         }
     } else {
+        cs.Exit();
         etl::destroy_at(&this->Item());
     }
 }
