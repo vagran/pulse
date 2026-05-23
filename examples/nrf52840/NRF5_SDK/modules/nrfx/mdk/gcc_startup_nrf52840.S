@@ -225,6 +225,9 @@ Reset_Handler:
 .L_loop3_done:
 #endif /* __STARTUP_CLEAR_BSS */
 
+/* Call static constructors */
+    bl __libc_init_array
+
 /* Execute SystemInit function. */
     bl SystemInit
 
