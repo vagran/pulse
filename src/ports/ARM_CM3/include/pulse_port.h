@@ -2,7 +2,6 @@
 #define PULSE_PORT_H
 
 #include <pulse/config.h>
-#include <core_cm3.h>
 #include <stdint.h>
 
 
@@ -73,7 +72,9 @@ pulsePort_EnableIrq()
 static inline bool
 pulsePort_IsIrqEnabled()
 {
-    return (__get_PRIMASK() & 1) == 0;
+    uint32_t result;
+    asm volatile("MRS %0, primask" : "=r" (result) :: "memory");
+    return result == 0;
 }
 
 #ifdef __cplusplus
