@@ -413,7 +413,7 @@ RotaryEncoder::LineTask(bool isA)
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
             size_t idx = co_await Task::WhenAny(
-                Task::SaveResult(lineEvents.Pop(), isPressed), jitterTimer);
+                Task::SaveResult(lineEvents, isPressed), jitterTimer);
             if (idx == 0) {
                 // Button toggled again, restart anti-jitter delay
                 continue;
@@ -436,7 +436,7 @@ RotaryEncoder::LineTask(bool isA)
             while (true) {
                 jitterTimer.ExpiresAfter(JITTER_DELAY);
                 size_t idx = co_await Task::WhenAny(
-                    Task::SaveResult(lineEvents.Pop(), isPressed), jitterTimer);
+                    Task::SaveResult(lineEvents, isPressed), jitterTimer);
                 if (idx == 0) {
                     continue;
                 }

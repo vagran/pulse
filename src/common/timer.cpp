@@ -107,25 +107,15 @@ Timer::Tick()
     // Timers fired from scheduler
 }
 
-
-Timer::Timer(TickCount expiresAt)
-{
-    Schedule(expiresAt);
-}
-
-Timer::Timer(Duration expiresAfter):
-    Timer(GetTime() + expiresAfter.duration)
-{}
-
 Timer::Timer(Timer &&other):
     waiters(etl::move(other.waiters)),
     heapIdx(other.heapIdx),
     state(other.state)
 {
     if (state == State::SCHEDULED) {
-        timers.Item(heapIdx).ReplaceTimer(this);
+        timers.Item(heapIdx).ReplaceTimer(Handle(this));
         for (auto waiter: waiters) {
-            waiter->timer = this;
+            waiter->timer = Handle(this);
         }
     }
     other.state = State::INITIAL;
@@ -133,7 +123,7 @@ Timer::Timer(Timer &&other):
 
 Timer::~Timer()
 {
-    PULSE_ASSERT(refCounter == 0);
+    PULSE_ASSERT(dynamicAlloc ? refCounter == 0 : refCounter == 1);
     if (state == SCHEDULED) {
         // May be called from Heap destructor when in unit tests. In this case it should not be
         // removed from timers ring. Reference counter is zero so there is definitely no external
@@ -179,7 +169,7 @@ Timer::Schedule(TickCount time)
         state = FIRED;
     } else {
         state = SCHEDULED;
-        ScheduleTimer(this, time);
+        ScheduleTimer(Handle(this), time);
     }
 }
 

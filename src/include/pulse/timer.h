@@ -69,10 +69,16 @@ public:
     Timer() = default;
 
     /** Start timer expiring at the specified time. */
-    Timer(TickCount expiresAt);
+    Timer(TickCount expiresAt)
+    {
+        Initialize(expiresAt);
+    }
 
     /** Start timer expiring after the specified time. */
-    Timer(Duration expiresAfter);
+    Timer(Duration expiresAfter)
+    {
+        Initialize(expiresAfter);
+    }
 
     Timer(const Timer &) = delete;
 
@@ -174,12 +180,33 @@ private:
         CANCELLED
     };
 
+    struct DynamicAllocTag {};
+
     List<TimerAwaiter *> waiters;
     // Index in heap when scheduled.
     SizedUint<etl::bit_width(static_cast<uintmax_t>(pulseConfig_MAX_TIMERS))> heapIdx;
-    etl::atomic<uint8_t> refCounter = 0;
-    uint8_t dynamicAlloc:1 = 0,
-            state: 2 = INITIAL;
+    etl::atomic<uint8_t> refCounter = 1;
+    uint8_t state: 2 = INITIAL,
+            dynamicAlloc:1 = 0;
+
+    template <typename... Args>
+    Timer(DynamicAllocTag, Args &&... args):
+        dynamicAlloc(1)
+    {
+        Initialize(etl::forward<Args>(args)...);
+    }
+
+    void
+    Initialize(TickCount time)
+    {
+        Schedule(time);
+    }
+
+    void
+    Initialize(Duration delay)
+    {
+        Schedule(GetTime() + delay.duration);
+    }
 
     /** @param force Cancel waiters in INITIAL state if true. */
     int
@@ -264,7 +291,8 @@ inline TaskAwaiter<void>
 operator co_await(Timer::Duration duration)
 {
     auto func = [](Timer::Duration duration) -> Awaitable<void> {
-        Timer timer(duration);
+        Timer timer;
+        timer.ExpiresAfter(duration);
         co_await timer;
     };
     return func(duration).Wait();
@@ -288,32 +316,29 @@ template <typename... Args>
 Timer::Handle
 Timer::Create(Args&&... args)
 {
-    Timer *p = new Timer(etl::forward<Args>(args)...);
-    if (!p) {
-        return nullptr;
-    }
-    p->dynamicAlloc = 1;
-    return p;
+    return Handle(new Timer(DynamicAllocTag(), etl::forward<Args>(args)...), true);
 }
 
 Awaitable<void>
 Timer::Delay(Duration duration)
 {
-    Timer timer(duration);
+    Timer timer;
+    timer.ExpiresAfter(duration);
     co_await timer;
 }
 
 Awaitable<void>
 Timer::WaitUntil(TickCount time)
 {
-    Timer timer(time);
+    Timer timer;
+    timer.ExpiresAt(time);
     co_await timer;
 }
 
 TimerAwaiter
 Timer::Wait()
 {
-    return TimerAwaiter(this);
+    return TimerAwaiter(Handle(this));
 }
 
 TimerAwaiter

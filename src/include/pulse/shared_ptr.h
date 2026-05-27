@@ -31,6 +31,9 @@ struct SharedPtrDefaultTrait {
     static void
     AddRef(T &obj)
     {
+        // Initial reference should always be set on construction. After that reference can be added
+        // only by already reference object.
+        PULSE_ASSERT(obj.refCounter > 0);
         if (obj.refCounter == etl::numeric_limits<decltype(obj.refCounter)>::max()) {
             PULSE_PANIC("SharedPtr reference counter overflow");
         }
@@ -59,6 +62,9 @@ struct SharedPtrDefaultAtomicTrait {
     AddRef(T &obj)
     {
         auto prevValue = obj.refCounter.fetch_add(1);
+        // Initial reference should always be set on construction. After that reference can be added
+        // only by already reference object.
+        PULSE_ASSERT(prevValue > 0);
         if (prevValue == etl::numeric_limits<decltype(prevValue)>::max()) {
             PULSE_PANIC("SharedPtr reference counter overflow");
         }
@@ -92,11 +98,18 @@ public:
         ptr(nullptr)
     {}
 
-    SharedPtr(T *ptr):
+    SharedPtr(etl::nullptr_t):
+        ptr(nullptr)
+    {}
+
+    explicit
+    SharedPtr(T *ptr, bool initialRef = false):
         ptr(ptr)
     {
         if (ptr) {
-            Trait::AddRef(*ptr);
+            if (!initialRef) {
+                Trait::AddRef(*ptr);
+            }
         }
     }
 
@@ -128,11 +141,11 @@ public:
         if (&other == this) {
             return *this;
         }
+        if (other.ptr) {
+            Trait::AddRef(*other.ptr);
+        }
         Reset();
         ptr = other.ptr;
-        if (ptr) {
-            Trait::AddRef(*ptr);
-        }
         return *this;
     }
 
@@ -140,11 +153,11 @@ public:
     SharedPtr &
     operator =(const SharedPtr<Y> &other)
     {
+        if (other.ptr) {
+            Trait::AddRef(*other.ptr);
+        }
         Reset();
         ptr = other.ptr;
-        if (ptr) {
-            Trait::AddRef(*ptr);
-        }
         return *this;
     }
 

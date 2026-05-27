@@ -234,7 +234,7 @@ TEST_CASE("Discard queue")
             auto t2 = Task::Spawn([](InlineDiscardQueue<MoveableOnly, true, 2> &q,
                                      etl::optional<MoveableOnly> &result) -> TaskV {
 
-                co_await Task::SaveResult(q.Pop(), result);
+                co_await Task::SaveResult(q, result);
                 REQUIRE(*result->value == 42);
 
             }, q, result);
