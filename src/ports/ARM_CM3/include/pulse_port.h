@@ -2,6 +2,7 @@
 #define PULSE_PORT_H
 
 #include <pulse/config.h>
+#include <core_cm3.h>
 #include <stdint.h>
 
 
