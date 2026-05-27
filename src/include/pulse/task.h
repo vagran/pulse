@@ -90,6 +90,9 @@ public:
      */
     using WeakPtr = details::TaskWeakPtr;
 
+    /// Marker for construction from weak reference.
+    struct WeakTag {};
+
 
     Task() = default;
 
@@ -99,6 +102,11 @@ public:
 
     inline
     Task(CoroutineHandle handle);
+
+    /// Construct task from handle stored in WeakPtr. It might be already released so it should be
+    /// checked and empty task is created in such case.
+    inline
+    Task(CoroutineHandle handle, WeakTag);
 
     inline
     Task(const Task &other);
@@ -339,7 +347,8 @@ public:
     Make(T &&obj);
 
     /** Helper to save arbitrary awaiter result into the specified variable. Useful when waiting on
-     * multiple tasks by `WhenAll` or `WhenAny`.
+     * multiple tasks by `WhenAll` or `WhenAny`. Be very careful with the passed awaiter lifetime -
+     * it should not be shorter than the resulting coroutine.
      */
     template <typename TResult, typename TAwaiter>
     static Awaitable<void>
@@ -370,6 +379,13 @@ protected:
             handle.resume();
         }
     }
+
+    struct PrerefTag {};
+
+    /// Construct task without adding reference. This should be used for initial construction only.
+    Task(CoroutineHandle handle, PrerefTag):
+        handle(handle)
+    {}
 
 private:
     /** Spawns new task with the specified priority. Returns ID_NONE if failed (if
@@ -461,14 +477,14 @@ public:
     SharedPtr<details::TaskWeakPtrTag> weakPtrTag = nullptr;
     /// Awaiters currently awaiting this task finishing.
     List<details::TaskAwaiterBase *> resultWaiters;
-    etl::atomic<uint8_t> refCounter = 0;
+    /// Negated values (`-value - 1`) used to indicate that task is pinned - destruction is
+    /// prevented when last reference is released.
+    etl::atomic<int8_t> refCounter = 1;
     uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
     /// Task currently queued in runnable queue.
             isRunnable: 1 = 0,
     /// Task finished and result is available.
-            isFinished: 1 = 0,
-    /// Task is pinned - prevents destruction when last reference released.
-            isPinned: 1 = 0;
+            isFinished: 1 = 0;
 
     TaskPromise();
 
@@ -478,37 +494,25 @@ public:
 
     /// Add reference from new Task instance.
     void
-    AddRef()
-    {
-        auto prevValue = refCounter.fetch_add(1);
-        if (prevValue == etl::numeric_limits<decltype(prevValue)>::max()) {
-            PULSE_PANIC("Task reference counter overflow");
-        }
-    }
+    AddRef();
+
+    /// Try adding reference which may not succeed if reference counter already reached zero (e.g.
+    /// last reference released concurrently by ISR). This is intended for using by task weak
+    /// pointer.
+    bool
+    TryAddRef();
 
     /// Release reference from Task instance.
     /// @return True if last reference released.
     bool
-    ReleaseRef()
-    {
-        auto prevValue = refCounter.fetch_sub(1);
-        PULSE_ASSERT(prevValue != 0);
-        return prevValue == 1 && !isPinned;
-    }
+    ReleaseRef();
 
     void
-    Pin()
-    {
-        isPinned = 1;
-    }
+    Pin();
 
     /// @return True if last reference released.
     bool
-    Unpin()
-    {
-        isPinned = 0;
-        return refCounter.load() == 0;
-    }
+    Unpin();
 
     Task::WeakPtr
     GetWeakPtr();
@@ -559,7 +563,8 @@ public:
     TTask<TRet, initialSuspend>
     get_return_object()
     {
-        return Task::CoroutineHandle::from_promise(*this);
+        return TTask<TRet, initialSuspend>(Task::CoroutineHandle::from_promise(*this),
+                                           Task::PrerefTag());
     }
 
     template<etl::convertible_to<TRet> From>
@@ -602,7 +607,8 @@ public:
     TTask<void, initialSuspend>
     get_return_object()
     {
-        return Task::CoroutineHandle::from_promise(*this);
+        return TTask<void, initialSuspend>(Task::CoroutineHandle::from_promise(*this),
+                                           Task::PrerefTag());
     }
 
     void
@@ -630,7 +636,7 @@ public:
 private:
     friend struct details::SharedPtrDefaultAtomicTrait<TaskWeakPtrTag>;
 
-    etl::atomic<uint8_t> refCounter = 0;
+    etl::atomic<uint8_t> refCounter = 1;
 };
 
 class TaskWeakPtr {
@@ -1006,6 +1012,14 @@ Task::Task(CoroutineHandle handle):
     }
 }
 
+inline
+Task::Task(CoroutineHandle handle, WeakTag)
+{
+    if (handle && handle.promise().TryAddRef()) {
+        this->handle = handle;
+    }
+}
+
 Task::Task(const Task &other):
     handle(other.handle)
 {
@@ -1104,7 +1118,7 @@ struct AwaitableWrapper {
     static inline Awaitable<void>
     MakeTask(const T &obj)
     {
-        // Passed awater lifetime should not end before the task completion, so assuming it is
+        // Passed awaiter lifetime should not end before the task completion, so assuming it is
         // safe. `await_suspend()` requires non-const reference in most cases.
         co_await const_cast<T &>(obj);
     }
@@ -1164,7 +1178,7 @@ Task::ReleaseHandle()
 void
 Task::Pin()
 {
-    GetPromise().isPinned = 1;
+    GetPromise().Pin();
 }
 
 Task::WeakPtr

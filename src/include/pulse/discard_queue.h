@@ -50,6 +50,9 @@ public:
     DiscardQueuePopAwaiter<T, tailDrop, TIndex>
     Pop();
 
+    DiscardQueuePopAwaiter<T, tailDrop, TIndex>
+    operator co_await();
+
     etl::optional<T>
     TryPop();
 
@@ -174,6 +177,7 @@ private:
     Task::WeakPtr task;
     alignas(T) uint8_t storage[sizeof(T)];
 
+    DiscardQueuePopAwaiter() = delete;
     DiscardQueuePopAwaiter(DiscardQueue<T, tailDrop, TIndex> *queue):
         queue(queue)
     {}
@@ -194,12 +198,14 @@ private:
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 DiscardQueue<T, tailDrop, TIndex>::~DiscardQueue()
 {
+    CriticalSection cs;
     for (auto waiter: popWaiters) {
         waiter->queue = nullptr;
         // Return default-constructed item.
         etl::construct_at(&waiter->Item());
         waiter->task.Wakeup();
     }
+    cs.Exit();
 
     while (size) {
         etl::destroy_at(&CurReadItem());
@@ -278,6 +284,13 @@ DiscardQueue<T, tailDrop, TIndex>::Pop()
         return DiscardQueuePopAwaiter<T, tailDrop, TIndex>(etl::move(item));
     }
     return DiscardQueuePopAwaiter<T, tailDrop, TIndex>(this);
+}
+
+template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
+DiscardQueuePopAwaiter<T, tailDrop, TIndex>
+DiscardQueue<T, tailDrop, TIndex>::operator co_await()
+{
+    return Pop();
 }
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>

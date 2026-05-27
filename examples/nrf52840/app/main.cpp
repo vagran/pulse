@@ -117,9 +117,9 @@ GpioOutputVoltageSetup(void)
 void
 RtcInterruptHandler(nrfx_rtc_int_type_t intType)
 {
-    // if (intType == nrfx_rtc_int_type_t::NRFX_RTC_INT_TICK) {
-    //     pulse::Timer::Tick();
-    // }
+    if (intType == nrfx_rtc_int_type_t::NRFX_RTC_INT_TICK) {
+        pulse::Timer::Tick();
+    }
 }
 
 void
@@ -147,7 +147,7 @@ InitTicks()
         Panic("RTC init failed");
     }
 
-    // nrfx_rtc_tick_enable(&rtc0, true);
+    nrfx_rtc_tick_enable(&rtc0, true);
     nrfx_rtc_enable(&rtc0);
 }
 
@@ -413,7 +413,7 @@ RotaryEncoder::LineTask(bool isA)
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
             size_t idx = co_await Task::WhenAny(
-                Task::SaveResult(lineEvents.Pop(), isPressed), jitterTimer);
+                Task::SaveResult(lineEvents, isPressed), jitterTimer);
             if (idx == 0) {
                 // Button toggled again, restart anti-jitter delay
                 continue;
@@ -436,7 +436,7 @@ RotaryEncoder::LineTask(bool isA)
             while (true) {
                 jitterTimer.ExpiresAfter(JITTER_DELAY);
                 size_t idx = co_await Task::WhenAny(
-                    Task::SaveResult(lineEvents.Pop(), isPressed), jitterTimer);
+                    Task::SaveResult(lineEvents, isPressed), jitterTimer);
                 if (idx == 0) {
                     continue;
                 }
@@ -568,6 +568,8 @@ pulsePort_TicklessSleep(uint32_t duration)
         return 0;
     }
 
+    nrfx_rtc_tick_disable(&rtc0);
+
     uint32_t start = nrfx_rtc_counter_get(&rtc0);
 
     uint32_t target = (start + duration) & RTC_COUNTER_MASK;
@@ -579,6 +581,7 @@ pulsePort_TicklessSleep(uint32_t duration)
     uint32_t end = nrfx_rtc_counter_get(&rtc0);
 
     nrfx_rtc_cc_disable(&rtc0, 0);
+    nrfx_rtc_tick_enable(&rtc0, true);
 
     uint32_t elapsed = (end - start) & RTC_COUNTER_MASK;
 

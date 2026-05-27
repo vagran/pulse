@@ -730,6 +730,78 @@ TEST_CASE("WhenAny")
 }
 
 
+TEST_CASE("WhenAny - SaveResult")
+{
+    struct Tasks {
+        static TTask<int>
+        T1(TokenQueue<> &q)
+        {
+            CheckResult(1, "T3:1");
+            results.push_back("T1:1");
+            size_t t = co_await q;
+            REQUIRE(t == 10);
+            CheckResult(4, "T4:1");
+            results.push_back("T1:2");
+            co_return t;
+        }
+
+        static TTask<int>
+        T2(TokenQueue<> &q)
+        {
+            CheckResult(2, "T1:1");
+            results.push_back("T2:1");
+            size_t t = co_await q;
+            REQUIRE(t == 20);
+            CheckResult(7, "T4:2");
+            results.push_back("T2:2");
+            co_return t;
+        }
+
+        static TaskV
+        T3(TTask<int> t1, TTask<int> t2)
+        {
+            REQUIRE(results.empty());
+            results.push_back("T3:1");
+            size_t r1, r2;
+            size_t idx = co_await Task::WhenAny(Task::SaveResult(t1, r1), Task::SaveResult(t2, r2));
+            REQUIRE(idx == 0);
+            REQUIRE(r1 == 10);
+            CheckResult(5, "T1:2");
+            results.push_back("T3:2");
+        }
+
+        static TaskV
+        T4(TokenQueue<> &q1, TokenQueue<> &q2)
+        {
+            CheckResult(3, "T2:1");
+            results.push_back("T4:1");
+            q1.Push();
+            co_await Task::Switch();
+            CheckResult(6, "T3:2");
+            results.push_back("T4:2");
+            q2.Push();
+            co_return;
+        }
+    };
+
+    TokenQueue<> q1(1, 10), q2(1, 20);
+
+    results.clear();
+
+    auto t1 = Task::Spawn(Tasks::T1(q1));
+
+    auto t2 = Task::Spawn(Tasks::T2(q2));
+
+    auto t3 = Task::Spawn(Tasks::T3(t1, t2), 0);
+
+    auto t4 = Task::Spawn(Tasks::T4(q1, q2));
+
+    Task::RunSome();
+
+    CheckResult(8, "T2:2");
+}
+
+
 TEST_CASE("WhenAny - mixed task/awaiters")
 {
     struct Tasks {

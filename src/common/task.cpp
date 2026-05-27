@@ -325,13 +325,114 @@ TaskPromise::~TaskPromise()
     }
 }
 
+void
+TaskPromise::AddRef()
+{
+    auto cur = refCounter.load();
+    while (true) {
+        // refCounter should never reach zero when using this method since it is always should be
+        // used on some task which holds a reference.
+        PULSE_ASSERT(cur != 0);
+        if (cur == etl::numeric_limits<decltype(cur)>::max() ||
+            cur == etl::numeric_limits<decltype(cur)>::min()) {
+
+            PULSE_PANIC("Task reference counter overflow");
+        }
+        auto newValue = cur >= 0 ? cur + 1 : cur - 1;
+        if (refCounter.compare_exchange_weak(cur, newValue)) {
+            break;
+        }
+    }
+}
+
+bool
+TaskPromise::TryAddRef()
+{
+    auto cur = refCounter.load();
+    while (cur != 0) {
+        if (cur == etl::numeric_limits<decltype(cur)>::max() ||
+            cur == etl::numeric_limits<decltype(cur)>::min()) {
+
+            PULSE_PANIC("Task reference counter overflow");
+        }
+        auto newValue = cur >= 0 ? cur + 1 : cur - 1;
+        if (refCounter.compare_exchange_weak(cur, newValue)) {
+            return true;
+        }
+    }
+    // Reference counter reached zero but task is not yet destructed.
+    return false;
+}
+
+bool
+TaskPromise::ReleaseRef()
+{
+    auto cur = refCounter.load();
+    while (true) {
+        if (cur == 0 || cur == -1) {
+            PULSE_PANIC("Task reference counter underflow");
+        }
+        auto newValue = cur > 0 ? cur - 1 : cur + 1;
+        if (refCounter.compare_exchange_weak(cur, newValue)) {
+            return newValue == 0;
+        }
+    }
+}
+
+void
+TaskPromise::Pin()
+{
+    auto cur = refCounter.load();
+    while (true) {
+        if (cur == 0) {
+            PULSE_PANIC("Pinning unreferenced task");
+        }
+        if (cur < 0) {
+            // Already pinned
+            break;
+        }
+        if (refCounter.compare_exchange_weak(cur, -cur - 1)) {
+            break;
+        }
+    }
+}
+
+bool
+TaskPromise::Unpin()
+{
+    auto cur = refCounter.load();
+    while (true) {
+        if (cur == 0) {
+            PULSE_PANIC("Unpinning unreferenced task");
+        }
+        if (cur > 0) {
+            // Not pinned
+            return false;
+        }
+        auto newValue = -cur - 1;
+        if (refCounter.compare_exchange_weak(cur, newValue)) {
+            return newValue == 0;
+        }
+    }
+}
+
 Task::WeakPtr
 TaskPromise::GetWeakPtr()
 {
     if (weakPtrTag) {
         return weakPtrTag;
     }
-    weakPtrTag = new details::TaskWeakPtrTag(Task::CoroutineHandle::from_promise(*this));
+    auto tag = new details::TaskWeakPtrTag(Task::CoroutineHandle::from_promise(*this));
+    if (!tag) {
+        PULSE_PANIC("TaskWeakPtrTag allocation failed");
+    }
+    CriticalSection cs;
+    if (weakPtrTag) {
+        cs.Exit();
+        delete tag;
+    } else {
+        weakPtrTag = SharedPtr<details::TaskWeakPtrTag>(tag, true);
+    }
     return weakPtrTag;
 }
 
@@ -354,7 +455,7 @@ details::TaskWeakPtr::Lock()
     if (!tag) {
         return nullptr;
     }
-    return tag->handle;
+    return Task(tag->handle, Task::WeakTag());
 }
 
 
@@ -363,15 +464,17 @@ details::MultipleTasksAwaiterBase::Finish(Entry *tasks, size_t numTasks)
 {
     for (size_t i = 0; i < numTasks; i++) {
         Entry &e = tasks[i];
-        if (e.target) {
-            TaskPromise &handlerPromise = e.handler.GetPromise();
-            CriticalSection cs;
-            if (!handlerPromise.isFinished) {
-                if (handlerPromise.isRunnable) {
-                    DescheduleTask(e.handler);
-                }
-                // If still waiting, TaskAwaiter destructor will remove it from wait list.
-            }
+        if (!e.target) {
+            continue;
+        }
+        CriticalSection cs;
+        TaskPromise &handlerPromise = e.handler.GetPromise();
+        if (!handlerPromise.isFinished && handlerPromise.isRunnable) {
+            DescheduleTask(e.handler);
+        }
+        TaskPromise &targetPromise = e.target.GetPromise();
+        if (!targetPromise.isFinished && targetPromise.isRunnable) {
+            DescheduleTask(e.target);
         }
     }
 }
