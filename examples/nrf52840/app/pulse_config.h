@@ -60,4 +60,6 @@ LogGetTimestamp(char *buffer, size_t bufferSize);
 
 #define pulseConfig_LOG_GET_TIMESTAMP               LogGetTimestamp
 
+#define pulseConfig_PULSE_LOG_LEVEL                 PULSE_LOG_LEVEL_INFO
+
 #endif /* PULSE_CONFIG_H */

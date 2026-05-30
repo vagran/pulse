@@ -211,7 +211,7 @@ ConfirmSwitch(int intervalIndex)
 }
 
 // Handles LED blinking
-TaskV
+Task<>
 BlinkTask()
 {
     int intervalIndex = blinkIntervalIndex;
@@ -236,7 +236,7 @@ BlinkTask()
 }
 
 // Handles button debouncing
-TaskV
+Task<>
 ButtonTask()
 {
     constexpr auto JITTER_DELAY = etl::chrono::milliseconds(20);
@@ -248,7 +248,7 @@ ButtonTask()
         bool pressed = false;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await Task::WhenAny(buttonEvents, jitterTimer);
+            size_t idx = co_await tasks::WhenAny(buttonEvents, jitterTimer);
             if (idx == 0) {
                 // Button pressed again, restart anti-jitter delay
                 continue;
@@ -307,7 +307,7 @@ private:
     bool lastLine = false, halfClick = false;
     InlineDiscardQueue<int8_t, true, 16> clicks;
 
-    TaskV
+    Task<>
     LineTask(bool isA);
 
     static bool
@@ -335,11 +335,11 @@ RotaryEncoder::OnLineInterrupt(bool isA)
 void
 RotaryEncoder::Initialize()
 {
-    Task::Spawn(LineTask(true), Task::HIGHEST_PRIORITY).Pin();
-    Task::Spawn(LineTask(false), Task::HIGHEST_PRIORITY).Pin();
+    tasks::Spawn(LineTask(true), tasks::HIGHEST_PRIORITY).Pin();
+    tasks::Spawn(LineTask(false), tasks::HIGHEST_PRIORITY).Pin();
 }
 
-TaskV
+Task<>
 RotaryEncoder::LineTask(bool isA)
 {
     constexpr auto JITTER_DELAY = etl::chrono::milliseconds(1);
@@ -351,7 +351,7 @@ RotaryEncoder::LineTask(bool isA)
         bool pressed = false;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await Task::WhenAny((isA ? lineAEvents : lineBEvents), jitterTimer);
+            size_t idx = co_await tasks::WhenAny((isA ? lineAEvents : lineBEvents), jitterTimer);
             if (idx == 0) {
                 // Activated again, restart anti-jitter delay
                 continue;
@@ -409,7 +409,7 @@ RotaryEncoder::CommitClick(bool dir)
     }
 }
 
-TaskV
+Task<>
 RotaryEncoderTask()
 {
     while (true) {
@@ -479,11 +479,11 @@ main()
     InitButton();
     rotEnc.Initialize();
 
-    Task::Spawn(BlinkTask()).Pin();
-    Task::Spawn(ButtonTask()).Pin();
-    Task::Spawn(RotaryEncoderTask()).Pin();
+    tasks::Spawn(BlinkTask()).Pin();
+    tasks::Spawn(ButtonTask()).Pin();
+    tasks::Spawn(RotaryEncoderTask()).Pin();
 
-    Task::RunScheduler();
+    tasks::RunScheduler();
 
     Panic("Scheduler exited");
 }
