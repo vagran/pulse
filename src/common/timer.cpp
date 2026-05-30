@@ -194,10 +194,10 @@ Timer::ScheduleAwaiters()
         awaiter->state = state == FIRED ?
             TimerAwaiter::State::FIRED : TimerAwaiter::State::CANCELLED;
         awaiter->timer.Reset();
-        Task task = awaiter->waiter.Lock();
+        TaskRef task = awaiter->waiter.Lock();
         awaiter->waiter.Reset();
         if (task) {
-            etl::move(task).Schedule();
+            task.Schedule();
         }
     }
     return n;
@@ -251,12 +251,12 @@ TimerAwaiter::await_ready() const
 }
 
 bool
-TimerAwaiter::await_suspend(Task::CoroutineHandle handle)
+TimerAwaiter::await_suspend(tasks::CoroutineHandle handle)
 {
     if (state != State::SCHEDULED) {
         return false;
     }
-    waiter = Task(handle).GetWeakPtr();
+    waiter = TaskRef(handle).GetWeakPtr();
     return true;
 }
 

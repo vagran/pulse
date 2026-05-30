@@ -30,4 +30,10 @@ extern "C" void Panic(const char *msg);
 
 #define pulseConfig_DEFINE_CPP_NEW                  0
 
+extern "C" void LogPutChar(char c);
+
+#define pulseConfig_LOG_PUT_CHAR                    LogPutChar
+#define pulseConfig_LOG_LEVEL                       PULSE_LOG_LEVEL_INFO
+#define pulseConfig_PULSE_LOG_LEVEL                 PULSE_LOG_LEVEL_INFO
+
 #endif /* COMMON_PULSE_CONFIG_H */

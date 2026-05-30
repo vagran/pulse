@@ -14,151 +14,313 @@
 
 namespace pulse {
 
-class TaskPromise;
+
+namespace details {
+
+/// Task control block associated with every task/awaitable.
+struct TaskCb;
+
+/// Promise type for coroutines.
+class TaskPromiseBase;
+
+template <typename TRet>
+class TypedTaskPromise;
 
 template <typename TRet, bool initialSuspend>
-class TTaskPromise;
+class TaskPromise;
 
-template <typename TRet, bool initialSuspend = true>
-class TTask;
+/// Base class for awaiter for task result.
+class TaskAwaiterBase;
 
-/// Task returning void result.
-using TaskV = TTask<void>;
 
-/// Return this type from non-top-level async functions not meant to be spawned as scheduler tasks.
-template <typename TRet>
-using Awaitable = TTask<TRet, false>;
+struct TaskCbSharedPtrTrait: public details::SharedPtrDefaultAtomicTrait<TaskCb> {
+    static inline void
+    Delete(TaskCb &obj);
+};
+
+using TaskCbPtr = SharedPtr<details::TaskCb, details::TaskCbSharedPtrTrait>;
+
+class TaskImpl;
+
+} // namespace details
+
+
+namespace tasks {
+
+static constexpr int NUM_PRIO_BITS = BitWidth(pulseConfig_NUM_TASK_PRIORITIES - 1);
+
+using Priority = uint8_t;
+
+static constexpr Priority HIGHEST_PRIORITY = 0,
+                          LOWEST_PRIORITY = pulseConfig_NUM_TASK_PRIORITIES - 1;
+
+using CoroutineHandle = std::coroutine_handle<details::TaskPromiseBase>;
+
+} // namespace tasks
+
+class TaskWeakRef;
 
 class TaskSwitchAwaiter;
 
 template <typename TRet>
 class TaskAwaiter;
 
-template <size_t NumTasks = etl::dynamic_extent>
-class AllTasksAwaiter;
-
-template <size_t NumTasks = etl::dynamic_extent>
-class AnyTaskAwaiter;
-
 
 namespace details {
 
-/// Function suitable for spawning tasks.
-template <typename F, typename TRet, typename... Args>
-concept AsyncTaskFunction = etl::is_invocable_r_v<TTask<TRet>, F, Args...>;
+class TaskRefBase {
+public:
+    TaskRefBase() = default;
 
-template <typename T>
-struct TaskTraits {
-    static constexpr bool isTask = false;
+    TaskRefBase(const TaskRefBase &) = default;
+    TaskRefBase(TaskRefBase &&) = default;
+
+    TaskRefBase(etl::nullptr_t):
+        cb(nullptr)
+    {}
+
+    TaskRefBase &
+    operator =(const TaskRefBase &other) = default;
+
+    TaskRefBase &
+    operator =(TaskRefBase &&other) = default;
+
+    bool
+    operator ==(const TaskRefBase &other) const
+    {
+        return cb == other.cb;
+    }
+
+    bool
+    operator !=(const TaskRefBase &other) const
+    {
+        return cb != other.cb;
+    }
+
+    /// @return True if bound to a control block.
+    operator bool() const
+    {
+        return cb;
+    }
+
+    inline bool
+    IsFinished() const;
+
+    inline tasks::Priority
+    GetPriority() const;
+
+protected:
+    details::TaskCbPtr cb;
+
+    TaskRefBase(details::TaskCbPtr cb):
+        cb(etl::move(cb))
+    {}
+
+    TaskRefBase(details::TaskCb *cb):
+        cb(cb)
+    {}
 };
-
-template <typename TRet_, bool initialSuspend_>
-struct TaskTraits<TTask<TRet_, initialSuspend_>> {
-    static constexpr bool isTask = true;
-
-    using TRet = TRet_;
-    static constexpr bool initialSuspend = initialSuspend_;
-};
-
-class TaskImpl;
-
-class TaskAwaiterBase;
-
-class TaskWeakPtr;
-class TaskWeakPtrTag;
 
 } // namespace details
 
 
-/// Smart pointer for coroutine frame. At least one reference should be kept until task is finished
-/// otherwise it might be destroyed earlier. Alternatively task can be pinned.
-class Task {
+/// Task handle. Task is destroyed when last handle is destroyed (if the task is not pinned).
+class TaskRef: public details::TaskRefBase {
 public:
-    using TPromise = TaskPromise;
 
-    static constexpr int NUM_PRIO_BITS = BitWidth(pulseConfig_NUM_TASK_PRIORITIES - 1);
-
-    using Priority = uint8_t;
-
-    static constexpr Priority HIGHEST_PRIORITY = 0,
-                              ISR_PRIORITY = HIGHEST_PRIORITY,
-                              LOWEST_PRIORITY = pulseConfig_NUM_TASK_PRIORITIES - 1;
-
-    using CoroutineHandle = std::coroutine_handle<TaskPromise>;
-
-    /** Does not prevent task from destruction when last reference from `Task` handle is released.
-     */
-    using WeakPtr = details::TaskWeakPtr;
-
-    /// Marker for construction from weak reference.
-    struct WeakTag {};
-
-
-    Task() = default;
-
-    Task(etl::nullptr_t):
-        Task()
-    {}
+    TaskRef() = default;
 
     inline
-    Task(CoroutineHandle handle);
+    TaskRef(const TaskRef &other);
 
-    /// Construct task from handle stored in WeakPtr. It might be already released so it should be
-    /// checked and empty task is created in such case.
-    inline
-    Task(CoroutineHandle handle, WeakTag);
+    TaskRef(TaskRef &&other) = default;
 
-    inline
-    Task(const Task &other);
+    TaskRef(tasks::CoroutineHandle coro);
 
-    Task(Task &&other):
-        handle(other.handle)
-    {
-        other.handle = CoroutineHandle();
-    }
-
-    ~Task()
+    ~TaskRef()
     {
         ReleaseHandle();
     }
 
-    inline Task &
-    operator =(const Task &other);
+    inline TaskRef &
+    operator =(const TaskRef &other);
 
-    inline Task &
-    operator =(Task &&other);
-
-    bool
-    operator ==(const Task &other) const
-    {
-        return handle == other.handle;
-    }
-
-    bool
-    operator !=(const Task &other) const
-    {
-        return handle != other.handle;
-    }
+    TaskRef &
+    operator =(TaskRef &&other) = default;
 
     /// Clear associated handle, making this task null.
-    inline void
+    void
     ReleaseHandle();
 
-    TPromise &
-    GetPromise() const
-    {
-        PULSE_ASSERT(handle);
-        return handle.promise();
-    }
-
-    /// @return True if bound to a valid coroutine frame.
-    operator bool() const
-    {
-        return handle;
-    }
-
     /// Pin task so that it is not destructed if last reference released.
+    inline TaskRef &
+    Pin();
+
+    /** Unpin task if was previously pinned by `Pin()` method.
+     *
+     * @return True if task did not have references, was by pinning only, and was destroyed after
+     *  unpinning.
+     */
+    bool
+    Unpin() const;
+
+    /** Get weak reference to this task. */
+    inline TaskWeakRef
+    GetWeakPtr() const;
+
+    /** Enqueue this task into ready tasks queue according to its current priority. Can be called
+     * from ISR.
+     */
+    void
+    Schedule() const;
+
     inline void
+    SetPriority(tasks::Priority priority) const;
+
+    /// Set new priority if it is higher than current task priority.
+    inline void
+    RaisePriority(tasks::Priority priority) const;
+
+    inline TaskAwaiter<void>
+    Wait() const;
+
+    inline TaskAwaiter<void>
+    operator co_await() const;
+
+protected:
+    template<typename TRet, bool initialSuspend>
+    friend class details::TaskPromise;
+
+    friend struct details::TaskCb;
+    friend class details::TaskImpl;
+    friend class TaskWeakRef;
+    friend class TaskSwitchAwaiter;
+    friend class details::TaskAwaiterBase;
+    friend class details::TaskPromiseBase;
+
+    template<typename TRet>
+    friend class TaskAwaiter;
+
+
+    TaskRef(details::TaskCbPtr cb):
+        TaskRefBase(etl::move(cb))
+    {}
+
+    inline details::TaskPromiseBase &
+    GetPromise() const;
+};
+
+
+// Weak reference to task. Does not prevent coroutine from destruction.
+class TaskWeakRef: public details::TaskRefBase {
+public:
+    using TaskRefBase::TaskRefBase;
+
+    /** Obtain reference to task if not yet destroyed. Returns null (empty Task) if already
+     * destroyed.
+     */
+    TaskRef
+    Lock();
+
+    /// Make it null.
+    void
+    Reset()
+    {
+        cb.Reset();
+    }
+
+    /** Locks referenced task, resets this pointer and schedules the task if any. This is typical
+     * pattern used in awaiters.
+     */
+    void
+    Wakeup()
+    {
+        TaskRef t = Lock();
+        Reset();
+        if (t) {
+            etl::move(t).Schedule();
+        }
+    }
+
+private:
+    friend class TaskRef;
+    friend class details::TaskImpl;
+
+    TaskWeakRef(details::TaskCb *cb):
+        TaskRefBase(cb)
+    {}
+
+    TaskWeakRef(details::TaskCbPtr cb):
+        TaskRefBase(etl::move(cb))
+    {}
+};
+
+
+namespace details {
+
+/// Task control block associated with every task/awaitable.
+struct TaskCb {
+    /// Next task when in list, null if last one. Reference should be accounted by a list.
+    TaskCb *next = nullptr;
+    /// Null when destroyed.
+    tasks::CoroutineHandle coro;
+    /// Awaiters currently awaiting this task finishing.
+    List<details::TaskAwaiterBase *> resultWaiters;
+    /// Reference counter for coroutine (strong references). Coroutine is destroyed after last
+    /// reference is released if not pinned. Negated values (`-value - 1`) used to indicate that
+    /// task is pinned - destruction is prevented when last reference is released.
+    etl::atomic<int8_t> coroRefCounter = 1;
+
+    /// Reference counter for control block (weak references).
+    etl::atomic<int8_t> refCounter = 1;
+
+    uint8_t priority: tasks::NUM_PRIO_BITS = tasks::LOWEST_PRIORITY,
+    /// Task currently queued in runnable queue.
+            isRunnable: 1 = 0,
+    /// Task finished and result is available.
+            isFinished: 1 = 0;
+
+    /// Allocate control block from pool or heap.
+    static TaskCb *
+    Allocate();
+
+    /// Free control block to pool.
+    void
+    Free();
+
+    void
+    AddRef()
+    {
+        TaskCbSharedPtrTrait::AddRef(*this);
+    }
+
+    bool
+    ReleaseRef()
+    {
+        return TaskCbSharedPtrTrait::ReleaseRef(*this);
+    }
+
+    void
+    CoroAddRef();
+
+    /// Try adding reference which may not succeed if reference counter already reached zero (e.g.
+    /// last reference released concurrently by ISR). This is intended for using by task weak
+    /// pointer.
+    bool
+    CoroTryAddRef();
+
+    /// @return True if last reference released and coroutine was destroyed.
+    bool
+    CoroReleaseRef();
+
+    TaskRef
+    GetRef()
+    {
+        CoroAddRef();
+        return TaskRef(details::TaskCbPtr(this, false));
+    }
+
+    void
     Pin();
 
     /** Unpin task if was previously pinned by `Pin()` method.
@@ -169,353 +331,41 @@ public:
     bool
     Unpin();
 
-    /** Get weak pointer to this task. This requires dynamic allocation for the first call for the
-     * given co-routine instance.
-     */
-    inline WeakPtr
-    GetWeakPtr();
-
-    /** Enqueue this task into ready tasks queue according to its current priority. */
+    /// Wake up all tasks waiting for this task completion.
     void
-    Schedule() const &;
+    NotifyWaiters();
 
+    /// Resume task coroutine.
     void
-    Schedule() &&;
-
-    inline bool
-    IsFinished() const;
-
-    void
-    SetPriority(Priority priority);
-
-    /// Set new priority if it is higher than current task priority.
-    void
-    RaisePriority(Priority priority);
-
-    /** Pass the task to the scheduler. The returned reference should be kept until task is finished
-     * otherwise it might be destroyed once the first suspension point is reached (scheduler
-     * releases its reference and awaiters are not allowed to store task reference to prevent
-     * reference loop).
-     */
-    template <typename TRet>
-    static TTask<TRet, true>
-    Spawn(TTask<TRet, true> task, Priority priority = LOWEST_PRIORITY)
-    {
-        SpawnImpl(task, priority);
-        return etl::move(task);
-    }
-
-    /** Spawn new task by providing task function.
-     * @return Created task.
-     */
-    template <typename F, typename... Args>
-    requires details::AsyncTaskFunction<F,
-        typename details::TaskTraits<etl::invoke_result_t<F, Args...>>::TRet, Args...>
-    static auto
-    Spawn(F &&func, Args &&... args)
-    {
-        auto task = etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
-        SpawnImpl(task, LOWEST_PRIORITY);
-        return etl::move(task);
-    }
-
-    /** Spawn new task by providing task function.
-     * @return Created task.
-     */
-    template <typename F, typename... Args>
-    requires details::AsyncTaskFunction<F,
-        typename details::TaskTraits<etl::invoke_result_t<F, Args...>>::TRet, Args...>
-    static auto
-    Spawn(F &&func, Priority priority, Args &&... args)
-    {
-        auto task = etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
-        SpawnImpl(task, priority);
-        return etl::move(task);
-    }
-
-    /** Spawn new task by providing synchronous function. The function is called when task is run by
-     * the scheduler. Can be used to defer the call, e.g. from ISR.
-     * @return Created task.
-     */
-    template <typename F, typename... Args>
-    requires etl::is_invocable_v<F, Args...> &&
-        (!details::TaskTraits<etl::invoke_result_t<F, Args...>>::isTask)
-    static auto
-    Spawn(F &&func, Args &&... args)
-    {
-        using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
-
-        auto taskFunc = [](etl::remove_cvref_t<F> func,
-                           etl::remove_cvref_t<Args>... args) -> TTask<TRet> {
-            co_return etl::invoke(etl::move(func), etl::move(args)...);
-        };
-
-        auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
-        SpawnImpl(task, LOWEST_PRIORITY);
-        return etl::move(task);
-    }
-
-    /** Spawn new task by providing synchronous function. The function is called when task is run by
-     * the scheduler. Can be used to defer the call, e.g. from ISR.
-     * @return Created task.
-     */
-    template <typename F, typename... Args>
-    requires etl::is_invocable_v<F, Args...> &&
-        (!details::TaskTraits<etl::invoke_result_t<F, Args...>>::isTask)
-    static auto
-    Spawn(F &&func, Priority priority, Args &&... args)
-    {
-        using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
-
-        auto taskFunc = [](etl::remove_cvref_t<F> func,
-                           etl::remove_cvref_t<Args>... args) -> TTask<TRet> {
-            co_return etl::invoke(etl::move(func), etl::move(args)...);
-        };
-
-        auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
-        SpawnImpl(task, priority);
-        return etl::move(task);
-    }
-
-    /**
-     * Run main loop of tasks scheduler. Never returns.
-     */
-    static void
-    RunScheduler();
-
-    /** Run tasks which are currently in runnable state. Exits when no more runnable task. */
-    static void
-    RunSome();
-
-    /** @return Currently running task if any. This is top-level task, which is run by scheduler.
-     * When calling asynchronous functions, newly created coroutine is not top-level until it is
-     * suspended and later resumed by scheduler.
-     */
-    static Task
-    GetCurrent();
-
-    /** Switch to other runnable task if any. `co_await` returns true if task was switched, false if
-     * immediately returned to calling task.
-     * @code
-     * co_await Task::Switch();
-     * @endcode
-     */
-    static inline TaskSwitchAwaiter
-    Switch();
-
-    inline TaskAwaiter<void>
-    Wait() const;
-
-    inline TaskAwaiter<void>
-    operator co_await() const;
-
-    /** Wait when all of the provided tasks complete. Uses dynamic allocation for tasks list if
-     * `NumTasks` is `etl::dynamic_extent`.
-     */
-    template<size_t NumTasks = etl::dynamic_extent>
-    static inline AllTasksAwaiter<NumTasks>
-    WhenAll(const etl::span<Task, NumTasks> &tasks);
-
-    /* Wait when any of the provided tasks completes. `co_await` returns index of the first
-     * completed task. Uses dynamic allocation for tasks list if `NumTasks` is
-     * `etl::dynamic_extent`.
-     */
-    template<size_t NumTasks = etl::dynamic_extent>
-    static inline AnyTaskAwaiter<NumTasks>
-    WhenAny(const etl::span<Task, NumTasks> &tasks);
-
-    /** Wait when all of the provided tasks complete. Arguments may either be tasks or any awaiter
-     * objects. Awaiter objects should have lifetime at least until return awaiter is resumed.
-     */
-    template <class T1, class T2, class... Args>
-    static AllTasksAwaiter<sizeof...(Args) + 2>
-    WhenAll(T1 &&task1, T2 &&task2, Args &&... tasks);
-
-    /** Wait when any of the provided tasks completes. Arguments may either be tasks or any awaiter
-     * objects. Awaiter objects should have lifetime at least until return awaiter is resumed.
-     */
-    template <class T1, class T2, class... Args>
-    static AnyTaskAwaiter<sizeof...(Args) + 2>
-    WhenAny(T1 &&task1, T2 &&task2, Args &&... tasks);
-
-    /** Helper to wrap awaiters into task. Can also accept Task or TTask and return it as is.
-     * Passed awaiter lifetime should be at least until the returned task is finished (awaiter
-     * resumes).
-     */
-    template <class T>
-    static inline Task
-    Make(T &&obj);
-
-    /** Helper to save arbitrary awaiter result into the specified variable. Useful when waiting on
-     * multiple tasks by `WhenAll` or `WhenAny`. Be very careful with the passed awaiter lifetime -
-     * it should not be shorter than the resulting coroutine.
-     */
-    template <typename TResult, typename TAwaiter>
-    static Awaitable<void>
-    SaveResult(TAwaiter &&awaiter, etl::optional<TResult> &result);
-
-    template <typename TResult, typename TAwaiter>
-    static Awaitable<void>
-    SaveResult(TAwaiter &&awaiter, TResult &result);
-
-protected:
-    friend class TaskPromise;
-    friend class details::TaskImpl;
-
-    template <typename, bool>
-    friend class TTaskPromise;
-
-    friend class details::TaskAwaiterBase;
-
-    template<typename>
-    friend class TaskAwaiter;
-
-    CoroutineHandle handle;
-
-    void
-    Resume()
-    {
-        if (!handle.done()) {
-            handle.resume();
-        }
-    }
-
-    struct PrerefTag {};
-
-    /// Construct task without adding reference. This should be used for initial construction only.
-    Task(CoroutineHandle handle, PrerefTag):
-        handle(handle)
-    {}
-
-private:
-    /** Spawns new task with the specified priority. Returns ID_NONE if failed (if
-     * `pulseConfig_PANIC_ON_TASK_SPAWN_FAILURE` disabled, panics otherwise).
-     * @param task Task object returned by coroutine function.
-     * @param priority Task priority.
-     */
-    static void
-    SpawnImpl(Task task, Priority priority = LOWEST_PRIORITY);
+    Resume();
 
     /// @return True if added to wait list, false if already finished.
     bool
-    AwaitResult(details::TaskAwaiterBase *waiter, const Task &task) const;
+    AwaitResult(details::TaskAwaiterBase *waiter, const TaskRef &waiterTask);
 
     void
-    CancelAwaitResult(details::TaskAwaiterBase *waiter) const;
-};
-
-
-template <typename TRet, bool initialSuspend>
-class TTask: public Task {
-public:
-    using TPromise = TTaskPromise<TRet, initialSuspend>;
-
-    using Task::Task;
-
-    TPromise &
-    GetPromise() const
-    {
-        PULSE_ASSERT(handle);
-        return reinterpret_cast<TPromise &>(handle.promise());
-    }
-
-    inline const TRet &
-    GetResult() const;
-
-    inline TaskAwaiter<TRet>
-    Wait() const;
-
-    inline TaskAwaiter<TRet>
-    operator co_await() const;
-};
-
-template <bool initialSuspend>
-class TTask<void, initialSuspend>: public Task {
-public:
-    using TPromise = TTaskPromise<void, initialSuspend>;
-
-    using Task::Task;
-
-    TPromise &
-    GetPromise() const
-    {
-        PULSE_ASSERT(handle);
-        return reinterpret_cast<TPromise &>(handle.promise());
-    }
-
-    inline TaskAwaiter<void>
-    Wait() const;
-
-    inline TaskAwaiter<void>
-    operator co_await() const;
-};
-
-
-namespace details {
-
-struct TaskListTrait {
-    static inline Task
-    GetNext(const Task &p);
-
-    template <typename TPtr>
-    static inline void
-    SetNext(Task &p, TPtr &&next);
-};
-
-} // namespace details
-
-using TaskList = List<Task, details::TaskListTrait>;
-using TaskTailedList = TailedList<Task, details::TaskListTrait>;
-
-
-/** Also acts as task control block. */
-class TaskPromise {
-public:
-    /// Next task when in list, none if last one.
-    Task next = nullptr;
-    /// Tag for weak pointers if any created.
-    SharedPtr<details::TaskWeakPtrTag> weakPtrTag = nullptr;
-    /// Awaiters currently awaiting this task finishing.
-    List<details::TaskAwaiterBase *> resultWaiters;
-    /// Negated values (`-value - 1`) used to indicate that task is pinned - destruction is
-    /// prevented when last reference is released.
-    etl::atomic<int8_t> refCounter = 1;
-    uint8_t priority: Task::NUM_PRIO_BITS = Task::LOWEST_PRIORITY,
-    /// Task currently queued in runnable queue.
-            isRunnable: 1 = 0,
-    /// Task finished and result is available.
-            isFinished: 1 = 0;
-
-    TaskPromise();
-
-    // No need to make it virtual since promise object is always constructed and destructed from
-    // coroutine frame constructor/destructor by concrete type.
-    ~TaskPromise();
-
-    /// Add reference from new Task instance.
-    void
-    AddRef();
-
-    /// Try adding reference which may not succeed if reference counter already reached zero (e.g.
-    /// last reference released concurrently by ISR). This is intended for using by task weak
-    /// pointer.
-    bool
-    TryAddRef();
-
-    /// Release reference from Task instance.
-    /// @return True if last reference released.
-    bool
-    ReleaseRef();
+    CancelAwaitResult(details::TaskAwaiterBase *waiter);
 
     void
-    Pin();
+    SetPriority(tasks::Priority priority);
 
-    /// @return True if last reference released.
-    bool
-    Unpin();
+    /// Set new priority if it is higher than current task priority.
+    void
+    RaisePriority(tasks::Priority priority);
+};
 
-    Task::WeakPtr
-    GetWeakPtr();
+
+using TaskList = List<TaskCb *>;
+using TaskTailedList = TailedList<TaskCb *>;
+
+
+class TaskPromiseBase {
+public:
+    TaskCbPtr cb;
+
+    TaskPromiseBase();
+
+    ~TaskPromiseBase();
 
     std::suspend_always
     final_suspend() noexcept
@@ -528,14 +378,106 @@ public:
     void
     unhandled_exception()
     {
-        PULSE_PANIC("TaskPromise::unhandled_exception");
+        PULSE_PANIC("TaskPromiseBase::unhandled_exception");
+    }
+};
+
+
+template <typename TRet>
+class TypedTaskPromise: public TaskPromiseBase {
+public:
+    ~TypedTaskPromise()
+    {
+        if (cb->isFinished) {
+            etl::destroy_at(&GetResult());
+        }
     }
 
-protected:
-
-    /// Wake up all tasks waiting for this task completion.
+    template<etl::convertible_to<TRet> From>
     void
-    NotifyWaiters();
+    return_value(From&& from)
+    {
+        cb->isFinished = 1;
+        etl::construct_at<TRet>(reinterpret_cast<TRet *>(result), etl::forward<From>(from));
+        cb->NotifyWaiters();
+    }
+
+    const TRet &
+    GetResult() const
+    {
+        PULSE_ASSERT(cb->isFinished);
+        return *reinterpret_cast<const TRet *>(result);
+    }
+
+    /** Move result out of stored value. */
+    TRet &&
+    MoveResult()
+    {
+        PULSE_ASSERT(cb->isFinished);
+        return etl::move(*reinterpret_cast<TRet *>(result));
+    }
+
+private:
+    alignas(TRet) uint8_t result[sizeof(TRet)];
+};
+
+
+template <>
+class TypedTaskPromise<void>: public TaskPromiseBase {
+public:
+    void
+    return_void()
+    {
+        cb->isFinished = 1;
+        cb->NotifyWaiters();
+    }
+};
+
+
+template <typename TRet, bool initialSuspend>
+class Task: public TaskRef {
+public:
+    using TPromise = TaskPromise<TRet, initialSuspend>;
+
+    using TaskRef::TaskRef;
+
+    inline const TRet &
+    GetResult() const;
+
+    inline TaskAwaiter<TRet>
+    Wait() const;
+
+    inline TaskAwaiter<TRet>
+    operator co_await() const;
+
+private:
+    TPromise &
+    GetPromise() const
+    {
+        return reinterpret_cast<TPromise &>(TaskRef::GetPromise());
+    }
+};
+
+
+template <bool initialSuspend>
+class Task<void, initialSuspend>: public TaskRef {
+public:
+    using TPromise = TaskPromise<void, initialSuspend>;
+
+    using TaskRef::TaskRef;
+
+    inline TaskAwaiter<void>
+    Wait() const;
+
+    inline TaskAwaiter<void>
+    operator co_await() const;
+
+private:
+    TPromise &
+    GetPromise() const
+    {
+        return reinterpret_cast<TPromise &>(TaskRef::GetPromise());
+    }
 };
 
 
@@ -544,59 +486,8 @@ protected:
  * contrast, awaitable returned from async function should have it false so that it runs till first
  * suspension point (if any).
  */
-template <typename TRet, bool initialSuspend>
-class TTaskPromise: public TaskPromise {
-public:
-    ~TTaskPromise()
-    {
-        if (isFinished) {
-            etl::destroy_at(&GetResult());
-        }
-    }
-
-    etl::conditional_t<initialSuspend, std::suspend_always, std::suspend_never>
-    initial_suspend()
-    {
-        return {};
-    }
-
-    TTask<TRet, initialSuspend>
-    get_return_object()
-    {
-        return TTask<TRet, initialSuspend>(Task::CoroutineHandle::from_promise(*this),
-                                           Task::PrerefTag());
-    }
-
-    template<etl::convertible_to<TRet> From>
-    void
-    return_value(From&& from)
-    {
-        isFinished = 1;
-        etl::construct_at<TRet>(reinterpret_cast<TRet *>(result), etl::forward<From>(from));
-        NotifyWaiters();
-    }
-
-    const TRet &
-    GetResult() const
-    {
-        PULSE_ASSERT(isFinished);
-        return *reinterpret_cast<const TRet *>(result);
-    }
-
-    /** Move result out of stored value. */
-    TRet &&
-    MoveResult()
-    {
-        PULSE_ASSERT(isFinished);
-        return etl::move(*reinterpret_cast<TRet *>(result));
-    }
-
-private:
-    alignas(TRet) uint8_t result[sizeof(TRet)];
-};
-
-template <bool initialSuspend>
-class TTaskPromise<void, initialSuspend>: public TaskPromise {
+template<typename TRet, bool initialSuspend>
+class TaskPromise: public TypedTaskPromise<TRet> {
 public:
     etl::conditional_t<initialSuspend, std::suspend_always, std::suspend_never>
     initial_suspend()
@@ -604,104 +495,43 @@ public:
         return {};
     }
 
-    TTask<void, initialSuspend>
+    Task<TRet, initialSuspend>
     get_return_object()
     {
-        return TTask<void, initialSuspend>(Task::CoroutineHandle::from_promise(*this),
-                                           Task::PrerefTag());
-    }
-
-    void
-    return_void()
-    {
-        isFinished = 1;
-        NotifyWaiters();
+        return Task<TRet, initialSuspend>(TaskPromiseBase::cb);
     }
 };
 
 
-namespace details {
+/// Function suitable for spawning tasks.
+template <typename F, typename TRet, typename... Args>
+concept AsyncTaskFunction = etl::is_invocable_r_v<Task<TRet, true>, F, Args...>;
 
-class TaskWeakPtrTag {
-public:
-    TaskWeakPtrTag(Task::CoroutineHandle handle):
-        handle(handle)
-    {}
-
-    TaskWeakPtrTag(const TaskWeakPtrTag &) = delete;
-
-    // Null if co-routine destroyed.
-    Task::CoroutineHandle handle;
-
-private:
-    friend struct details::SharedPtrDefaultAtomicTrait<TaskWeakPtrTag>;
-
-    etl::atomic<uint8_t> refCounter = 1;
+template <typename T>
+struct TaskTraits {
+    static constexpr bool isTask = false;
 };
 
-class TaskWeakPtr {
-public:
-    TaskWeakPtr() = default;
-    TaskWeakPtr(const TaskWeakPtr &) = default;
-    TaskWeakPtr(TaskWeakPtr &&) = default;
+template <typename TRet_, bool initialSuspend_>
+struct TaskTraits<Task<TRet_, initialSuspend_>> {
+    static constexpr bool isTask = true;
 
-    TaskWeakPtr(etl::nullptr_t):
-        tag(nullptr)
-    {}
-
-    TaskWeakPtr &
-    operator =(const TaskWeakPtr &other) = default;
-
-    TaskWeakPtr &
-    operator =(TaskWeakPtr &&other) = default;
-
-    /** This does not guarantee the referenced task is still alive, use Lock() to check it. It just
-     * checks it tag is attached which might be useful in some cases.
-     */
-    operator bool() const
-    {
-        return tag;
-    }
-
-    /** Obtain reference to task if not yet destroyed. Returns null (empty Task) if already
-     * destroyed.
-     */
-    Task
-    Lock();
-
-    /// Make it null.
-    void
-    Reset()
-    {
-        tag.Reset();
-    }
-
-    /** Locks referenced task, resets this pointer and schedules the task if any. This is typical
-     * pattern used in awaiters.
-     */
-    void
-    Wakeup()
-    {
-        Task t = Lock();
-        Reset();
-        if (t) {
-            etl::move(t).Schedule();
-        }
-    }
-
-private:
-    friend class pulse::TaskPromise;
-
-    using TagPtr = SharedPtr<TaskWeakPtrTag>;
-
-    TagPtr tag;
-
-    TaskWeakPtr(TagPtr tag):
-        tag(etl::move(tag))
-    {}
+    using TRet = TRet_;
+    static constexpr bool initialSuspend = initialSuspend_;
 };
+
+void
+TaskSpawnImpl(const TaskRef &task, tasks::Priority priority = tasks::LOWEST_PRIORITY);
 
 } // namespace details
+
+/// Use it for spawning new tasks by passing it to `tasks::Spawn()`.
+template <typename TRet = void>
+using Task = details::Task<TRet, true>;
+
+/// Use it as return value for regular async functions.
+template <typename TRet = void>
+using Awaitable = details::Task<TRet, false>;
 
 
 /** For now it is mostly marker interface. There is currently no need to make it polymorphic. */
@@ -710,12 +540,11 @@ class Awaiter {
 public:
     /* Each awaiter should follow some basic rules to make it properly functional and robust.
      *
-     * 1. Awaiter should have destructor which should cancel any queued operations.
-     *      Awaiter may be created but never awaited, or, more common, it can be used in
-     *      `Task::WhenAny()` so that some awaiters are never resumed and are destructed after
-     *      suspend but before resume. All these cases should be properly handled by awaiter
-     *      destructor. Event source should have API to cancel queued awaiter. This also allows
-     *      safe destroying of suspended tasks.
+     * 1. Awaiter should have destructor which should cancel any queued operations. Awaiter may be
+     *      created but never awaited, or, more common, it can be used in `Task::WhenAny()` so that
+     *      some awaiters are never resumed and are destructed after suspend but before resume. All
+     *      these cases should be properly handled by awaiter destructor. Event source should have
+     *      API to cancel queued awaiter. This also allows safe destroying of suspended tasks.
      *
      * 2. Awaiter should queue `this` pointer to an event source, not Task (reason in bullet 3).
      *      This implies restriction on moving awaiter instance after suspended. For simplicity,
@@ -767,7 +596,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle coro);
 
     /// @return True if task was switched, false if immediately returned to calling task.
     bool
@@ -785,14 +614,14 @@ namespace details {
 
 class TaskAwaiterBase {
 public:
-    TaskAwaiterBase(Task task):
+    TaskAwaiterBase(TaskRef task):
         task(etl::move(task))
     {}
 
     ~TaskAwaiterBase()
     {
         if (waiter) {
-            task.CancelAwaitResult(this);
+            task.cb->CancelAwaitResult(this);
         }
     }
 
@@ -803,10 +632,10 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle)
+    await_suspend(tasks::CoroutineHandle handle)
     {
-        Task waiterTask(handle);
-        if (!task.AwaitResult(this, waiterTask)) {
+        TaskRef waiterTask(handle);
+        if (!task.cb->AwaitResult(this, waiterTask)) {
             return false;
         }
         waiter = waiterTask.GetWeakPtr();
@@ -815,11 +644,11 @@ public:
 
 protected:
     friend struct details::ListDefaultTrait<TaskAwaiterBase *>;
-    friend class pulse::TaskPromise;
+    friend struct TaskCb;
 
-    const Task task;
+    TaskRef task;
     TaskAwaiterBase *next = nullptr;
-    Task::WeakPtr waiter;
+    TaskWeakRef waiter;
 };
 
 } // namespace details
@@ -834,38 +663,27 @@ template <typename TRet>
 class TaskAwaiter: public details::TaskAwaiterBase, public Awaiter<TRet> {
 public:
     template <bool initialSuspend>
-    TaskAwaiter(TTask<TRet, initialSuspend> task):
-        TaskAwaiterBase(etl::move(task)),
-        initialSuspend(initialSuspend)
+    TaskAwaiter(details::Task<TRet, initialSuspend> task):
+        TaskAwaiterBase(etl::move(task))
     {}
 
     TRet
     await_resume() const
     {
-        if (initialSuspend) {
-            if constexpr (etl::is_copy_constructible_v<TRet>) {
-                return TTask<TRet, true>(task.handle).GetPromise().GetResult();
-            } else {
-                return TTask<TRet, true>(task.handle).GetPromise().MoveResult();
-            }
+        auto &promise = reinterpret_cast<details::TypedTaskPromise<TRet> &>(task.GetPromise());
+        if constexpr (etl::is_copy_constructible_v<TRet>) {
+            return promise.GetResult();
         } else {
-            if constexpr (etl::is_copy_constructible_v<TRet>) {
-                return TTask<TRet, false>(task.handle).GetPromise().GetResult();
-            } else {
-                return TTask<TRet, false>(task.handle).GetPromise().MoveResult();
-            }
+            return promise.MoveResult();
         }
     }
-
-private:
-    const bool initialSuspend;
 };
 
 
 template <>
 class TaskAwaiter<void>: public details::TaskAwaiterBase, public Awaiter<void> {
 public:
-    TaskAwaiter(Task task):
+    TaskAwaiter(TaskRef task):
         TaskAwaiterBase(etl::move(task))
     {}
 
@@ -880,15 +698,19 @@ namespace details {
 class MultipleTasksAwaiterBase {
 protected:
     struct Entry {
-        Task target, handler;
+        TaskRef target, handler;
+
+        void
+        Reset()
+        {
+            target.ReleaseHandle();
+            handler.ReleaseHandle();
+        }
     };
 
     MultipleTasksAwaiterBase() = default;
 
-    Task::WeakPtr waiter;
-
-    static void
-    Finish(Entry *tasks, size_t numTasks);
+    TaskWeakRef waiter;
 };
 
 
@@ -899,22 +721,8 @@ protected:
     static constexpr size_t numTasks = NumTasks;
     bool isFinished = false;
 
-    MultipleTasksAwaiter(const etl::span<Task, NumTasks> &)
+    MultipleTasksAwaiter(const etl::span<TaskRef, NumTasks> &)
     {}
-
-    ~MultipleTasksAwaiter()
-    {
-        Finish();
-    }
-
-    void
-    Finish()
-    {
-        if (!isFinished) {
-            MultipleTasksAwaiterBase::Finish(tasks.data(), numTasks);
-            isFinished = true;
-        }
-    }
 };
 
 template <>
@@ -923,24 +731,10 @@ protected:
     etl::unique_ptr<Entry[]> tasks;
     const size_t numTasks;
 
-    MultipleTasksAwaiter(const etl::span<Task, etl::dynamic_extent> &tasks):
+    MultipleTasksAwaiter(const etl::span<TaskRef, etl::dynamic_extent> &tasks):
         tasks(new Entry[tasks.size()]),
         numTasks(tasks.size())
     {}
-
-    ~MultipleTasksAwaiter()
-    {
-        Finish();
-    }
-
-    void
-    Finish()
-    {
-        if (tasks) {
-            MultipleTasksAwaiterBase::Finish(tasks.get(), numTasks);
-            tasks.reset();
-        }
-    }
 };
 
 } // namespace details
@@ -949,7 +743,7 @@ protected:
 template <size_t NumTasks>
 class AllTasksAwaiter: public details::MultipleTasksAwaiter<NumTasks>, public Awaiter<void> {
 public:
-    AllTasksAwaiter(const etl::span<Task, NumTasks> &tasks);
+    AllTasksAwaiter(const etl::span<TaskRef, NumTasks> &tasks);
 
     bool
     await_ready() const
@@ -958,7 +752,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     void
     await_resume() const
@@ -975,7 +769,7 @@ private:
 template <size_t NumTasks>
 class AnyTaskAwaiter: public details::MultipleTasksAwaiter<NumTasks>, public Awaiter<size_t>  {
 public:
-    AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks);
+    AnyTaskAwaiter(const etl::span<TaskRef, NumTasks> &tasks);
 
     bool
     await_ready() const
@@ -984,7 +778,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     /// @return First completed task index.
     size_t
@@ -1002,247 +796,301 @@ private:
     size_t result = NONE;
 };
 
-// /////////////////////////////////////////////////////////////////////////////////////////////////
 
-Task::Task(CoroutineHandle handle):
-    handle(handle)
+namespace tasks {
+
+/** Pass the task to the scheduler. The returned reference should be kept until task is finished
+ * otherwise it might be destroyed once the first suspension point is reached (scheduler releases
+ * its reference and awaiters are not allowed to store task reference to prevent reference loop).
+ */
+template <typename TRet>
+Task<TRet>
+Spawn(Task<TRet> task, Priority priority = LOWEST_PRIORITY)
 {
-    if (handle) {
-        GetPromise().AddRef();
-    }
+    details::TaskSpawnImpl(task, priority);
+    return etl::move(task);
 }
 
-inline
-Task::Task(CoroutineHandle handle, WeakTag)
+/** Spawn new task by providing task function.
+    * @return Created task.
+    */
+template <typename F, typename... Args>
+requires details::AsyncTaskFunction<F,
+    typename details::TaskTraits<etl::invoke_result_t<F, Args...>>::TRet, Args...>
+auto
+Spawn(F &&func, Args &&... args)
 {
-    if (handle && handle.promise().TryAddRef()) {
-        this->handle = handle;
-    }
+    auto task = etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+    details::TaskSpawnImpl(task, LOWEST_PRIORITY);
+    return etl::move(task);
 }
 
-Task::Task(const Task &other):
-    handle(other.handle)
+/** Spawn new task by providing task function.
+    * @return Created task.
+    */
+template <typename F, typename... Args>
+requires details::AsyncTaskFunction<F,
+    typename details::TaskTraits<etl::invoke_result_t<F, Args...>>::TRet, Args...>
+auto
+Spawn(F &&func, Priority priority, Args &&... args)
 {
-    if (handle) {
-        GetPromise().AddRef();
-    }
+    auto task = etl::invoke(etl::forward<F>(func), etl::forward<Args>(args)...);
+    details::TaskSpawnImpl(task, priority);
+    return etl::move(task);
 }
 
-Task &
-Task::operator =(const Task &other)
+/** Spawn new task by providing synchronous function. The function is called when task is run by the
+ * scheduler. Can be used to defer the call, e.g. from ISR.
+ * @return Created task.
+ */
+template <typename F, typename... Args>
+requires etl::is_invocable_v<F, Args...> &&
+    (!details::TaskTraits<etl::invoke_result_t<F, Args...>>::isTask)
+auto
+Spawn(F &&func, Args &&... args)
 {
-    ReleaseHandle();
-    handle = other.handle;
-    if (handle) {
-        GetPromise().AddRef();
-    }
-    return *this;
+    using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
+
+    auto taskFunc = [](etl::remove_cvref_t<F> func,
+                       etl::remove_cvref_t<Args>... args) -> Task<TRet> {
+        co_return etl::invoke(etl::move(func), etl::move(args)...);
+    };
+
+    auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
+    details::TaskSpawnImpl(task, LOWEST_PRIORITY);
+    return etl::move(task);
 }
 
-Task &
-Task::operator =(Task &&other)
+/** Spawn new task by providing synchronous function. The function is called when task is run by the
+ * scheduler. Can be used to defer the call, e.g. from ISR.
+ * @return Created task.
+ */
+template <typename F, typename... Args>
+requires etl::is_invocable_v<F, Args...> &&
+    (!details::TaskTraits<etl::invoke_result_t<F, Args...>>::isTask)
+auto
+Spawn(F &&func, Priority priority, Args &&... args)
 {
-    ReleaseHandle();
-    handle = other.handle;
-    other.handle = CoroutineHandle();
-    return *this;
+    using TRet = etl::remove_cvref_t<etl::invoke_result_t<F, Args...>>;
+
+    auto taskFunc = [](etl::remove_cvref_t<F> func,
+                       etl::remove_cvref_t<Args>... args) -> Task<TRet> {
+        co_return etl::invoke(etl::move(func), etl::move(args)...);
+    };
+
+    auto task = taskFunc(etl::forward<F>(func), etl::forward<Args>(args)...);
+    details::TaskSpawnImpl(task, priority);
+    return etl::move(task);
 }
 
-bool
-Task::IsFinished() const
-{
-    PULSE_ASSERT(handle);
-    return GetPromise().isFinished;
-}
+/**
+ * Run main loop of tasks scheduler. Never returns.
+ */
+void
+RunScheduler();
 
-TaskSwitchAwaiter
-Task::Switch()
+/** Run tasks which are currently in runnable state. Exits when no more runnable task. */
+void
+RunSome();
+
+/** @return Currently running task if any. This is top-level task, which is run by scheduler. When
+* calling asynchronous functions, newly created coroutine is not top-level until it is suspended and
+* later resumed by scheduler.
+*/
+TaskRef
+GetCurrentTask();
+
+/** Switch to other runnable task if any. `co_await` returns true if task was switched, false if
+ * immediately returned to calling task.
+ * @code
+ * co_await Task::Switch();
+ * @endcode
+ */
+inline TaskSwitchAwaiter
+Switch()
 {
     return {};
 }
 
-TaskAwaiter<void>
-Task::Wait() const
+/** Wait when all of the provided tasks complete. Uses dynamic allocation for tasks list if
+ * `NumTasks` is `etl::dynamic_extent`.
+ */
+template<size_t NumTasks = etl::dynamic_extent>
+static inline AllTasksAwaiter<NumTasks>
+WhenAll(const etl::span<TaskRef, NumTasks> &tasks);
+
+/* Wait when any of the provided tasks completes. `co_await` returns index of the first completed
+ * task. Uses dynamic allocation for tasks list if `NumTasks` is `etl::dynamic_extent`.
+ */
+template<size_t NumTasks = etl::dynamic_extent>
+static inline AnyTaskAwaiter<NumTasks>
+WhenAny(const etl::span<TaskRef, NumTasks> &tasks);
+
+/** Wait when all of the provided tasks complete. Arguments may either be tasks or any awaiter
+ * objects. Awaiter objects should have lifetime at least until return awaiter is resumed.
+ */
+template <class T1, class T2, class... Args>
+static AllTasksAwaiter<sizeof...(Args) + 2>
+WhenAll(T1 &&task1, T2 &&task2, Args &&... tasks);
+
+/** Wait when any of the provided tasks completes. Arguments may either be tasks or any awaiter
+ * objects. Awaiter objects should have lifetime at least until return awaiter is resumed.
+ */
+template <class T1, class T2, class... Args>
+static AnyTaskAwaiter<sizeof...(Args) + 2>
+WhenAny(T1 &&task1, T2 &&task2, Args &&... tasks);
+
+/** Helper to wrap awaiters into task. Can also accept TaskRef or Task<> and return it as is. Passed
+ * awaiter lifetime should be at least until the returned task is finished (awaiter resumes).
+ */
+template <class T>
+static inline TaskRef
+MakeTask(T &&obj);
+
+/** Helper to save arbitrary awaiter result into the specified variable. Useful when waiting on
+ * multiple tasks by `WhenAll` or `WhenAny`. Be very careful with the passed awaiter lifetime - it
+ * should not be shorter than the resulting coroutine.
+ */
+template <typename TResult, typename TAwaiter>
+static Awaitable<void>
+SaveResult(TAwaiter &&awaiter, etl::optional<TResult> &result);
+
+template <typename TResult, typename TAwaiter>
+static Awaitable<void>
+SaveResult(TAwaiter &&awaiter, TResult &result);
+
+} // namespace tasks
+
+
+// /////////////////////////////////////////////////////////////////////////////////////////////////
+
+void
+details::TaskCbSharedPtrTrait::Delete(TaskCb &cb)
 {
-    return TaskAwaiter<void>(handle);
+    cb.Free();
+}
+
+
+bool
+details::TaskRefBase::IsFinished() const
+{
+    PULSE_ASSERT(cb);
+    return cb->isFinished;
+}
+
+tasks::Priority
+details::TaskRefBase::GetPriority() const
+{
+    PULSE_ASSERT(cb);
+    return cb->priority;
+}
+
+
+TaskRef::TaskRef(const TaskRef &other):
+    TaskRefBase(other)
+{
+    if (cb) {
+        cb->CoroAddRef();
+    }
+}
+
+TaskRef &
+TaskRef::operator =(const TaskRef &other)
+{
+    ReleaseHandle();
+    cb = other.cb;
+    if (cb) {
+        cb->CoroAddRef();
+    }
+    return *this;
+}
+
+void
+TaskRef::SetPriority(tasks::Priority priority) const
+{
+    cb->SetPriority(priority);
+}
+
+void
+TaskRef::RaisePriority(tasks::Priority priority) const
+{
+    cb->RaisePriority(priority);
+}
+
+TaskRef &
+TaskRef::Pin()
+{
+    PULSE_ASSERT(cb);
+    cb->Pin();
+    return *this;
+}
+
+TaskWeakRef
+TaskRef::GetWeakPtr() const
+{
+    return TaskWeakRef(cb);
+}
+
+details::TaskPromiseBase &
+TaskRef::GetPromise() const
+{
+    PULSE_ASSERT(cb);
+    PULSE_ASSERT(cb->coro);
+    return cb->coro.promise();
 }
 
 TaskAwaiter<void>
-Task::operator co_await() const
+TaskRef::Wait() const
+{
+    return TaskAwaiter<void>(*this);
+}
+
+TaskAwaiter<void>
+TaskRef::operator co_await() const
 {
     return Wait();
-}
-
-template<size_t NumTasks>
-AllTasksAwaiter<NumTasks>
-Task::WhenAll(const etl::span<Task, NumTasks> &tasks)
-{
-    return AllTasksAwaiter(tasks);
-}
-
-template<size_t NumTasks>
-AnyTaskAwaiter<NumTasks>
-Task::WhenAny(const etl::span<Task, NumTasks> &tasks)
-{
-    return AnyTaskAwaiter(tasks);
-}
-
-template <class T1, class T2, class... Args>
-AllTasksAwaiter<sizeof...(Args) + 2>
-Task::WhenAll(T1 &&task1, T2 &&task2, Args &&... tasks)
-{
-    Task _tasks[] = {
-        Task::Make(etl::forward<T1>(task1)),
-        Task::Make(etl::forward<T2>(task2)),
-        Task::Make(etl::forward<Args>(tasks))...
-    };
-    return WhenAll(etl::span<Task, sizeof...(Args) + 2>(_tasks));
-}
-
-template <class T1, class T2, class... Args>
-AnyTaskAwaiter<sizeof...(Args) + 2>
-Task::WhenAny(T1 &&task1, T2 &&task2, Args &&... tasks)
-{
-    Task _tasks[] = {
-        Task::Make(etl::forward<T1>(task1)),
-        Task::Make(etl::forward<T2>(task2)),
-        Task::Make(etl::forward<Args>(tasks))...
-    };
-    return WhenAny(etl::span<Task, sizeof...(Args) + 2>(_tasks));
-}
-
-namespace details {
-
-template <class T>
-struct AwaitableWrapper {
-    static inline Awaitable<void>
-    MakeTask(const T &obj)
-    {
-        // Passed awaiter lifetime should not end before the task completion, so assuming it is
-        // safe. `await_suspend()` requires non-const reference in most cases.
-        co_await const_cast<T &>(obj);
-    }
-};
-
-template <typename T>
-concept TaskType = etl::derived_from<T, Task>;
-
-template <TaskType T>
-struct AwaitableWrapper<T> {
-    template <class U>
-    static inline Task
-    MakeTask(U &&obj)
-    {
-        return etl::forward<U>(obj);
-    }
-};
-
-} // namespace details
-
-template <class T>
-Task
-Task::Make(T &&obj)
-{
-    return details::AwaitableWrapper<etl::remove_cvref_t<T>>::MakeTask(etl::forward<T>(obj));
-}
-
-template <typename TResult, typename TAwaiter>
-Awaitable<void>
-Task::SaveResult(TAwaiter &&awaiter, etl::optional<TResult> &result)
-{
-    result.emplace(co_await awaiter);
-}
-
-template <typename TResult, typename TAwaiter>
-Awaitable<void>
-Task::SaveResult(TAwaiter &&awaiter, TResult &result)
-{
-    result = co_await awaiter;
-}
-
-void
-Task::ReleaseHandle()
-{
-    if (handle) {
-        if (GetPromise().ReleaseRef()) {
-            // Change state first to make iti visible to coroutine frame destructors
-            auto h = handle;
-            handle = CoroutineHandle();
-            h.destroy();
-        } else {
-            handle = CoroutineHandle();
-        }
-    }
-}
-
-void
-Task::Pin()
-{
-    GetPromise().Pin();
-}
-
-Task::WeakPtr
-Task::GetWeakPtr()
-{
-    if (!handle) {
-        return nullptr;
-    }
-    return GetPromise().GetWeakPtr();
 }
 
 
 template <typename TRet, bool initialSuspend>
 const TRet &
-TTask<TRet, initialSuspend>::GetResult() const
+details::Task<TRet, initialSuspend>::GetResult() const
 {
     return GetPromise().GetResult();
 }
 
 template <typename TRet, bool initialSuspend>
 TaskAwaiter<TRet>
-TTask<TRet, initialSuspend>::Wait() const
+details::Task<TRet, initialSuspend>::Wait() const
 {
     return TaskAwaiter<TRet>(*this);
 }
 
 template <typename TRet, bool initialSuspend>
 TaskAwaiter<TRet>
-TTask<TRet, initialSuspend>::operator co_await() const
-{
-    return Wait();
-}
-
-template <bool initialSuspend>
-TaskAwaiter<void>
-TTask<void, initialSuspend>::Wait() const
-{
-    return TaskAwaiter<void>(handle);
-}
-
-template <bool initialSuspend>
-TaskAwaiter<void>
-TTask<void, initialSuspend>::operator co_await() const
+details::Task<TRet, initialSuspend>::operator co_await() const
 {
     return Wait();
 }
 
 
-Task
-details::TaskListTrait::GetNext(const Task &p)
+template <bool initialSuspend>
+TaskAwaiter<void>
+details::Task<void, initialSuspend>::Wait() const
 {
-    return p.GetPromise().next;
+    return TaskAwaiter<void>(*this);
 }
 
-template <typename TPtr>
-void
-details::TaskListTrait::SetNext(Task &p, TPtr &&next)
+template <bool initialSuspend>
+TaskAwaiter<void>
+details::Task<void, initialSuspend>::operator co_await() const
 {
-    p.GetPromise().next = etl::forward<TPtr>(next);
+    return Wait();
 }
 
 
 template <size_t NumTasks>
-AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &tasks):
+AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<TaskRef, NumTasks> &tasks):
     details::MultipleTasksAwaiter<NumTasks>(tasks),
     numLeft(Base::numTasks)
 {
@@ -1277,18 +1125,18 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<Task, NumTasks> &task
 
 template <size_t NumTasks>
 bool
-AllTasksAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
+AllTasksAwaiter<NumTasks>::await_suspend(tasks::CoroutineHandle handle)
 {
     if (numLeft == 0) {
         return false;
     }
 
-    Task waiterTask(handle);
+    TaskRef waiterTask(handle);
     Base::waiter = waiterTask.GetWeakPtr();
 
     // Handlers should have the same priority as waiter. Since waiter is blocked until all tasks are
     // completed, priority is also propagated to all targets.
-    Task::Priority pri = waiterTask.GetPromise().priority;
+    tasks::Priority pri = waiterTask.GetPriority();
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
         if (e.handler) {
@@ -1301,7 +1149,7 @@ AllTasksAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
 }
 
 template <size_t NumTasks>
-AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks):
+AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<TaskRef, NumTasks> &tasks):
     details::MultipleTasksAwaiter<NumTasks>(tasks)
 {
     // It is observed that just capturing `this` by value (like `[this]`) may not work in GCC for
@@ -1334,7 +1182,9 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks)
             e.handler = etl::move(h);
         } else {
             PULSE_ASSERT(result != NONE);
-            Base::Finish();
+            for (size_t i = 0; i < Base::numTasks; i++) {
+                this->tasks[i].Reset();
+            }
             break;
         }
     }
@@ -1342,17 +1192,17 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<Task, NumTasks> &tasks)
 
 template <size_t NumTasks>
 bool
-AnyTaskAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
+AnyTaskAwaiter<NumTasks>::await_suspend(tasks::CoroutineHandle handle)
 {
     if (result != NONE) {
         return false;
     }
 
-    Task waiterTask(handle);
+    TaskRef waiterTask(handle);
     Base::waiter = waiterTask.GetWeakPtr();
 
     // Handlers should have the same priority as waiter.
-    Task::Priority pri = waiterTask.GetPromise().priority;
+    tasks::Priority pri = waiterTask.GetPriority();
     for (size_t i = 0; i < Base::numTasks; i++) {
         Entry &e = this->tasks[i];
         e.handler.SetPriority(pri);
@@ -1362,12 +1212,102 @@ AnyTaskAwaiter<NumTasks>::await_suspend(Task::CoroutineHandle handle)
 }
 
 
+template<size_t NumTasks>
+AllTasksAwaiter<NumTasks>
+tasks::WhenAll(const etl::span<TaskRef, NumTasks> &tasks)
+{
+    return AllTasksAwaiter(tasks);
+}
+
+template<size_t NumTasks>
+AnyTaskAwaiter<NumTasks>
+tasks::WhenAny(const etl::span<TaskRef, NumTasks> &tasks)
+{
+    return AnyTaskAwaiter(tasks);
+}
+
+template <class T1, class T2, class... Args>
+AllTasksAwaiter<sizeof...(Args) + 2>
+tasks::WhenAll(T1 &&task1, T2 &&task2, Args &&... tasks)
+{
+    TaskRef _tasks[] = {
+        tasks::MakeTask(etl::forward<T1>(task1)),
+        tasks::MakeTask(etl::forward<T2>(task2)),
+        tasks::MakeTask(etl::forward<Args>(tasks))...
+    };
+    return WhenAll(etl::span<TaskRef, sizeof...(Args) + 2>(_tasks));
+}
+
+template <class T1, class T2, class... Args>
+AnyTaskAwaiter<sizeof...(Args) + 2>
+tasks::WhenAny(T1 &&task1, T2 &&task2, Args &&... tasks)
+{
+    TaskRef _tasks[] = {
+        tasks::MakeTask(etl::forward<T1>(task1)),
+        tasks::MakeTask(etl::forward<T2>(task2)),
+        tasks::MakeTask(etl::forward<Args>(tasks))...
+    };
+    return WhenAny(etl::span<TaskRef, sizeof...(Args) + 2>(_tasks));
+}
+
+
+namespace details {
+
+template <class T>
+struct AwaitableWrapper {
+    static inline Awaitable<void>
+    MakeTask(const T &obj)
+    {
+        // Passed awaiter lifetime should not end before the task completion, so assuming it is
+        // safe. `await_suspend()` requires non-const reference in most cases.
+        co_await const_cast<T &>(obj);
+    }
+};
+
+template <typename T>
+concept TaskType = etl::derived_from<T, TaskRef>;
+
+template <TaskType T>
+struct AwaitableWrapper<T> {
+    template <class U>
+    static inline TaskRef
+    MakeTask(U &&obj)
+    {
+        return etl::forward<U>(obj);
+    }
+};
+
+} // namespace details
+
+template <class T>
+TaskRef
+tasks::MakeTask(T &&obj)
+{
+    return details::AwaitableWrapper<etl::remove_cvref_t<T>>::MakeTask(etl::forward<T>(obj));
+}
+
+
+template <typename TResult, typename TAwaiter>
+Awaitable<void>
+tasks::SaveResult(TAwaiter &&awaiter, etl::optional<TResult> &result)
+{
+    result.emplace(co_await awaiter);
+}
+
+template <typename TResult, typename TAwaiter>
+Awaitable<void>
+tasks::SaveResult(TAwaiter &&awaiter, TResult &result)
+{
+    result = co_await awaiter;
+}
+
 } // namespace pulse
+
 
 // Bind TaskPromise to Task coroutine type.
 template<typename TRet, bool initialSuspend, typename... Args>
-struct std::coroutine_traits<pulse::TTask<TRet, initialSuspend>, Args...> {
-    using promise_type = typename pulse::TTask<TRet, initialSuspend>::TPromise;
+struct std::coroutine_traits<pulse::details::Task<TRet, initialSuspend>, Args...> {
+    using promise_type = typename pulse::details::Task<TRet, initialSuspend>::TPromise;
 };
 
 #endif /* TASK_H */

@@ -86,7 +86,7 @@ TEST_CASE("Blocking queue")
         SECTION("Basic") {
             InlineBlockingQueue<A, 2> q;
 
-            auto t1 = Task::Spawn([](InlineBlockingQueue<A, 2> &q) -> TaskV {
+            auto t1 = tasks::Spawn([](InlineBlockingQueue<A, 2> &q) -> Task<> {
                 REQUIRE(results.empty());
                 results.push_back("T1:1");
                 co_await q.Push(1);
@@ -116,7 +116,7 @@ TEST_CASE("Blocking queue")
                 results.push_back("T1:7");
             }, q);
 
-            auto t2 = Task::Spawn([](InlineBlockingQueue<A, 2> &q) -> TaskV {
+            auto t2 = tasks::Spawn([](InlineBlockingQueue<A, 2> &q) -> Task<> {
                 CheckResult(3, "T1:3");
                 results.push_back("T2:1");
                 {
@@ -164,7 +164,7 @@ TEST_CASE("Blocking queue")
                 results.push_back("T2:7");
             }, q);
 
-            Task::RunSome();
+            tasks::RunSome();
 
             CheckResult(14, "T2:7");
         }
@@ -172,7 +172,7 @@ TEST_CASE("Blocking queue")
         SECTION("Awaiter destruction") {
             InlineBlockingQueue<A, 2> q;
 
-            auto t1 = Task::Spawn([](InlineBlockingQueue<A, 2> &q) -> TaskV {
+            auto t1 = tasks::Spawn([](InlineBlockingQueue<A, 2> &q) -> Task<> {
                 q.Push(1);
                 q.Push(2);
                 q.Push(3);
@@ -180,7 +180,7 @@ TEST_CASE("Blocking queue")
                 co_return;
             }, q);
 
-            auto t2 = Task::Spawn([](InlineBlockingQueue<A, 2> &q) -> TaskV {
+            auto t2 = tasks::Spawn([](InlineBlockingQueue<A, 2> &q) -> Task<> {
                 {
                     A a = co_await q.Pop();
                     REQUIRE(*a.value == 1);
@@ -192,7 +192,7 @@ TEST_CASE("Blocking queue")
                 REQUIRE(!q.TryPop());
             }, q);
 
-            Task::RunSome();
+            tasks::RunSome();
 
             REQUIRE(t1.IsFinished());
             REQUIRE(t2.IsFinished());
@@ -202,17 +202,17 @@ TEST_CASE("Blocking queue")
             InlineBlockingQueue<A, 2> q;
             TokenQueue<> tq;
 
-            auto t1 = Task::Spawn([](InlineBlockingQueue<A, 2> &q, TokenQueue<> &tq) -> TaskV {
+            auto t1 = tasks::Spawn([](InlineBlockingQueue<A, 2> &q, TokenQueue<> &tq) -> Task<> {
                 REQUIRE(q.TryPush(1));
                 REQUIRE(q.TryPush(2));
-                size_t idx = co_await Task::WhenAny(tq.Take(), q.Push(3));
+                size_t idx = co_await tasks::WhenAny(tq.Take(), q.Push(3));
                 REQUIRE(idx == 0);
             }, q, tq);
 
-            auto t2 = Task::Spawn([](InlineBlockingQueue<A, 2> &q, TokenQueue<> &tq) -> TaskV {
+            auto t2 = tasks::Spawn([](InlineBlockingQueue<A, 2> &q, TokenQueue<> &tq) -> Task<> {
                 tq.Push();
-                // Task::Make wrapper, handler task in AnyTaskAwaiter, t1
-                while (co_await Task::Switch()) {}
+                // tasks::MakeTask wrapper, handler task in AnyTaskAwaiter, t1
+                while (co_await tasks::Switch()) {}
                 {
                     A a = co_await q.Pop();
                     REQUIRE(*a.value == 1);
@@ -224,7 +224,7 @@ TEST_CASE("Blocking queue")
                 REQUIRE(!q.TryPop());
             }, q, tq);
 
-            Task::RunSome();
+            tasks::RunSome();
 
             REQUIRE(t1.IsFinished());
             REQUIRE(t2.IsFinished());
@@ -236,20 +236,20 @@ TEST_CASE("Blocking queue")
 
             q.emplace();
 
-            auto t1 = Task::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q,
-                                     TokenQueue<> &tq) -> TaskV {
+            auto t1 = tasks::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q,
+                                     TokenQueue<> &tq) -> Task<> {
                 REQUIRE(q->TryPush(1));
                 REQUIRE(q->TryPush(2));
-                size_t idx = co_await Task::WhenAny(tq.Take(), q->Push(3));
+                size_t idx = co_await tasks::WhenAny(tq.Take(), q->Push(3));
                 REQUIRE(idx == 1);
             }, q, tq);
 
-            auto t2 = Task::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q) -> TaskV {
+            auto t2 = tasks::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q) -> Task<> {
                 q.reset();
                 co_return;
             }, q);
 
-            Task::RunSome();
+            tasks::RunSome();
 
             REQUIRE(t1.IsFinished());
             REQUIRE(t2.IsFinished());
@@ -261,8 +261,8 @@ TEST_CASE("Blocking queue")
 
             q.emplace();
 
-            auto t1 = Task::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q,
-                                     TokenQueue<> &tq) -> TaskV {
+            auto t1 = tasks::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q,
+                                     TokenQueue<> &tq) -> Task<> {
                 std::optional<A> result;
                 auto getResult = [](std::optional<InlineBlockingQueue<A, 2>> &q,
                                     std::optional<A> &result) -> Awaitable<void> {
@@ -270,19 +270,19 @@ TEST_CASE("Blocking queue")
                 };
                 auto awaitable = getResult(q, result);
                 REQUIRE(!result);
-                size_t idx = co_await Task::WhenAny(tq.Take(), awaitable);
+                size_t idx = co_await tasks::WhenAny(tq.Take(), awaitable);
                 REQUIRE(idx == 1);
                 REQUIRE(result);
                 // Empty value should be returned
                 REQUIRE(!result->value);
             }, q, tq);
 
-            auto t2 = Task::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q) -> TaskV {
+            auto t2 = tasks::Spawn([](std::optional<InlineBlockingQueue<A, 2>> &q) -> Task<> {
                 q.reset();
                 co_return;
             }, q);
 
-            Task::RunSome();
+            tasks::RunSome();
 
             REQUIRE(t1.IsFinished());
             REQUIRE(t2.IsFinished());

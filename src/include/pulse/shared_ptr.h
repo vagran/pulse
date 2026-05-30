@@ -122,7 +122,7 @@ public:
         SharedPtr(other.ptr)
     {}
 
-    SharedPtr(SharedPtr<T> &&other):
+    SharedPtr(SharedPtr &&other):
         ptr(other.ptr)
     {
         other.ptr = nullptr;
@@ -218,6 +218,12 @@ public:
 
     T *
     operator ->() const
+    {
+        return ptr;
+    }
+
+    T *
+    Get() const
     {
         return ptr;
     }

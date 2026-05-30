@@ -1,6 +1,7 @@
 #include <pulse/task.h>
 #include <pulse/port.h>
 #include <pulse/timer.h>
+#include <pulse/details/pulse_log.h>
 
 #include <etl/limits.h>
 #include <etl/utility.h>
@@ -59,49 +60,108 @@ static_assert(pulseConfig_NUM_TASK_PRIORITIES < sizeof(PriorityBitmap) * 8,
               "pulseConfig_NUM_TASK_PRIORITIES too big");
 
 /// Tasks in runnable state, arranged by priority.
-TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
+details::TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
 
 /// Each set bit corresponds to non-empty queue for corresponding priority.
 PriorityBitmap readyTasksBitmap;
 
 /// Currently running task (top-level, resumed by scheduler)
-Task currentTask;
+TaskRef currentTask;
 
-void
-ScheduleTask(Task task)
+
+struct TaskCbPoolEntry {
+    union {
+        // Next entry when in free list.
+        TaskCbPoolEntry *next;
+        details::TaskCb cb;
+    };
+
+    TaskCbPoolEntry()
+    {
+        // Union members are constructed explicitly in Allocate/Free
+    }
+};
+
+TaskCbPoolEntry *cbPool = nullptr;
+
+#if pulseConfig_NUM_PREALLOCED_TASKS > 0
+
+struct TaskCbPreallocatedPool {
+    TaskCbPoolEntry pool[pulseConfig_NUM_PREALLOCED_TASKS];
+
+    TaskCbPreallocatedPool()
+    {
+        for (size_t i = 0; i < pulseConfig_NUM_PREALLOCED_TASKS; i++) {
+            if (i < pulseConfig_NUM_PREALLOCED_TASKS - 1) {
+                pool[i].next = &pool[i + 1];
+            } else {
+                pool[i].next = nullptr;
+            }
+        }
+        cbPool = &pool[0];
+    }
+
+    // For clean unit tests. Stripped by linker when compiling firmware.
+    ~TaskCbPreallocatedPool()
+    {
+        TaskCbPoolEntry *e = cbPool;
+        while (e) {
+            TaskCbPoolEntry *next = e->next;
+            if (e < pool || e >= pool + pulseConfig_NUM_PREALLOCED_TASKS) {
+                delete e;
+            }
+            e = next;
+        }
+    }
+};
+
+TaskCbPreallocatedPool taskCbPreallocatedPool;
+
+#endif
+
+/// Allocate from pool. Returns null if no free item.
+details::TaskCb *
+AllocateTaskCb()
 {
-    TaskPromise &promise = task.GetPromise();
-    PULSE_ASSERT(!promise.isRunnable);
-    PULSE_ASSERT(promise.priority < pulseConfig_NUM_TASK_PRIORITIES);
-    TaskTailedList &list = readyTasks[promise.priority];
     CriticalSection cs;
-    list.AddLast(etl::move(task));
-    readyTasksBitmap.Set(promise.priority);
-    promise.isRunnable = 1;
+    if (!cbPool) {
+        return nullptr;
+    }
+    TaskCbPoolEntry *e = cbPool;
+    cbPool = e->next;
+    cs.Exit();
+    etl::construct_at(&e->cb);
+    return &e->cb;
 }
 
+/// Free into pool.
 void
-DescheduleTask(const Task &task)
+FreeTaskCb(details::TaskCb *cb)
 {
-    TaskPromise &promise = task.GetPromise();
-    PULSE_ASSERT(promise.isRunnable);
-    PULSE_ASSERT(promise.priority < pulseConfig_NUM_TASK_PRIORITIES);
-    TaskTailedList &list = readyTasks[promise.priority];
+    TaskCbPoolEntry *e = reinterpret_cast<TaskCbPoolEntry *>(cb);
+    etl::destroy_at(&e->cb);
     CriticalSection cs;
-    if (!list.Remove(task)) {
-        PULSE_PANIC("Task not scheduled");
-    }
-    if (list.IsEmpty()) {
-        readyTasksBitmap.Clear(promise.priority);
-    }
-    promise.isRunnable = 0;
+    e->next = cbPool;
+    cbPool = e;
 }
+
 
 } // anonymous namespace
 
 
-class pulse::details::TaskImpl {
+class details::TaskImpl {
 public:
+    static void
+    ScheduleTask(TaskCb &cb);
+
+    /// Deschedule task if scheduled.
+    // @return True if descheduled, false if was not scheduled.
+    static bool
+    TryDescheduleTask(TaskCb &cb);
+
+    static void
+    Spawn(const TaskRef &task, tasks::Priority priority);
+
     /**
      * @param nextTimerTicks If specified, the method prepares for sleeping until next interrupt
      *  (interrupts are disabled on exit). Number of ticks until next scheduled timer is stored in
@@ -112,8 +172,53 @@ public:
     RunSomeImpl(Timer::TickCount *nextTimerTicks);
 };
 
+void
+details::TaskImpl::ScheduleTask(TaskCb &cb)
+{
+    PULSE_ASSERT(!cb.isFinished);
+    PULSE_ASSERT(cb.priority < pulseConfig_NUM_TASK_PRIORITIES);
+
+    TaskTailedList &list = readyTasks[cb.priority];
+    cb.AddRef();
+
+    CriticalSection cs;
+    PULSE_ASSERT(!cb.isRunnable);
+    list.AddLast(&cb);
+    readyTasksBitmap.Set(cb.priority);
+    cb.isRunnable = 1;
+}
+
+bool
+details::TaskImpl::TryDescheduleTask(TaskCb &cb)
+{
+    PULSE_ASSERT(cb.priority < pulseConfig_NUM_TASK_PRIORITIES);
+    TaskTailedList &list = readyTasks[cb.priority];
+    CriticalSection cs;
+    if (!cb.isRunnable) {
+        return false;
+    }
+    if (!list.Remove(&cb)) {
+        PULSE_PANIC("Task not scheduled");
+    }
+    if (list.IsEmpty()) {
+        readyTasksBitmap.Clear(cb.priority);
+    }
+    cb.isRunnable = 0;
+    cs.Exit();
+    cb.ReleaseRef();
+    return true;
+}
+
+void
+details::TaskImpl::Spawn(const TaskRef &task, tasks::Priority priority)
+{
+    PULSE_ASSERT(!task.cb->isRunnable);
+    task.cb->priority = priority;
+    ScheduleTask(*task.cb);
+}
+
 InterruptsGuard
-pulse::details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
+details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
 {
     Timer::TickCount ticks = details::CheckTimers();
     bool timersChecked = true,
@@ -143,90 +248,310 @@ pulse::details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
         uint8_t pri = readyTasksBitmap.FirstSet();
         PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
         TaskTailedList &list = readyTasks[pri];
-        currentTask = list.PopFirst();
-        PULSE_ASSERT(currentTask);
+        // Reference transferred from list.
+        TaskWeakRef weakRef(details::TaskCbPtr(list.PopFirst(), true));
+        TaskCb *cb = weakRef.cb.Get();
+        PULSE_ASSERT(cb);
         if (list.IsEmpty()) {
             readyTasksBitmap.Clear(pri);
         }
-        PULSE_ASSERT(currentTask.GetPromise().isRunnable);
-        currentTask.GetPromise().isRunnable = 0;
+        // Even destroyed task should still be runnable if queued
+        PULSE_ASSERT(cb->isRunnable);
+        cb->isRunnable = 0;
         ig.Exit();
-        currentTask.Resume();
-        currentTask.ReleaseHandle();
+        currentTask = weakRef.Lock();
+        if (currentTask) {
+            cb->Resume();
+            currentTask.ReleaseHandle();
+        }
     }
     return InterruptsGuard(false);
 }
 
+void
+details::TaskSpawnImpl(const TaskRef &task, tasks::Priority priority)
+{
+    TaskImpl::Spawn(task, priority);
+}
+
+
+TaskRef::TaskRef(tasks::CoroutineHandle coro):
+    TaskRef(coro ? coro.promise().cb : nullptr)
+{
+    if (coro) {
+        cb->CoroAddRef();
+    }
+}
+
+void
+TaskRef::ReleaseHandle()
+{
+    if (!cb) {
+        return;
+    }
+    if (cb->CoroReleaseRef()) {
+        PULSE_ASSERT(cb->coro);
+        cb->coro.destroy();
+        cb->coro = tasks::CoroutineHandle();
+    }
+    cb.Reset();
+}
 
 bool
-Task::Unpin()
+TaskRef::Unpin() const
 {
-    if (GetPromise().Unpin()) {
-        // Change state first to make iti visible to coroutine frame destructors
-        auto h = handle;
-        handle = CoroutineHandle();
-        h.destroy();
+    PULSE_ASSERT(cb);
+    PULSE_ASSERT(cb->coro);
+    if (cb->Unpin()) {
+        cb->coro.destroy();
+        cb->coro = tasks::CoroutineHandle();
         return true;
     }
     return false;
 }
 
 void
-Task::SpawnImpl(Task task, Priority priority)
+TaskRef::Schedule() const
 {
-    TaskPromise &promise = task.GetPromise();
-    promise.priority = priority;
-    ScheduleTask(etl::move(task));
+    PULSE_ASSERT(cb);
+    details::TaskImpl::ScheduleTask(*cb);
+}
+
+TaskRef
+TaskWeakRef::Lock()
+{
+    if (!cb || !cb->CoroTryAddRef()) {
+        return TaskRef();
+    }
+    return TaskRef(cb);
+}
+
+details::TaskCb *
+details::TaskCb::Allocate()
+{
+    details::TaskCb *cb = AllocateTaskCb();
+    if (!cb) {
+        PULSE_LOG_INFO("Allocating task CB from heap");
+        auto e = new TaskCbPoolEntry();
+        etl::construct_at(&e->cb);
+        cb = &e->cb;
+    }
+    return cb;
 }
 
 void
-Task::Schedule() const &
+details::TaskCb::Free()
 {
-    ScheduleTask(*this);
+    PULSE_ASSERT(refCounter == 0);
+    PULSE_ASSERT(coroRefCounter == 0);
+    FreeTaskCb(this);
 }
 
 void
-Task::Schedule() &&
+details::TaskCb::CoroAddRef()
 {
-    ScheduleTask(etl::move(*this));
+    auto cur = coroRefCounter.load();
+    while (true) {
+        // refCounter should never reach zero when using this method since it is always should be
+        // used on some task which holds a reference.
+        PULSE_ASSERT(cur != 0);
+        if (cur == etl::numeric_limits<decltype(cur)>::max() ||
+            cur == etl::numeric_limits<decltype(cur)>::min()) {
+
+            PULSE_PANIC("Task reference counter overflow");
+        }
+        decltype(cur) newValue = cur >= 0 ? cur + 1 : cur - 1;
+        if (coroRefCounter.compare_exchange_weak(cur, newValue)) {
+            break;
+        }
+    }
+}
+
+bool
+details::TaskCb::CoroTryAddRef()
+{
+    auto cur = coroRefCounter.load();
+    while (cur != 0) {
+        if (cur == etl::numeric_limits<decltype(cur)>::max() ||
+            cur == etl::numeric_limits<decltype(cur)>::min()) {
+
+            PULSE_PANIC("Task reference counter overflow");
+        }
+        decltype(cur) newValue = cur >= 0 ? cur + 1 : cur - 1;
+        if (coroRefCounter.compare_exchange_weak(cur, newValue)) {
+            return true;
+        }
+    }
+    // Reference counter reached zero but task is not yet destructed.
+    return false;
+}
+
+bool
+details::TaskCb::CoroReleaseRef()
+{
+    auto cur = coroRefCounter.load();
+    while (true) {
+        if (cur == 0 || cur == -1) {
+            PULSE_PANIC("Task reference counter underflow");
+        }
+        decltype(cur) newValue = cur > 0 ? cur - 1 : cur + 1;
+        if (coroRefCounter.compare_exchange_weak(cur, newValue)) {
+            return newValue == 0;
+        }
+    }
 }
 
 void
-Task::SetPriority(Priority priority)
+details::TaskCb::Pin()
 {
-    TaskPromise &promise = GetPromise();
-    if (promise.priority == priority) {
+    auto cur = coroRefCounter.load();
+    while (true) {
+        if (cur == 0) {
+            PULSE_PANIC("Pinning unreferenced task");
+        }
+        if (cur < 0) {
+            // Already pinned
+            break;
+        }
+        if (coroRefCounter.compare_exchange_weak(cur, -cur - 1)) {
+            break;
+        }
+    }
+}
+
+bool
+details::TaskCb::Unpin()
+{
+    auto cur = coroRefCounter.load();
+    while (true) {
+        if (cur == 0) {
+            PULSE_PANIC("Unpinning unreferenced task");
+        }
+        if (cur > 0) {
+            // Not pinned
+            return false;
+        }
+        decltype(cur) newValue = -cur - 1;
+        if (coroRefCounter.compare_exchange_weak(cur, newValue)) {
+            return newValue == 0;
+        }
+    }
+}
+
+bool
+details::TaskCb::AwaitResult(details::TaskAwaiterBase *waiter, const TaskRef &waiterTask)
+{
+    if (waiterTask.cb->coro == coro) {
+        PULSE_PANIC("Task awaits itself");
+    }
+    if (isFinished) {
+        return false;
+    }
+    resultWaiters.AddFirst(waiter);
+    tasks::Priority priority = waiterTask.cb->priority;
+    if (priority < this->priority) {
+        // Propagate waiting task higher priority to this task.
+        RaisePriority(priority);
+    }
+    return true;
+}
+
+void
+details::TaskCb::CancelAwaitResult(details::TaskAwaiterBase *waiter)
+{
+    bool res PULSE_UNUSED = resultWaiters.Remove(waiter);
+    PULSE_ASSERT(res);
+}
+
+void
+details::TaskCb::NotifyWaiters()
+{
+    while (true) {
+        auto waiter = resultWaiters.PopFirst();
+        if (!waiter) {
+            break;
+        }
+        waiter->waiter.Wakeup();
+    }
+}
+
+void
+details::TaskCb::Resume()
+{
+    PULSE_ASSERT(coro);
+    coro.resume();
+}
+
+void
+details::TaskCb::SetPriority(tasks::Priority priority)
+{
+    if (this->priority == priority) {
         return;
     }
-    bool wasScheduled = promise.isRunnable;
+    bool wasScheduled = details::TaskImpl::TryDescheduleTask(*this);
+    this->priority = priority;
     if (wasScheduled) {
-        DescheduleTask(*this);
-    }
-    promise.priority = priority;
-    if (wasScheduled) {
-        ScheduleTask(*this);
+        details::TaskImpl::ScheduleTask(*this);
     }
 }
 
 void
-Task::RaisePriority(Priority priority)
+details::TaskCb::RaisePriority(tasks::Priority priority)
 {
-    TaskPromise &promise = GetPromise();
-    if (promise.priority <= priority) {
+    if (this->priority <= priority) {
         return;
     }
-    bool wasScheduled = promise.isRunnable;
+    bool wasScheduled = details::TaskImpl::TryDescheduleTask(*this);
+    this->priority = priority;
     if (wasScheduled) {
-        DescheduleTask(*this);
-    }
-    promise.priority = priority;
-    if (wasScheduled) {
-        ScheduleTask(*this);
+        details::TaskImpl::ScheduleTask(*this);
     }
 }
 
+
+details::TaskPromiseBase::TaskPromiseBase():
+    cb(TaskCbPtr(TaskCb::Allocate(), true))
+{
+    cb->coro = tasks::CoroutineHandle::from_promise(*this);
+    if (currentTask) {
+        cb->priority = currentTask.cb->priority;
+    }
+}
+
+details::TaskPromiseBase::~TaskPromiseBase()
+{
+    PULSE_ASSERT(cb->coroRefCounter == 0);
+}
+
+bool
+TaskSwitchAwaiter::await_suspend(tasks::CoroutineHandle handle)
+{
+    TaskRef task(handle);
+    details::TaskCb &cb = *task.cb;
+    tasks::Priority pri = cb.priority;
+    CriticalSection cs;
+    if (!readyTasksBitmap || readyTasksBitmap.FirstSet() > pri) {
+        // Do not suspend calling coroutine if there is no other runnable tasks or they have lower
+        // priority.
+        return false;
+    }
+    details::TaskTailedList &list = readyTasks[pri];
+    cb.AddRef();
+    list.AddLast(&cb);
+    readyTasksBitmap.Set(pri);
+    cb.isRunnable = 1;
+    switched = true;
+    return true;
+}
+
+TaskRef
+tasks::GetCurrentTask()
+{
+    return currentTask;
+}
+
 void
-Task::RunScheduler()
+tasks::RunScheduler()
 {
     pulsePort_InitScheduler();
     while (true) {
@@ -246,235 +571,7 @@ Task::RunScheduler()
 }
 
 void
-Task::RunSome()
+tasks::RunSome()
 {
     details::TaskImpl::RunSomeImpl(nullptr);
-}
-
-Task
-Task::GetCurrent()
-{
-    return currentTask;
-}
-
-bool
-TaskSwitchAwaiter::await_suspend(Task::CoroutineHandle handle)
-{
-    Task task(handle);
-    TaskPromise &promise = task.GetPromise();
-    Task::Priority pri = promise.priority;
-    CriticalSection cs;
-    if (!readyTasksBitmap || readyTasksBitmap.FirstSet() > pri) {
-        // Do not suspend calling coroutine if there is no other runnable tasks or they have lower
-        // priority.
-        return false;
-    }
-    TaskTailedList &list = readyTasks[pri];
-    list.AddLast(etl::move(task));
-    readyTasksBitmap.Set(pri);
-    promise.isRunnable = 1;
-    switched = true;
-    return true;
-}
-
-bool
-Task::AwaitResult(details::TaskAwaiterBase *waiter, const Task &task) const
-{
-    PULSE_ASSERT(task.handle.framePtr != handle.framePtr);
-    Task::Priority priority = task.GetPromise().priority;
-    TaskPromise &promise = GetPromise();
-    if (promise.isFinished) {
-        return false;
-    }
-    promise.resultWaiters.AddFirst(waiter);
-    if (priority < promise.priority) {
-        // Propagate waiting task higher priority to this task.
-        bool reschedule = promise.isRunnable;
-        if (reschedule) {
-            // Remove it from current queue first.
-            DescheduleTask(*this);
-        }
-        promise.priority = priority;
-        if (reschedule) {
-            ScheduleTask(*this);
-        }
-    }
-    return true;
-}
-
-void
-Task::CancelAwaitResult(details::TaskAwaiterBase *waiter) const
-{
-    GetPromise().resultWaiters.Remove(waiter);
-}
-
-
-TaskPromise::TaskPromise()
-{
-    Task currentTask = Task::GetCurrent();
-    if (currentTask) {
-        priority = currentTask.GetPromise().priority;
-    }
-}
-
-TaskPromise::~TaskPromise()
-{
-    PULSE_ASSERT(refCounter == 0);
-    if (weakPtrTag) {
-        weakPtrTag->handle.reset();
-    }
-}
-
-void
-TaskPromise::AddRef()
-{
-    auto cur = refCounter.load();
-    while (true) {
-        // refCounter should never reach zero when using this method since it is always should be
-        // used on some task which holds a reference.
-        PULSE_ASSERT(cur != 0);
-        if (cur == etl::numeric_limits<decltype(cur)>::max() ||
-            cur == etl::numeric_limits<decltype(cur)>::min()) {
-
-            PULSE_PANIC("Task reference counter overflow");
-        }
-        auto newValue = cur >= 0 ? cur + 1 : cur - 1;
-        if (refCounter.compare_exchange_weak(cur, newValue)) {
-            break;
-        }
-    }
-}
-
-bool
-TaskPromise::TryAddRef()
-{
-    auto cur = refCounter.load();
-    while (cur != 0) {
-        if (cur == etl::numeric_limits<decltype(cur)>::max() ||
-            cur == etl::numeric_limits<decltype(cur)>::min()) {
-
-            PULSE_PANIC("Task reference counter overflow");
-        }
-        auto newValue = cur >= 0 ? cur + 1 : cur - 1;
-        if (refCounter.compare_exchange_weak(cur, newValue)) {
-            return true;
-        }
-    }
-    // Reference counter reached zero but task is not yet destructed.
-    return false;
-}
-
-bool
-TaskPromise::ReleaseRef()
-{
-    auto cur = refCounter.load();
-    while (true) {
-        if (cur == 0 || cur == -1) {
-            PULSE_PANIC("Task reference counter underflow");
-        }
-        auto newValue = cur > 0 ? cur - 1 : cur + 1;
-        if (refCounter.compare_exchange_weak(cur, newValue)) {
-            return newValue == 0;
-        }
-    }
-}
-
-void
-TaskPromise::Pin()
-{
-    auto cur = refCounter.load();
-    while (true) {
-        if (cur == 0) {
-            PULSE_PANIC("Pinning unreferenced task");
-        }
-        if (cur < 0) {
-            // Already pinned
-            break;
-        }
-        if (refCounter.compare_exchange_weak(cur, -cur - 1)) {
-            break;
-        }
-    }
-}
-
-bool
-TaskPromise::Unpin()
-{
-    auto cur = refCounter.load();
-    while (true) {
-        if (cur == 0) {
-            PULSE_PANIC("Unpinning unreferenced task");
-        }
-        if (cur > 0) {
-            // Not pinned
-            return false;
-        }
-        auto newValue = -cur - 1;
-        if (refCounter.compare_exchange_weak(cur, newValue)) {
-            return newValue == 0;
-        }
-    }
-}
-
-Task::WeakPtr
-TaskPromise::GetWeakPtr()
-{
-    if (weakPtrTag) {
-        return weakPtrTag;
-    }
-    auto tag = new details::TaskWeakPtrTag(Task::CoroutineHandle::from_promise(*this));
-    if (!tag) {
-        PULSE_PANIC("TaskWeakPtrTag allocation failed");
-    }
-    CriticalSection cs;
-    if (weakPtrTag) {
-        cs.Exit();
-        delete tag;
-    } else {
-        weakPtrTag = SharedPtr<details::TaskWeakPtrTag>(tag, true);
-    }
-    return weakPtrTag;
-}
-
-void
-TaskPromise::NotifyWaiters()
-{
-    while (true) {
-        auto waiter = resultWaiters.PopFirst();
-        if (!waiter) {
-            break;
-        }
-        waiter->waiter.Wakeup();
-    }
-}
-
-
-Task
-details::TaskWeakPtr::Lock()
-{
-    if (!tag) {
-        return nullptr;
-    }
-    return Task(tag->handle, Task::WeakTag());
-}
-
-
-void
-details::MultipleTasksAwaiterBase::Finish(Entry *tasks, size_t numTasks)
-{
-    for (size_t i = 0; i < numTasks; i++) {
-        Entry &e = tasks[i];
-        if (!e.target) {
-            continue;
-        }
-        CriticalSection cs;
-        TaskPromise &handlerPromise = e.handler.GetPromise();
-        if (!handlerPromise.isFinished && handlerPromise.isRunnable) {
-            DescheduleTask(e.handler);
-        }
-        TaskPromise &targetPromise = e.target.GetPromise();
-        if (!targetPromise.isFinished && targetPromise.isRunnable) {
-            DescheduleTask(e.target);
-        }
-    }
 }

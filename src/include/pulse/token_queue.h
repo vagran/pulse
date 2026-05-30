@@ -77,7 +77,7 @@ public:
     await_ready();
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     TCounter
     await_resume() const
@@ -99,7 +99,7 @@ private:
     TokenQueueAwaiter<TCounter> *next = nullptr;
     TokenQueue<TCounter> &queue;
     etl::optional<TCounter> result;
-    Task::WeakPtr task;
+    TaskWeakRef task;
 };
 
 
@@ -187,13 +187,13 @@ TokenQueueAwaiter<TCounter>::await_ready()
 
 template <etl::integral TCounter>
 bool
-TokenQueueAwaiter<TCounter>::await_suspend(Task::CoroutineHandle handle)
+TokenQueueAwaiter<TCounter>::await_suspend(tasks::CoroutineHandle handle)
 {
     if (result) {
         return false;
     }
     // Move possible dynamic allocation out of lock.
-    auto wTask = Task(handle).GetWeakPtr();
+    auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
     if (queue.numTokens == 0) [[likely]] {

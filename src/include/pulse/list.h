@@ -89,6 +89,7 @@ struct List {
     void
     AddFirst(TPtr item);
 
+    /// @return First item if any, null if empty list.
     TPtr
     PopFirst();
 

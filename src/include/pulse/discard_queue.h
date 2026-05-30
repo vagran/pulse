@@ -160,7 +160,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     T
     await_resume()
@@ -174,7 +174,7 @@ private:
 
     DiscardQueuePopAwaiter<T, tailDrop, TIndex> *next = nullptr;
     DiscardQueue<T, tailDrop, TIndex> *queue = nullptr;
-    Task::WeakPtr task;
+    TaskWeakRef task;
     alignas(T) uint8_t storage[sizeof(T)];
 
     DiscardQueuePopAwaiter() = delete;
@@ -355,10 +355,10 @@ DiscardQueuePopAwaiter<T, tailDrop, TIndex>::~DiscardQueuePopAwaiter()
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 bool
-DiscardQueuePopAwaiter<T, tailDrop, TIndex>::await_suspend(Task::CoroutineHandle handle)
+DiscardQueuePopAwaiter<T, tailDrop, TIndex>::await_suspend(tasks::CoroutineHandle handle)
 {
     // Move possible dynamic allocation out of lock.
-    auto wTask = Task(handle).GetWeakPtr();
+    auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
 

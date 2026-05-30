@@ -240,7 +240,7 @@ public:
     await_ready() const;
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     bool
     await_resume() const;
@@ -262,7 +262,7 @@ private:
     TimerAwaiter *next = nullptr;
     // Set to null when completes
     Timer::Handle timer;
-    Task::WeakPtr waiter;
+    TaskWeakRef waiter;
     State state;
 
     TimerAwaiter() = delete;

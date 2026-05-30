@@ -121,7 +121,7 @@ protected:
     friend class BlockingQueue<T, TIndex>;
 
     BlockingQueue<T, TIndex> *queue = nullptr;
-    Task::WeakPtr task;
+    TaskWeakRef task;
     alignas(T) uint8_t storage[sizeof(T)];
 
     BlockingQueueAwaiter() = default;
@@ -153,7 +153,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     void
     await_resume() const
@@ -189,7 +189,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     T
     await_resume()
@@ -372,7 +372,7 @@ BlockingQueuePushAwaiter<T, TIndex>::~BlockingQueuePushAwaiter()
 
 template <typename T, etl::unsigned_integral TIndex>
 bool
-BlockingQueuePushAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
+BlockingQueuePushAwaiter<T, TIndex>::await_suspend(tasks::CoroutineHandle handle)
 {
     if (!this->queue) {
         return false;
@@ -384,7 +384,7 @@ BlockingQueuePushAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
         etl::destroy_at(&this->Item());
         return false;
     }
-    this->task = Task(handle).GetWeakPtr();
+    this->task = TaskRef(handle).GetWeakPtr();
     this->queue->pushWaiters.AddLast(this);
     return true;
 }
@@ -404,7 +404,7 @@ BlockingQueuePopAwaiter<T, TIndex>::~BlockingQueuePopAwaiter()
 
 template <typename T, etl::unsigned_integral TIndex>
 bool
-BlockingQueuePopAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
+BlockingQueuePopAwaiter<T, TIndex>::await_suspend(tasks::CoroutineHandle handle)
 {
     if (!this->queue) {
         return false;
@@ -415,7 +415,7 @@ BlockingQueuePopAwaiter<T, TIndex>::await_suspend(Task::CoroutineHandle handle)
         this->queue = nullptr;
         return false;
     }
-    this->task = Task(handle).GetWeakPtr();
+    this->task = TaskRef(handle).GetWeakPtr();
     this->queue->popWaiters.AddLast(this);
     return true;
 }

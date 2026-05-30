@@ -57,20 +57,20 @@ TestTimer(std::vector<TestEntry> tests)
         co_return numIncomplete == 0;
     };
 
-    auto Main = [&]() -> TaskV {
+    auto Main = [&]() -> Task<> {
         for (auto &e: tests) {
             e.awaitable = e.testFunc();
         }
         while (!co_await CheckComplete()) {
-            while (co_await Task::Switch());
+            while (co_await tasks::Switch());
             Timer::Tick();
             details::CheckTimers();
-            while (co_await Task::Switch());
+            while (co_await tasks::Switch());
         }
     };
 
-    auto task = Task::Spawn(Main(), Task::LOWEST_PRIORITY);
-    Task::RunSome();
+    auto task = tasks::Spawn(Main(), tasks::LOWEST_PRIORITY);
+    tasks::RunSome();
     REQUIRE(task.IsFinished());
     for (auto &e: tests) {
         REQUIRE(e.complete);
@@ -222,7 +222,7 @@ TEST_CASE("Timer - repeated expiration")
 
     auto timer = Timer::Create(2);
 
-    auto MakeDelay2 = [timer]() -> TTask<bool> {
+    auto MakeDelay2 = [timer]() -> Task<bool> {
         REQUIRE(Timer::GetTime() == 2);
         co_return co_await timer;
     };
@@ -232,7 +232,7 @@ TEST_CASE("Timer - repeated expiration")
         REQUIRE(ret);
         REQUIRE(Timer::GetTime() == 2);
         timer->ExpiresAt(10);
-        auto task = Task::Spawn(MakeDelay2(), Task::HIGHEST_PRIORITY);
+        auto task = tasks::Spawn(MakeDelay2(), tasks::HIGHEST_PRIORITY);
         co_return co_await task;
     };
 
@@ -392,7 +392,7 @@ TEST_CASE("Timer non-resumed awaiter clean up")
 
     auto MakeDelay = [timer1, timer2]() -> Awaitable<bool> {
         auto awaitable = timer2->Wait();
-        size_t idx = co_await Task::WhenAny(timer1, awaitable);
+        size_t idx = co_await tasks::WhenAny(timer1, awaitable);
         REQUIRE(idx == 1);
         co_return *awaitable.GetResult();
     };

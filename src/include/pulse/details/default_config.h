@@ -148,6 +148,17 @@
 #endif
 
 
+/** pulseConfig_NUM_PREALLOCED_TASKS
+ * Number of task control blocks initially pre-allocated in a pool. If this capacity is exceeded,
+ * next control block is dynamically allocated from the heap, and freed into the pool. Message is
+ * logged when a new control block is allocated from the heap. Recommended to set this value to a
+ * peak tasks number in an application.
+ */
+#ifndef pulseConfig_NUM_PREALLOCED_TASKS
+#   define pulseConfig_NUM_PREALLOCED_TASKS 1
+#endif
+
+
 /** pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY
  * Highest interrupt priority at which system calls can be made (those which are allowed to be
  * called from ISR). Pulse functions should never be called from ISR running on higher priorities.
@@ -186,6 +197,15 @@
  */
 #ifndef pulseConfig_LOG_LEVEL
 #   define pulseConfig_LOG_LEVEL    PULSE_LOG_LEVEL_INFO
+#endif
+
+
+/** pulseConfig_PULSE_LOG_LEVEL
+ * Threshold log level for logging in the Pulse itself. Set to some level if you want to see
+ * diagnostics from Pulse in the log.
+ */
+#ifndef pulseConfig_PULSE_LOG_LEVEL
+#   define pulseConfig_PULSE_LOG_LEVEL    PULSE_LOG_LEVEL_DISABLED
 #endif
 
 

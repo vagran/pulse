@@ -27,7 +27,7 @@ TEST_CASE("Semaphore")
 
     Semaphore<> sem(2);
 
-    auto t1 = Task::Spawn([](Semaphore<> &sem) -> TaskV {
+    auto t1 = tasks::Spawn([](Semaphore<> &sem) -> Task<> {
         REQUIRE(results.empty());
         results.push_back("T1:1");
         bool b = co_await sem.Acquire();
@@ -44,16 +44,16 @@ TEST_CASE("Semaphore")
         results.push_back("T1:4");
     }, sem);
 
-    auto t2 = Task::Spawn([](Semaphore<> &sem) -> TaskV {
+    auto t2 = tasks::Spawn([](Semaphore<> &sem) -> Task<> {
         CheckResult(3, "T1:3");
         results.push_back("T2:1");
         sem.Release();
-        while (co_await Task::Switch());
+        while (co_await tasks::Switch());
         CheckResult(5, "T1:4");
         results.push_back("T2:2");
     }, sem);
 
-    Task::RunSome();
+    tasks::RunSome();
 
     CheckResult(6, "T2:2");
 }
@@ -62,14 +62,14 @@ TEST_CASE("Semaphore awaiter destruction")
 {
     Semaphore<> sem(2);
 
-    auto t1 = Task::Spawn([](Semaphore<> &sem) -> TaskV {
+    auto t1 = tasks::Spawn([](Semaphore<> &sem) -> Task<> {
         sem.Acquire();
         sem.Acquire();
         sem.Acquire();
         co_return;
     }, sem);
 
-    Task::RunSome();
+    tasks::RunSome();
 
     REQUIRE(t1.IsFinished());
 }
@@ -79,7 +79,7 @@ TEST_CASE("Semaphore destruction")
     etl::optional<Semaphore<>> sem;
     sem.emplace(2, 1);
 
-    auto t1 = Task::Spawn([](etl::optional<Semaphore<>> &sem) -> TaskV {
+    auto t1 = tasks::Spawn([](etl::optional<Semaphore<>> &sem) -> Task<> {
         {
             auto g = co_await sem->AcquireGuard();
             REQUIRE(g);
@@ -90,12 +90,12 @@ TEST_CASE("Semaphore destruction")
         REQUIRE(!b);
     }, sem);
 
-    auto t2 = Task::Spawn([](etl::optional<Semaphore<>> &sem) -> TaskV {
+    auto t2 = tasks::Spawn([](etl::optional<Semaphore<>> &sem) -> Task<> {
         sem.reset();
         co_return;
     }, sem);
 
-    Task::RunSome();
+    tasks::RunSome();
 
     REQUIRE(t1.IsFinished());
     REQUIRE(t2.IsFinished());

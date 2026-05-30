@@ -71,7 +71,7 @@ public:
     }
 
     bool
-    await_suspend(Task::CoroutineHandle handle);
+    await_suspend(tasks::CoroutineHandle handle);
 
     /** @return True if acquired, false if semaphore destroyed. */
     bool
@@ -86,7 +86,7 @@ private:
 
     SemaphoreAwaiter<TSize> *next = nullptr;
     Semaphore<TSize> *sem = nullptr;
-    Task::WeakPtr task;
+    TaskWeakRef task;
     bool isAcquired;
 
     SemaphoreAwaiter():
@@ -224,10 +224,10 @@ SemaphoreAwaiter<TSize>::~SemaphoreAwaiter()
 
 template <etl::unsigned_integral TSize>
 bool
-SemaphoreAwaiter<TSize>::await_suspend(Task::CoroutineHandle handle)
+SemaphoreAwaiter<TSize>::await_suspend(tasks::CoroutineHandle handle)
 {
     // Move possible dynamic allocation out of lock.
-    auto wTask = Task(handle).GetWeakPtr();
+    auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
 
