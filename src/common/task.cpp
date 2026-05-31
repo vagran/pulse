@@ -117,7 +117,8 @@ struct TaskCbPreallocatedPool {
 
 TaskCbPreallocatedPool taskCbPreallocatedPool;
 
-#endif
+#endif // pulseConfig_NUM_PREALLOCED_TASKS > 0
+
 
 /// Allocate from pool. Returns null if no free item.
 details::TaskCb *
@@ -145,6 +146,8 @@ FreeTaskCb(details::TaskCb *cb)
     cbPool = e;
 }
 
+// XXX Make it configurable by port.
+using SleepInterruptsGuard = IrqGuard;
 
 } // anonymous namespace
 
@@ -168,7 +171,7 @@ public:
      *  this variable, MAX_TICK_COUNT if no next timer.
      * @return Guard for disabled interrupts if any.
      */
-    static InterruptsGuard
+    static SleepInterruptsGuard
     RunSomeImpl(Timer::TickCount *nextTimerTicks);
 };
 
@@ -217,7 +220,7 @@ details::TaskImpl::Spawn(const TaskRef &task, tasks::Priority priority)
     ScheduleTask(*task.cb);
 }
 
-InterruptsGuard
+SleepInterruptsGuard
 details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
 {
     Timer::TickCount ticks = details::CheckTimers();
@@ -230,7 +233,7 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
             timersChecked = true;
             shouldRecheckTimers = false;
         }
-        InterruptsGuard ig;
+        SleepInterruptsGuard ig;
         if (!readyTasksBitmap) {
             if (!timersChecked) {
                 // Some tasks were run since last timer check, new timers might be scheduled so need
@@ -265,7 +268,7 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
             currentTask.ReleaseHandle();
         }
     }
-    return InterruptsGuard(false);
+    return SleepInterruptsGuard(false);
 }
 
 void
@@ -556,7 +559,7 @@ tasks::RunScheduler()
     pulsePort_InitScheduler();
     while (true) {
         Timer::TickCount nextTimerTicks;
-        InterruptsGuard ig = details::TaskImpl::RunSomeImpl(&nextTimerTicks);
+        SleepInterruptsGuard ig = details::TaskImpl::RunSomeImpl(&nextTimerTicks);
 #if pulseConfig_TICKLESS_IDLE
         if (nextTimerTicks < pulseConfig_TICKLESS_MIN_TICKS) {
             pulsePort_Sleep();

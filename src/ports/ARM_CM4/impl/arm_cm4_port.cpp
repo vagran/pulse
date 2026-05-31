@@ -38,15 +38,10 @@ PULSE_WEAK void
 pulsePort_Sleep()
 {
     asm volatile ("dsb" ::: "memory");
-    asm volatile ("sev");
-    asm volatile ("wfe");
-    asm volatile ("wfe");
+    asm volatile ("wfi");
     asm volatile ("isb");
 }
 
 PULSE_WEAK void
 pulsePort_InitScheduler()
-{
-    // Pending interrupts set event register, required for WFE-based sleep.
-    SCB->SCR |= SCB_SCR_SEVONPEND_Msk;
-}
+{}

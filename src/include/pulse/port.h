@@ -247,7 +247,7 @@ public:
         }
     }
 
-    IrqGuard(InterruptsGuard &&other):
+    IrqGuard(IrqGuard &&other):
         acquired(other.acquired),
         state(other.state)
     {
