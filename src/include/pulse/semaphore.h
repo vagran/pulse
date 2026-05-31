@@ -226,7 +226,6 @@ template <etl::unsigned_integral TSize>
 bool
 SemaphoreAwaiter<TSize>::await_suspend(tasks::CoroutineHandle handle)
 {
-    // Move possible dynamic allocation out of lock.
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;

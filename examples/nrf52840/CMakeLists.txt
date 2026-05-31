@@ -12,7 +12,7 @@ set(CMAKE_C_STANDARD 23)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O0 -fno-omit-frame-pointer")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     add_compile_definitions(DEBUG)
 endif()
 

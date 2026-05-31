@@ -192,7 +192,6 @@ TokenQueueAwaiter<TCounter>::await_suspend(tasks::CoroutineHandle handle)
     if (result) {
         return false;
     }
-    // Move possible dynamic allocation out of lock.
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
