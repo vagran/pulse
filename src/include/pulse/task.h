@@ -145,8 +145,8 @@ public:
     inline TaskRef &
     operator =(const TaskRef &other);
 
-    TaskRef &
-    operator =(TaskRef &&other) = default;
+    inline TaskRef &
+    operator =(TaskRef &&other);
 
     /// Clear associated handle, making this task null.
     void
@@ -238,7 +238,7 @@ public:
         TaskRef t = Lock();
         Reset();
         if (t) {
-            etl::move(t).Schedule();
+            t.Schedule();
         }
     }
 
@@ -1002,6 +1002,14 @@ TaskRef::operator =(const TaskRef &other)
     if (cb) {
         cb->CoroAddRef();
     }
+    return *this;
+}
+
+TaskRef &
+TaskRef::operator =(TaskRef &&other)
+{
+    ReleaseHandle();
+    cb = etl::move(other.cb);
     return *this;
 }
 
