@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/discard_queue.h>
 #include <pulse/token_queue.h>
+#include <random>
 
 
 using namespace pulse;
@@ -61,6 +62,16 @@ public:
         if (value) {
             numValuesDestructed++;
         }
+    }
+
+    A &
+    operator =(A &&other)
+    {
+        if (value) {
+            numValuesDestructed++;
+        }
+        value = std::move(other.value);
+        return *this;
     }
 };
 
@@ -387,6 +398,81 @@ TEST_CASE("Discard queue")
             REQUIRE(t2.IsFinished());
         }
     }
+
+    CheckStats();
+}
+
+TEST_CASE("Discard queue stress test")
+{
+    ResetStats();
+    results.clear();
+
+    uint32_t seed = std::random_device()();
+    INFO("Random seed: " << seed);
+    std::mt19937 rng(seed);
+
+    using Queue = InlineDiscardQueue<A, true, 2>;
+
+    Queue q1, q2, q3;
+
+    auto t1 = tasks::Spawn([](Queue &q1, Queue &q2, Queue &q3) -> Task<> {
+        while (true) {
+            A r1 = 0, r2 = 0, r3 = 0;
+            size_t idx = co_await tasks::WhenAny(tasks::SaveResult(q1, r1),
+                                                 tasks::SaveResult(q2, r2),
+                                                 tasks::SaveResult(q3, r3));
+            A *r;
+            switch(idx) {
+            case 0:
+                r = &r1;
+                break;
+            case 1:
+                r = &r2;
+                break;
+            case 2:
+                r = &r3;
+                break;
+            default:
+                FAIL("Bad index");
+            }
+            if (*r->value == -1) {
+                co_return;
+            }
+            REQUIRE(*r->value == idx + 1);
+        }
+    }, q1, q2, q3);
+
+    auto t2 = tasks::Spawn([](Queue &q1, Queue &q2, Queue &q3, std::mt19937 &rng) -> Task<> {
+        std::uniform_int_distribution<int> qDist{0, 2};
+        std::uniform_int_distribution<int> swDist{0, 3};
+        for (int i = 0; i < 10000; i++) {
+            int qIdx = qDist(rng);
+            switch (qIdx) {
+            case 0:
+                q1.Push(1);
+                break;
+            case 1:
+                q2.Push(2);
+                break;
+            case 2:
+                q3.Push(3);
+                break;
+            }
+            if (swDist(rng) == 0) {
+                co_await tasks::Switch();
+            }
+        }
+
+        q1.Push(-1);
+        q2.Push(-1);
+        q3.Push(-1);
+        co_return;
+    }, q1, q2, q3, rng);
+
+    tasks::RunSome();
+
+    REQUIRE(t1.IsFinished());
+    REQUIRE(t2.IsFinished());
 
     CheckStats();
 }
