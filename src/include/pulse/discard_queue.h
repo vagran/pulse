@@ -123,7 +123,7 @@ private:
     }
 
     void
-    CommitPush(bool checkWaiters);
+    CommitPush();
 
     void
     CommitPop();
@@ -224,9 +224,13 @@ DiscardQueue<T, tailDrop, TIndex>::Push(U &&value)
 {
     CriticalSection cs;
 
+    if (size) {
+        PULSE_ASSERT(popWaiters.IsEmpty());
+    }
+
     if (size < capacity) {
         etl::construct_at(&CurWriteItem(), etl::forward<U>(value));
-        CommitPush(true);
+        CommitPush();
         return true;
     }
 
@@ -251,9 +255,13 @@ DiscardQueue<T, tailDrop, TIndex>::Emplace(Args &&... args)
 {
     CriticalSection cs;
 
+    if (size) {
+        PULSE_ASSERT(popWaiters.IsEmpty());
+    }
+
     if (size < capacity) {
         etl::construct_at(&CurWriteItem(), etl::forward<Args>(args)...);
-        CommitPush(true);
+        CommitPush();
         return true;
     }
 
@@ -278,6 +286,7 @@ DiscardQueue<T, tailDrop, TIndex>::Pop()
     CriticalSection cs;
 
     if (size) {
+        PULSE_ASSERT(popWaiters.IsEmpty());
         // Awaiters do not have copy constructors so temporarily store item here.
         T item = etl::move(CurReadItem());
         CommitPop();
@@ -309,13 +318,10 @@ DiscardQueue<T, tailDrop, TIndex>::TryPop()
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 void
-DiscardQueue<T, tailDrop, TIndex>::CommitPush(bool checkWaiters)
+DiscardQueue<T, tailDrop, TIndex>::CommitPush()
 {
     PULSE_ASSERT(size <= capacity);
     size++;
-    if (!checkWaiters) {
-        return;
-    }
     while (size && !popWaiters.IsEmpty()) {
         auto waiter = popWaiters.PopFirst();
         etl::construct_at(&waiter->Item(), etl::move(CurReadItem()));
@@ -338,7 +344,6 @@ DiscardQueue<T, tailDrop, TIndex>::CommitPop()
     }
 }
 
-
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 DiscardQueuePopAwaiter<T, tailDrop, TIndex>::~DiscardQueuePopAwaiter()
 {
@@ -357,12 +362,12 @@ template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
 bool
 DiscardQueuePopAwaiter<T, tailDrop, TIndex>::await_suspend(tasks::CoroutineHandle handle)
 {
-    // Move possible dynamic allocation out of lock.
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
 
     if (queue->size) [[unlikely]] {
+        PULSE_ASSERT(queue->popWaiters.IsEmpty());
         etl::construct_at(&Item(), etl::move(queue->CurReadItem()));
         queue->CommitPop();
         queue = nullptr;

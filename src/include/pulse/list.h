@@ -224,6 +224,7 @@ TailedList<TPtr, Trait>::AddFirst(TPtr item)
         head = item;
         tail = etl::move(item);
     } else {
+        PULSE_ASSERT(tail);
         Trait::SetNext(item, etl::move(head));
         head = etl::move(item);
     }
@@ -236,9 +237,11 @@ TailedList<TPtr, Trait>::AddLast(TPtr item)
 {
     PULSE_ASSERT(!Trait::GetNext(item));
     if (!tail) {
+        PULSE_ASSERT(!head);
         head = item;
         tail = etl::move(item);
     } else {
+        PULSE_ASSERT(head);
         Trait::SetNext(tail, item);
         tail = etl::move(item);
     }

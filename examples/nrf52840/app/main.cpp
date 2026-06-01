@@ -267,6 +267,25 @@ BlinkTask()
     }
 }
 
+void
+OnButtonClick()
+{
+    blinkIntervalIndex++;
+    if (blinkIntervalIndex > 3) {
+        blinkIntervalIndex = 0;
+    }
+    blinkTimer.Cancel();
+
+    LOG_INFO("New interval: {}", blinkIntervalIndex);
+
+    MallocStats stats;
+    pulse::GetMallocStats(&stats);
+    uart.Format("Total free: {}\n", stats.totalFree);
+    uart.Format("Total used: {}\n", stats.totalUsed);
+    uart.Format("Min free: {}\n", stats.minFree);
+    uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
+}
+
 // Handles button debouncing
 Task<>
 ButtonTask()
@@ -280,27 +299,14 @@ ButtonTask()
 
         // Do action here. In case long presses supported, should differentiate from long press
         // first.
-        blinkIntervalIndex++;
-        if (blinkIntervalIndex > 3) {
-            blinkIntervalIndex = 0;
-        }
-        blinkTimer.Cancel();
-
-        LOG_INFO("New interval: {}", blinkIntervalIndex);
-
-        MallocStats stats;
-        pulse::GetMallocStats(&stats);
-        uart.Format("Total free: {}\n", stats.totalFree);
-        uart.Format("Total used: {}\n", stats.totalUsed);
-        uart.Format("Min free: {}\n", stats.minFree);
-        uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
+        OnButtonClick();
 
         // Suppress jitter - wait until inactive level is stable for a long period
         bool isPressed = true;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
             size_t idx = co_await tasks::WhenAny(
-                tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+                tasks::SaveResult(buttonEvents, isPressed), jitterTimer);
             if (idx == 0) {
                 // Button toggled again, restart anti-jitter delay
                 continue;
@@ -323,7 +329,7 @@ ButtonTask()
             while (true) {
                 jitterTimer.ExpiresAfter(JITTER_DELAY);
                 size_t idx = co_await tasks::WhenAny(
-                    tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+                    tasks::SaveResult(buttonEvents, isPressed), jitterTimer);
                 if (idx == 0) {
                     continue;
                 }
@@ -415,7 +421,7 @@ RotaryEncoder::LineTask(bool isA)
             size_t idx = co_await tasks::WhenAny(
                 tasks::SaveResult(lineEvents, isPressed), jitterTimer);
             if (idx == 0) {
-                // Button toggled again, restart anti-jitter delay
+                // Line toggled again, restart anti-jitter delay
                 continue;
             }
             // Anti-jitter delay expired with no new toggles
@@ -452,6 +458,7 @@ RotaryEncoder::LineTask(bool isA)
     }
 }
 
+//XXX save filtered lines states
 void
 RotaryEncoder::CommitEvent(bool triggerLineA, bool adjLineState)
 {
@@ -556,6 +563,12 @@ extern "C" int
 __wrap_atexit(void (*)())
 {
     return -1;
+}
+
+extern "C" void
+__cxa_pure_virtual()
+{
+    Panic("Pure virtual function called");
 }
 
 uint32_t

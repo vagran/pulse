@@ -489,6 +489,12 @@ main()
 }
 
 extern "C" void
+__cxa_pure_virtual()
+{
+    Panic("Pure virtual function called");
+}
+
+extern "C" void
 _init()
 {}
 

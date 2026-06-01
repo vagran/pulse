@@ -38,7 +38,7 @@ pulsePort_GetAndRaiseBASEPRI()
         "msr basepri_max, %1    \n" \
         "dsb                    \n" \
         "isb                    \n" \
-        : "=r" (prevBASEPRI)
+        : "=&r" (prevBASEPRI)
         : "r" (newBASEPRI)
         : "memory"
     );
