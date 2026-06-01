@@ -444,7 +444,7 @@ TEST_CASE("Discard queue stress test")
 
     auto t2 = tasks::Spawn([](Queue &q1, Queue &q2, Queue &q3, std::mt19937 &rng) -> Task<> {
         std::uniform_int_distribution<int> qDist{0, 2};
-        std::uniform_int_distribution<int> swDist{0, 3};
+        std::uniform_int_distribution<int> swDist{0, 4};
         for (int i = 0; i < 10000; i++) {
             int qIdx = qDist(rng);
             switch (qIdx) {
@@ -458,16 +458,19 @@ TEST_CASE("Discard queue stress test")
                 q3.Push(3);
                 break;
             }
-            if (swDist(rng) == 0) {
+
+            int s = swDist(rng);
+            if (s == 0) {
                 co_await tasks::Switch();
+            } else if (s == 1) {
+                while (co_await tasks::Switch());
             }
         }
 
-        co_await tasks::Switch();
+        while (co_await tasks::Switch());
         q1.Push(-1);
         q2.Push(-1);
         q3.Push(-1);
-        co_return;
     }, q1, q2, q3, rng);
 
     tasks::RunSome();
