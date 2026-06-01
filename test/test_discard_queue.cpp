@@ -463,6 +463,7 @@ TEST_CASE("Discard queue stress test")
             }
         }
 
+        co_await tasks::Switch();
         q1.Push(-1);
         q2.Push(-1);
         q3.Push(-1);
