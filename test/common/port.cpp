@@ -5,6 +5,7 @@
 namespace {
 
 int csNesting = 0;
+bool irqEnabled = true;
 
 } // anonymous namespace
 
@@ -16,6 +17,24 @@ pulsePort_DisableInterrupt()
 void
 pulsePort_EnableInterrupts()
 {}
+
+void
+pulsePort_DisableIrq()
+{
+    irqEnabled = false;
+}
+
+void
+pulsePort_EnableIrq()
+{
+    irqEnabled = true;
+}
+
+bool
+pulsePort_IsIrqEnabled()
+{
+    return irqEnabled;
+}
 
 unsigned
 pulsePort_GetAndDisableInterrupts()
