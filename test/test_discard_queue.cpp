@@ -1,14 +1,20 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/discard_queue.h>
 #include <pulse/token_queue.h>
+#include <pulse/timer.h>
+#include <interrupts.h>
 #include <random>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
 
 
 using namespace pulse;
 
 namespace {
 
-size_t numConstructed = 0, numDestructed = 0, numValuesConstructed = 0, numValuesDestructed = 0;
+std::atomic<size_t> numConstructed = 0, numDestructed = 0,
+                    numValuesConstructed = 0, numValuesDestructed = 0;
 
 void
 ResetStats()
@@ -22,14 +28,17 @@ ResetStats()
 void
 CheckStats()
 {
-    REQUIRE(numConstructed == numDestructed);
-    REQUIRE(numValuesConstructed == numValuesDestructed);
+    CHECK(numConstructed == numDestructed);
+    CHECK(numValuesConstructed == numValuesDestructed);
 }
 
 class A {
 public:
+    static constexpr uint32_t INIT_SIG = 0xc001babe, FREE_SIG = 0xfeeefeee;
+
     // Use dynamic allocation to help troubleshooting with Valgrind.
     std::unique_ptr<int> value;
+    uint32_t signature = INIT_SIG;
 
     A()
     {
@@ -58,6 +67,8 @@ public:
 
     ~A()
     {
+        REQUIRE(signature == INIT_SIG);
+        signature = FREE_SIG;
         numDestructed++;
         if (value) {
             numValuesDestructed++;
@@ -117,6 +128,45 @@ CheckResult(size_t expectedSize, const std::string &expectedLast)
     REQUIRE(expectedLast == results.back());
     REQUIRE(expectedSize == results.size());
 }
+
+class Scheduler {
+public:
+    void
+    Terminate()
+    {
+        std::unique_lock lock(mutex);
+        isDone = true;
+        cv.notify_all();
+    }
+
+    void
+    Wakeup()
+    {
+        std::unique_lock lock(mutex);
+        isPending = true;
+        cv.notify_all();
+    }
+
+    void
+    Run()
+    {
+        while (true) {
+            std::unique_lock lock(mutex);
+            cv.wait(lock, [&](){ return isDone || isPending; });
+            isPending = false;
+            if (isDone) {
+                break;
+            }
+            lock.unlock();
+            tasks::RunSome();
+        }
+        tasks::RunSome();
+    }
+private:
+    bool isDone = false, isPending = false;
+    std::mutex mutex;
+    std::condition_variable cv;
+};
 
 } // anonymous namespace
 
@@ -477,6 +527,96 @@ TEST_CASE("Discard queue stress test")
 
     REQUIRE(t1.IsFinished());
     REQUIRE(t2.IsFinished());
+
+    CheckStats();
+}
+
+
+TEST_CASE("Discard queue stress test (interrupts)")
+{
+    ResetStats();
+    results.clear();
+
+    uint32_t seed = std::random_device()();
+    INFO("Random seed: " << seed);
+    std::mt19937 rng(seed);
+
+    using Queue = InlineDiscardQueue<A, true, 2>;
+
+    Queue q1, q2, q3;
+    Timer t;
+
+    auto t1 = tasks::Spawn([](Queue &q1, Queue &q2, Queue &q3, Timer &t) -> Task<> {
+        t.ExpiresAfter(2);
+        while (true) {
+            A r1 = 0, r2 = 0, r3 = 0;
+            size_t idx = co_await tasks::WhenAny(tasks::SaveResult(q1, r1),
+                                                 tasks::SaveResult(q2, r2),
+                                                 tasks::SaveResult(q3, r3),
+                                                 t);
+            A *r;
+            switch(idx) {
+            case 0:
+                r = &r1;
+                break;
+            case 1:
+                r = &r2;
+                break;
+            case 2:
+                r = &r3;
+                break;
+            case 3:
+                t.ExpiresAfter(2);
+                continue;
+            default:
+                FAIL("Bad index");
+            }
+            if (*r->value == -1) {
+                t.Cancel();
+                co_return;
+            }
+            REQUIRE(*r->value == static_cast<int>(idx + 1));
+        }
+    }, q1, q2, q3, t);
+
+    Scheduler scheduler;
+
+    std::thread t2([&](){
+        std::uniform_int_distribution<int> qDist{0, 2};
+        std::uniform_int_distribution<int> swDist{0, 4};
+        for (int i = 0; i < 10000; i++) {
+            IsrGuard g;
+            Timer::Tick();
+            int qIdx = qDist(rng);
+            switch (qIdx) {
+            case 0:
+                q1.Push(1);
+                break;
+            case 1:
+                q2.Push(2);
+                break;
+            case 2:
+                q3.Push(3);
+                break;
+            }
+            g.Exit();
+            scheduler.Wakeup();
+            if (swDist(rng) == 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        IsrGuard g;
+        q1.Push(-1);
+        q2.Push(-1);
+        q3.Push(-1);
+        scheduler.Terminate();
+    });
+
+    scheduler.Run();
+
+    REQUIRE(t1.IsFinished());
+    t2.join();
 
     CheckStats();
 }

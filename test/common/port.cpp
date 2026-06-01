@@ -1,13 +1,44 @@
 #include <pulse/port.h>
 #include <catch2/catch_test_macros.hpp>
+#include <interrupts.h>
+#include <mutex>
+#include <atomic>
 
 
 namespace {
 
-int csNesting = 0;
+std::mutex csMutex;
 bool irqEnabled = true;
+thread_local bool isIsr = false;
+thread_local int csNesting = 0;
 
 } // anonymous namespace
+
+void
+IsrEnter()
+{
+    csMutex.lock();
+    if (isIsr) {
+        throw std::runtime_error("isIsr set in IsrEnter");
+    }
+    if (csNesting) {
+        throw std::runtime_error("csNesting != 0 in IsrEnter");
+    }
+    isIsr = true;
+}
+
+void
+IsrExit()
+{
+    if (!isIsr) {
+        throw std::runtime_error("isIsr is not set in IsrExit");
+    }
+    if (csNesting) {
+        throw std::runtime_error("csNesting != 0 in IsrExit");
+    }
+    isIsr = false;
+    csMutex.unlock();
+}
 
 void
 pulsePort_DisableInterrupt()
@@ -49,14 +80,22 @@ pulsePort_SetInterrupts(unsigned)
 void
 pulsePort_EnterCriticalSection()
 {
+    if (csNesting == 0 && !isIsr) {
+        csMutex.lock();
+    }
     csNesting++;
 }
 
 void
 pulsePort_ExitCriticalSection()
 {
-    REQUIRE(csNesting > 0);
+    if (csNesting == 0) {
+        throw std::runtime_error("csNesting underflow");
+    }
     csNesting--;
+    if (csNesting == 0 && !isIsr) {
+        csMutex.unlock();
+    }
 }
 
 void
