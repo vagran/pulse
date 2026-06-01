@@ -438,7 +438,7 @@ TEST_CASE("Discard queue stress test")
             if (*r->value == -1) {
                 co_return;
             }
-            REQUIRE(*r->value == idx + 1);
+            REQUIRE(*r->value == static_cast<int>(idx + 1));
         }
     }, q1, q2, q3);
 
