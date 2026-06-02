@@ -92,7 +92,7 @@ To blink a LED, simply spawn a task and use the provided timer facility to intro
 // Declaring heap like this ensures proper alignment and granularity.
 pulse::MallocUnit heap[HEAP_UNITS_SIZE_KB(1)];
 
-pulse::TaskV
+pulse::Task<>
 BlinkTask()
 {
     while (true) {
@@ -110,8 +110,8 @@ main()
     // Do some hardware initialization
     InitHardware();
 
-    pulse::Task::Spawn(BlinkTask()).Pin();
-    pulse::Task::RunScheduler(); // Never returns
+    pulse::tasks::Spawn(BlinkTask()).Pin();
+    pulse::tasks::RunScheduler(); // Never returns
 
     Panic("Scheduler exited");
 }
@@ -135,7 +135,7 @@ int blinkIntervalIndex = 0;
 InlineDiscardQueue<bool, true, 8> buttonEvents;
 
 /// Make mode switch confirmation indication
-pulse::Awaitable<void>
+pulse::Awaitable<>
 ConfirmSwitch(int intervalIndex)
 {
     LedOff();
@@ -150,7 +150,7 @@ ConfirmSwitch(int intervalIndex)
 }
 
 // Handles LED blinking
-pulse::TaskV
+pulse::Task<>
 BlinkTask()
 {
     int intervalIndex = blinkIntervalIndex;
@@ -175,7 +175,7 @@ BlinkTask()
 }
 
 // Handles button debouncing
-TaskV
+Task<>
 ButtonTask()
 {
     constexpr auto JITTER_DELAY = etl::chrono::milliseconds(50);
@@ -206,8 +206,8 @@ ButtonTask()
         bool isPressed = true;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await Task::WhenAny(
-                Task::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+            size_t idx = co_await tasks::WhenAny(
+                tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
             if (idx == 0) {
                 // Button toggled again, restart anti-jitter delay
                 continue;
@@ -229,8 +229,8 @@ ButtonTask()
             bool isPressed = false;
             while (true) {
                 jitterTimer.ExpiresAfter(JITTER_DELAY);
-                size_t idx = co_await Task::WhenAny(
-                    Task::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+                size_t idx = co_await tasks::WhenAny(
+                    tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
                 if (idx == 0) {
                     continue;
                 }
@@ -269,10 +269,10 @@ main()
 
     InitHardware();
 
-    pulse::Task::Spawn(BlinkTask()).Pin();
-    pulse::Task::Spawn(ButtonTask()).Pin();
+    pulse::tasks::Spawn(BlinkTask()).Pin();
+    pulse::tasks::Spawn(ButtonTask()).Pin();
 
-    pulse::Task::RunScheduler();
+    pulse::tasks::RunScheduler();
 
     Panic("Scheduler exited");
 }
