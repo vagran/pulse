@@ -231,15 +231,18 @@ public:
 
     /** Locks referenced task, resets this pointer and schedules the task if any. This is typical
      * pattern used in awaiters.
+     * @return True if woken, false if task already released.
      */
-    void
+    bool
     Wakeup()
     {
         TaskRef t = Lock();
         Reset();
         if (t) {
             t.Schedule();
+            return true;
         }
+        return false;
     }
 
 private:

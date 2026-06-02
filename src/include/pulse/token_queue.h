@@ -67,10 +67,6 @@ public:
     TokenQueueAwaiter(const TokenQueueAwaiter &) = delete;
     TokenQueueAwaiter(TokenQueueAwaiter &&) = delete;
 
-    TokenQueueAwaiter(TokenQueue<TCounter> &queue):
-        queue(queue)
-    {}
-
     ~TokenQueueAwaiter();
 
     bool
@@ -82,13 +78,16 @@ public:
     TCounter
     await_resume() const
     {
-        return *result;
+        return result;
     }
 
     /** @return Obtained token value, nullopt if not ready. */
     etl::optional<TCounter>
     GetResult() const
     {
+        if (queue || task) {
+            return etl::nullopt;
+        }
         return result;
     }
 
@@ -97,9 +96,13 @@ private:
     friend struct details::ListDefaultTrait<TokenQueueAwaiter *>;
 
     TokenQueueAwaiter<TCounter> *next = nullptr;
-    TokenQueue<TCounter> &queue;
-    etl::optional<TCounter> result;
+    TokenQueue<TCounter> *queue;
+    TCounter result;
     TaskWeakRef task;
+
+    TokenQueueAwaiter(TokenQueue<TCounter> *queue):
+        queue(queue)
+    {}
 };
 
 
@@ -111,7 +114,7 @@ TokenQueue<TCounter>::~TokenQueue()
     while (next) {
         auto waiter = next;
         next = waiter->next;
-        waiter->task.Reset();
+        waiter->task.Wakeup();
     }
 }
 
@@ -123,6 +126,9 @@ TokenQueue<TCounter>::Push(TCounter n)
 
     while (!waiters.IsEmpty() && (numTokens || n)) {
         TokenQueueAwaiter<TCounter> *w = waiters.PopFirst();
+        if (!w->task.Wakeup()) {
+            continue;
+        }
         w->result = value - numTokens;
         if (numTokens) {
             numTokens--;
@@ -130,7 +136,7 @@ TokenQueue<TCounter>::Push(TCounter n)
             n--;
             value++;
         }
-        w->task.Wakeup();
+        w->queue = nullptr;
     }
     value += n;
     if (numTokens + n >= maxTokens) {
@@ -144,7 +150,7 @@ template <etl::integral TCounter>
 TokenQueueAwaiter<TCounter>
 TokenQueue<TCounter>::Take()
 {
-    return TokenQueueAwaiter<TCounter>(*this);
+    return TokenQueueAwaiter<TCounter>(this);
 }
 
 template <etl::integral TCounter>
@@ -159,7 +165,7 @@ template <etl::integral TCounter>
 TokenQueueAwaiter<TCounter>
 TokenQueue<TCounter>::operator co_await()
 {
-    return TokenQueueAwaiter<TCounter>(*this);
+    return TokenQueueAwaiter<TCounter>(this);
 }
 
 
@@ -168,7 +174,7 @@ TokenQueueAwaiter<TCounter>::~TokenQueueAwaiter()
 {
     CriticalSection cs;
     if (task) {
-        queue.waiters.Remove(this);
+        queue->waiters.Remove(this);
     }
 }
 
@@ -177,11 +183,12 @@ bool
 TokenQueueAwaiter<TCounter>::await_ready()
 {
     CriticalSection cs;
-    if (queue.numTokens == 0) {
+    if (queue->numTokens == 0) {
         return false;
     }
-    result = queue.value - queue.numTokens;
-    queue.numTokens--;
+    result = queue->value - queue->numTokens;
+    queue->numTokens--;
+    queue = nullptr;
     return true;
 }
 
@@ -189,19 +196,19 @@ template <etl::integral TCounter>
 bool
 TokenQueueAwaiter<TCounter>::await_suspend(tasks::CoroutineHandle handle)
 {
-    if (result) {
+    if (!queue) {
         return false;
     }
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
-    if (queue.numTokens == 0) [[likely]] {
+    if (queue->numTokens == 0) [[likely]] {
         task = etl::move(wTask);
-        queue.waiters.AddLast(this);
+        queue->waiters.AddLast(this);
         return true;
     }
-    result = queue.value - queue.numTokens;
-    queue.numTokens--;
+    result = queue->value - queue->numTokens;
+    queue->numTokens--;
     return false;
 }
 

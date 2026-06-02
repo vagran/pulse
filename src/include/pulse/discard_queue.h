@@ -200,10 +200,12 @@ DiscardQueue<T, tailDrop, TIndex>::~DiscardQueue()
 {
     CriticalSection cs;
     for (auto waiter: popWaiters) {
+        if (!waiter->task.Wakeup()) {
+            continue;
+        }
         waiter->queue = nullptr;
         // Return default-constructed item.
         etl::construct_at(&waiter->Item());
-        waiter->task.Wakeup();
     }
     cs.Exit();
 
@@ -324,10 +326,16 @@ DiscardQueue<T, tailDrop, TIndex>::CommitPush()
     size++;
     while (size && !popWaiters.IsEmpty()) {
         auto waiter = popWaiters.PopFirst();
+        if (!waiter->task.Wakeup()) {
+            // Actually this unlikely to happen since Awaiter usually sits in waiter coroutine
+            // frame, so when task last reference is released, the frame is destroyed and awaiter
+            // destructor removes itself from the list. But make it so for consistency and
+            // robustness for some exotic cases when awaiter is outside waiter task frame.
+            continue;
+        }
         etl::construct_at(&waiter->Item(), etl::move(CurReadItem()));
         CommitPop();
         waiter->queue = nullptr;
-        waiter->task.Wakeup();
     }
 }
 

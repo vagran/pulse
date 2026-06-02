@@ -223,10 +223,12 @@ BlockingQueue<T, TIndex>::~BlockingQueue()
         waiter->task.Wakeup();
     }
     for (auto waiter: popWaiters) {
+        if (!waiter->task.Wakeup()) {
+            continue;
+        }
         waiter->queue = nullptr;
         // Return default-constructed item.
         etl::construct_at(&waiter->Item());
-        waiter->task.Wakeup();
     }
 
     while (size) {
@@ -327,10 +329,12 @@ BlockingQueue<T, TIndex>::CommitPush(bool checkWaiters)
     }
     while (size && !popWaiters.IsEmpty()) {
         auto waiter = popWaiters.PopFirst();
+        if (!waiter->task.Wakeup()) {
+            continue;
+        }
         etl::construct_at(&waiter->Item(), etl::move(CurReadItem()));
         CommitPop(false);
         waiter->queue = nullptr;
-        waiter->task.Wakeup();
     }
 }
 
@@ -350,11 +354,13 @@ BlockingQueue<T, TIndex>::CommitPop(bool checkWaiters)
     }
     while (size < capacity && !pushWaiters.IsEmpty()) {
         auto waiter = pushWaiters.PopFirst();
+        if (!waiter->task.Wakeup()) {
+            continue;
+        }
         etl::construct_at(&CurWriteItem(), etl::move(waiter->Item()));
         CommitPush(false);
-        waiter->queue = nullptr;
         etl::destroy_at(&waiter->Item());
-        waiter->task.Wakeup();
+        waiter->queue = nullptr;
     }
 }
 
