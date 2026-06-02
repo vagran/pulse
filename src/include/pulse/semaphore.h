@@ -7,7 +7,7 @@
 
 namespace pulse {
 
-template <etl::unsigned_integral TSize>
+template <class TSem>
 class SemaphoreAwaiter;
 
 template <etl::unsigned_integral TSize>
@@ -34,7 +34,7 @@ public:
     ~Semaphore();
 
     /** Acquire one token from the semaphore. */
-    SemaphoreAwaiter<TSize>
+    SemaphoreAwaiter<Semaphore>
     Acquire();
 
     /** Acquire one token from the semaphore.
@@ -51,52 +51,36 @@ public:
     Release();
 
 private:
-    friend class SemaphoreAwaiter<TSize>;
+    struct AwaiterSourceTrait;
+    using TAbstractAwaiter = details::AbstractAwaiter<bool, Semaphore, AwaiterSourceTrait>;
 
-    TailedList<SemaphoreAwaiter<TSize> *> waiters;
+    friend class SemaphoreAwaiter<Semaphore>;
+
+    TailedList<TAbstractAwaiter *> waiters;
     const TSize numTokens;
     TSize numAcquired;
+
+    struct AwaiterSourceTrait {
+        static void
+        DequeueAwaiter(Semaphore *sem, TAbstractAwaiter *awaiter)
+        {
+            sem->waiters.Remove(awaiter);
+        }
+    };
 };
 
 
-template <etl::unsigned_integral TSize>
-class SemaphoreAwaiter: public Awaiter<bool> {
+template <class TSem>
+class SemaphoreAwaiter: public TSem::TAbstractAwaiter {
 public:
-    ~SemaphoreAwaiter();
-
-    bool
-    await_ready()
-    {
-        return sem == nullptr;
-    }
-
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
-    /** @return True if acquired, false if semaphore destroyed. */
-    bool
-    await_resume() const
-    {
-        return isAcquired;
-    }
-
 private:
-    friend class Semaphore<TSize>;
-    friend struct details::ListDefaultTrait<SemaphoreAwaiter<TSize> *>;
+    friend TSem;
+    using Base = TSem::TAbstractAwaiter;
 
-    SemaphoreAwaiter<TSize> *next = nullptr;
-    Semaphore<TSize> *sem = nullptr;
-    TaskWeakRef task;
-    bool isAcquired;
-
-    SemaphoreAwaiter():
-        isAcquired(true)
-    {}
-
-    SemaphoreAwaiter(Semaphore<TSize> *sem):
-        sem(sem),
-        isAcquired(false)
-    {}
+    using Base::Base;
 };
 
 
@@ -151,14 +135,18 @@ private:
 template <etl::unsigned_integral TSize>
 Semaphore<TSize>::~Semaphore()
 {
+    CriticalSection cs;
     for (auto waiter: waiters) {
-        waiter->sem = nullptr;
-        waiter->task.Wakeup();
+        if (!waiter->Wakeup()) {
+            continue;
+        }
+        // Semaphore destroyed, token not acquired.
+        waiter->SetResult(false);
     }
 }
 
 template <etl::unsigned_integral TSize>
-SemaphoreAwaiter<TSize>
+SemaphoreAwaiter<Semaphore<TSize>>
 Semaphore<TSize>::Acquire()
 {
     CriticalSection cs;
@@ -166,10 +154,10 @@ Semaphore<TSize>::Acquire()
     if (numAcquired < numTokens) {
         numAcquired++;
         cs.Exit();
-        return {};
+        return SemaphoreAwaiter<Semaphore<TSize>>(true);
     }
     cs.Exit();
-    return SemaphoreAwaiter<TSize>(this);
+    return SemaphoreAwaiter<Semaphore<TSize>>(this);
 }
 
 template <etl::unsigned_integral TSize>
@@ -206,41 +194,32 @@ Semaphore<TSize>::Release()
 
     while (!waiters.IsEmpty() && numAcquired < numTokens) {
         auto waiter = waiters.PopFirst();
-        if (!waiter->task.Wakeup()) {
+        if (!waiter->Wakeup()) {
             continue;
         }
-        waiter->sem = nullptr;
-        waiter->isAcquired = true;
+        waiter->SetResult(true);
         numAcquired++;
     }
 }
 
 
-template <etl::unsigned_integral TSize>
-SemaphoreAwaiter<TSize>::~SemaphoreAwaiter()
-{
-    CriticalSection cs;
-    if (sem && task) {
-        sem->waiters.Remove(this);
-    }
-}
-
-template <etl::unsigned_integral TSize>
+template <class TSem>
 bool
-SemaphoreAwaiter<TSize>::await_suspend(tasks::CoroutineHandle handle)
+SemaphoreAwaiter<TSem>::await_suspend(tasks::CoroutineHandle handle)
 {
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
 
+    auto sem = this->source;
     if (sem->numAcquired < sem->numTokens) {
         sem->numAcquired++;
         cs.Exit();
-        isAcquired = true;
+        this->SetResult(true);
         return false;
     }
 
-    task = etl::move(wTask);
+    this->waiter = etl::move(wTask);
     sem->waiters.AddLast(this);
     return true;
 }

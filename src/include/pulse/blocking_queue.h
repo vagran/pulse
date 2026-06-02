@@ -7,10 +7,10 @@
 
 namespace pulse {
 
-template <typename T, etl::unsigned_integral TIndex>
+template <class TQueue>
 class BlockingQueuePushAwaiter;
 
-template <typename T, etl::unsigned_integral TIndex>
+template <class TQueue>
 class BlockingQueuePopAwaiter;
 
 
@@ -38,11 +38,11 @@ public:
     ~BlockingQueue();
 
     template <typename U>
-    BlockingQueuePushAwaiter<T, TIndex>
+    BlockingQueuePushAwaiter<BlockingQueue>
     Push(U &&value);
 
     template <typename... Args>
-    BlockingQueuePushAwaiter<T, TIndex>
+    BlockingQueuePushAwaiter<BlockingQueue>
     Emplace(Args &&... args);
 
     template <typename U>
@@ -53,19 +53,24 @@ public:
     bool
     TryEmplace(Args &&... args);
 
-    BlockingQueuePopAwaiter<T, TIndex>
+    BlockingQueuePopAwaiter<BlockingQueue>
     Pop();
 
     etl::optional<T>
     TryPop();
 
 private:
-    friend class BlockingQueuePushAwaiter<T, TIndex>;
-    friend class BlockingQueuePopAwaiter<T, TIndex>;
+    struct PushAwaiterSourceTrait;
+    struct PopAwaiterSourceTrait;
+    using TAbstractPushAwaiter = details::AbstractAwaiter<T, BlockingQueue, PushAwaiterSourceTrait>;
+    using TAbstractPopAwaiter = details::AbstractAwaiter<T, BlockingQueue, PopAwaiterSourceTrait>;
+
+    friend class BlockingQueuePushAwaiter<BlockingQueue>;
+    friend class BlockingQueuePopAwaiter<BlockingQueue>;
 
     T * const buffer;
-    TailedList<BlockingQueuePushAwaiter<T, TIndex> *> pushWaiters;
-    TailedList<BlockingQueuePopAwaiter<T, TIndex> *> popWaiters;
+    TailedList<TAbstractPushAwaiter *> pushWaiters;
+    TailedList<TAbstractPopAwaiter *> popWaiters;
     const TIndex capacity;
     TIndex readIdx = 0, size = 0;
 
@@ -92,6 +97,22 @@ private:
 
     void
     CommitPop(bool checkWaiters);
+
+    struct PushAwaiterSourceTrait {
+        static void
+        DequeueAwaiter(BlockingQueue *queue, TAbstractPushAwaiter *awaiter)
+        {
+            queue->pushWaiters.Remove(awaiter);
+        }
+    };
+
+    struct PopAwaiterSourceTrait {
+        static void
+        DequeueAwaiter(BlockingQueue *queue, TAbstractPopAwaiter *awaiter)
+        {
+            queue->popWaiters.Remove(awaiter);
+        }
+    };
 };
 
 
@@ -113,44 +134,15 @@ private:
 };
 
 
-namespace details {
-
-template <typename T, etl::unsigned_integral TIndex>
-class BlockingQueueAwaiter {
-protected:
-    friend class BlockingQueue<T, TIndex>;
-
-    BlockingQueue<T, TIndex> *queue = nullptr;
-    TaskWeakRef task;
-    alignas(T) uint8_t storage[sizeof(T)];
-
-    BlockingQueueAwaiter() = default;
-
-    BlockingQueueAwaiter(BlockingQueue<T, TIndex> *queue):
-        queue(queue)
-    {}
-
-    T &
-    Item()
-    {
-        return *reinterpret_cast<T *>(storage);
-    }
-};
-
-} // namespace details
-
-
-template <typename T, etl::unsigned_integral TIndex>
-class BlockingQueuePushAwaiter: public details::BlockingQueueAwaiter<T, TIndex>,
-    public Awaiter<void> {
+/** Awaiter produced by `BlockingQueue::Push()`/`Emplace()`. It carries the item to be pushed in the
+ * base awaiter storage while suspended. The item is alive while `source` is set (still pending); on
+ * completion the item is moved into the queue and the moved-from value is destroyed by the
+ * `AbstractAwaiter` base destructor.
+ */
+template <class TQueue>
+class BlockingQueuePushAwaiter: public TQueue::TAbstractPushAwaiter {
 public:
     ~BlockingQueuePushAwaiter();
-
-    bool
-    await_ready() const
-    {
-        return !this->queue;
-    }
 
     bool
     await_suspend(tasks::CoroutineHandle handle);
@@ -160,57 +152,38 @@ public:
     {}
 
 private:
-    friend class BlockingQueue<T, TIndex>;
-    friend struct details::ListDefaultTrait<BlockingQueuePushAwaiter<T, TIndex> *>;
-
-    BlockingQueuePushAwaiter<T, TIndex> *next = nullptr;
-
-
-    BlockingQueuePushAwaiter() = default;
+    friend TQueue;
+    using Base = TQueue::TAbstractPushAwaiter;
 
     template <typename... Args>
-    BlockingQueuePushAwaiter(BlockingQueue<T, TIndex> *queue, Args &&... args):
-        details::BlockingQueueAwaiter<T, TIndex>(queue)
+    BlockingQueuePushAwaiter(TQueue *queue, Args &&... args):
+        Base(queue)
     {
-        etl::construct_at(&this->Item(), etl::forward<Args>(args)...);
+        etl::construct_at(&this->Result(), etl::forward<Args>(args)...);
+        // Push eagerly when there is free space, so that a non-awaited `Push()`/`Emplace()` still
+        // enqueues the item. Otherwise stay pending (the item lives in the awaiter storage until
+        // co_awaited or discarded).
+        if (queue->size < queue->capacity) {
+            etl::construct_at(&queue->CurWriteItem(), etl::move(this->Result()));
+            queue->CommitPush(true);
+            // Mark completed; the moved-from item is destroyed by the base destructor.
+            this->source = nullptr;
+        }
     }
 };
 
 
-template <typename T, etl::unsigned_integral TIndex>
-class BlockingQueuePopAwaiter: public details::BlockingQueueAwaiter<T, TIndex>, public Awaiter<T> {
+template <class TQueue>
+class BlockingQueuePopAwaiter: public TQueue::TAbstractPopAwaiter {
 public:
-    ~BlockingQueuePopAwaiter();
-
-    bool
-    await_ready() const
-    {
-        return !this->queue;
-    }
-
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
-    T
-    await_resume()
-    {
-        PULSE_ASSERT(!this->queue);
-        return etl::move(this->Item());
-    }
 private:
-    friend class BlockingQueue<T, TIndex>;
-    friend struct details::ListDefaultTrait<BlockingQueuePopAwaiter<T, TIndex> *>;
+    friend TQueue;
+    using Base = TQueue::TAbstractPopAwaiter;
 
-    BlockingQueuePopAwaiter<T, TIndex> *next = nullptr;
-
-    BlockingQueuePopAwaiter() = default;
-
-    using details::BlockingQueueAwaiter<T, TIndex>::BlockingQueueAwaiter;
-
-    BlockingQueuePopAwaiter(T &&item)
-    {
-        etl::construct_at(&this->Item(), etl::move(item));
-    }
+    using Base::Base;
 };
 
 
@@ -218,17 +191,19 @@ template <typename T, etl::unsigned_integral TIndex>
 BlockingQueue<T, TIndex>::~BlockingQueue()
 {
     for (auto waiter: pushWaiters) {
-        waiter->queue = nullptr;
-        etl::destroy_at(&waiter->Item());
-        waiter->task.Wakeup();
-    }
-    for (auto waiter: popWaiters) {
-        if (!waiter->task.Wakeup()) {
+        if (!waiter->Wakeup()) {
             continue;
         }
-        waiter->queue = nullptr;
+        // The pending item was never pushed; leave it intact, it is destroyed by the awaiter
+        // base destructor when the producer task frame is released.
+        waiter->source = nullptr;
+    }
+    for (auto waiter: popWaiters) {
+        if (!waiter->Wakeup()) {
+            continue;
+        }
         // Return default-constructed item.
-        etl::construct_at(&waiter->Item());
+        waiter->SetResult();
     }
 
     while (size) {
@@ -243,28 +218,18 @@ BlockingQueue<T, TIndex>::~BlockingQueue()
 
 template <typename T, etl::unsigned_integral TIndex>
 template <typename U>
-BlockingQueuePushAwaiter<T, TIndex>
+BlockingQueuePushAwaiter<BlockingQueue<T, TIndex>>
 BlockingQueue<T, TIndex>::Push(U &&value)
 {
-    if (size < capacity) {
-        etl::construct_at(&CurWriteItem(), etl::forward<U>(value));
-        CommitPush(true);
-        return {};
-    }
-    return BlockingQueuePushAwaiter<T, TIndex>(this, etl::forward<U>(value));
+    return BlockingQueuePushAwaiter<BlockingQueue<T, TIndex>>(this, etl::forward<U>(value));
 }
 
 template <typename T, etl::unsigned_integral TIndex>
 template <typename... Args>
-BlockingQueuePushAwaiter<T, TIndex>
+BlockingQueuePushAwaiter<BlockingQueue<T, TIndex>>
 BlockingQueue<T, TIndex>::Emplace(Args &&... args)
 {
-    if (size < capacity) {
-        etl::construct_at(&CurWriteItem(), etl::forward<Args>(args)...);
-        CommitPush(true);
-        return {};
-    }
-    return BlockingQueuePushAwaiter<T, TIndex>(this, etl::forward<Args>(args)...);
+    return BlockingQueuePushAwaiter<BlockingQueue<T, TIndex>>(this, etl::forward<Args>(args)...);
 }
 
 template <typename T, etl::unsigned_integral TIndex>
@@ -294,16 +259,16 @@ BlockingQueue<T, TIndex>::TryEmplace(Args &&... args)
 }
 
 template <typename T, etl::unsigned_integral TIndex>
-BlockingQueuePopAwaiter<T, TIndex>
+BlockingQueuePopAwaiter<BlockingQueue<T, TIndex>>
 BlockingQueue<T, TIndex>::Pop()
 {
     if (size) {
         // Awaiters do not have copy constructors so temporarily store item here.
         T item = etl::move(CurReadItem());
         CommitPop(true);
-        return BlockingQueuePopAwaiter<T, TIndex>(etl::move(item));
+        return BlockingQueuePopAwaiter<BlockingQueue<T, TIndex>>(etl::move(item));
     }
-    return BlockingQueuePopAwaiter<T, TIndex>(this);
+    return BlockingQueuePopAwaiter<BlockingQueue<T, TIndex>>(this);
 }
 
 template <typename T, etl::unsigned_integral TIndex>
@@ -329,12 +294,11 @@ BlockingQueue<T, TIndex>::CommitPush(bool checkWaiters)
     }
     while (size && !popWaiters.IsEmpty()) {
         auto waiter = popWaiters.PopFirst();
-        if (!waiter->task.Wakeup()) {
+        if (!waiter->Wakeup()) {
             continue;
         }
-        etl::construct_at(&waiter->Item(), etl::move(CurReadItem()));
+        waiter->SetResult(etl::move(CurReadItem()));
         CommitPop(false);
-        waiter->queue = nullptr;
     }
 }
 
@@ -354,75 +318,58 @@ BlockingQueue<T, TIndex>::CommitPop(bool checkWaiters)
     }
     while (size < capacity && !pushWaiters.IsEmpty()) {
         auto waiter = pushWaiters.PopFirst();
-        if (!waiter->task.Wakeup()) {
+        if (!waiter->Wakeup()) {
             continue;
         }
-        etl::construct_at(&CurWriteItem(), etl::move(waiter->Item()));
+        etl::construct_at(&CurWriteItem(), etl::move(waiter->Result()));
         CommitPush(false);
-        etl::destroy_at(&waiter->Item());
-        waiter->queue = nullptr;
+        // Leave the moved-from item in the awaiter storage; it is destroyed by the awaiter base
+        // destructor once the producer task resumes and its frame is released.
+        waiter->source = nullptr;
     }
 }
 
 
-template <typename T, etl::unsigned_integral TIndex>
-BlockingQueuePushAwaiter<T, TIndex>::~BlockingQueuePushAwaiter()
+template <class TQueue>
+BlockingQueuePushAwaiter<TQueue>::~BlockingQueuePushAwaiter()
 {
-    if (this->queue) {
-        etl::destroy_at(&this->Item());
-        if (this->task) {
-            this->queue->pushWaiters.Remove(this);
-        }
+    if (this->source) {
+        // Still pending: the item was never pushed, destroy it here. List removal (if queued) is
+        // handled by the base destructor.
+        etl::destroy_at(&this->Result());
     }
 }
 
-template <typename T, etl::unsigned_integral TIndex>
+template <class TQueue>
 bool
-BlockingQueuePushAwaiter<T, TIndex>::await_suspend(tasks::CoroutineHandle handle)
+BlockingQueuePushAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 {
-    if (!this->queue) {
+    auto queue = this->source;
+    if (queue->size < queue->capacity) {
+        etl::construct_at(&queue->CurWriteItem(), etl::move(this->Result()));
+        queue->CommitPush(true);
+        // Mark completed; the moved-from item is destroyed by the base destructor.
+        this->source = nullptr;
         return false;
     }
-    if (this->queue->size < this->queue->capacity) [[unlikely]] {
-        etl::construct_at(&this->queue->CurWriteItem(), etl::move(this->Item()));
-        this->queue->CommitPush(true);
-        this->queue = nullptr;
-        etl::destroy_at(&this->Item());
-        return false;
-    }
-    this->task = TaskRef(handle).GetWeakPtr();
-    this->queue->pushWaiters.AddLast(this);
+    this->waiter = TaskRef(handle).GetWeakPtr();
+    queue->pushWaiters.AddLast(this);
     return true;
 }
 
 
-template <typename T, etl::unsigned_integral TIndex>
-BlockingQueuePopAwaiter<T, TIndex>::~BlockingQueuePopAwaiter()
-{
-    if (this->queue) {
-        if (this->task) {
-            this->queue->popWaiters.Remove(this);
-        }
-    } else {
-        etl::destroy_at(&this->Item());
-    }
-}
-
-template <typename T, etl::unsigned_integral TIndex>
+template <class TQueue>
 bool
-BlockingQueuePopAwaiter<T, TIndex>::await_suspend(tasks::CoroutineHandle handle)
+BlockingQueuePopAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 {
-    if (!this->queue) {
+    auto queue = this->source;
+    if (queue->size) [[unlikely]] {
+        this->SetResult(etl::move(queue->CurReadItem()));
+        queue->CommitPop(true);
         return false;
     }
-    if (this->queue->size) [[unlikely]] {
-        etl::construct_at(&this->Item(), etl::move(this->queue->CurReadItem()));
-        this->queue->CommitPop(true);
-        this->queue = nullptr;
-        return false;
-    }
-    this->task = TaskRef(handle).GetWeakPtr();
-    this->queue->popWaiters.AddLast(this);
+    this->waiter = TaskRef(handle).GetWeakPtr();
+    queue->popWaiters.AddLast(this);
     return true;
 }
 

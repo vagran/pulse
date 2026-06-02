@@ -8,7 +8,7 @@
 
 namespace pulse {
 
-template <etl::integral TCounter>
+template <class TQueue>
 class TokenQueueAwaiter;
 
 
@@ -43,78 +43,59 @@ public:
     Push(TCounter n = 1);
 
     /** Wait for next token. co_await returns received token value. */
-    TokenQueueAwaiter<TCounter>
+    TokenQueueAwaiter<TokenQueue>
     Take();
 
     TCounter
     Peek() const;
 
-    TokenQueueAwaiter<TCounter>
+    TokenQueueAwaiter<TokenQueue>
     operator co_await();
 
 private:
-    friend class TokenQueueAwaiter<TCounter>;
+    struct AwaiterSourceTrait;
+    using TAbstractAwaiter = details::AbstractAwaiter<TCounter, TokenQueue, AwaiterSourceTrait>;
 
-    TailedList<TokenQueueAwaiter<TCounter> *> waiters;
+    friend class TokenQueueAwaiter<TokenQueue>;
+
+    TailedList<TAbstractAwaiter *> waiters;
     const TCounter maxTokens;
     TCounter value, numTokens = 0;
+
+    struct AwaiterSourceTrait {
+        static void
+        DequeueAwaiter(TokenQueue *queue, TAbstractAwaiter *awaiter)
+        {
+            queue->waiters.Remove(awaiter);
+        }
+    };
 };
 
 
-template <etl::integral TCounter>
-class TokenQueueAwaiter: public Awaiter<TCounter> {
+template <class TQueue>
+class TokenQueueAwaiter: public TQueue::TAbstractAwaiter {
 public:
-    TokenQueueAwaiter(const TokenQueueAwaiter &) = delete;
-    TokenQueueAwaiter(TokenQueueAwaiter &&) = delete;
-
-    ~TokenQueueAwaiter();
-
-    bool
-    await_ready();
-
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
-    TCounter
-    await_resume() const
-    {
-        return result;
-    }
-
-    /** @return Obtained token value, nullopt if not ready. */
-    etl::optional<TCounter>
-    GetResult() const
-    {
-        if (queue || task) {
-            return etl::nullopt;
-        }
-        return result;
-    }
-
 private:
-    friend class TokenQueue<TCounter>;
-    friend struct details::ListDefaultTrait<TokenQueueAwaiter *>;
+    friend TQueue;
+    using Base = TQueue::TAbstractAwaiter;
 
-    TokenQueueAwaiter<TCounter> *next = nullptr;
-    TokenQueue<TCounter> *queue;
-    TCounter result;
-    TaskWeakRef task;
-
-    TokenQueueAwaiter(TokenQueue<TCounter> *queue):
-        queue(queue)
-    {}
+    using Base::Base;
 };
 
 
 template <etl::integral TCounter>
 TokenQueue<TCounter>::~TokenQueue()
 {
-    // Cannot use iterator since item->next may become invalid if waiter destructed.
-    TokenQueueAwaiter<TCounter> *next = waiters.head;
-    while (next) {
-        auto waiter = next;
-        next = waiter->next;
-        waiter->task.Wakeup();
+    CriticalSection cs;
+    for (auto waiter: waiters) {
+        if (!waiter->Wakeup()) {
+            continue;
+        }
+        // Return default-constructed value.
+        waiter->SetResult();
     }
 }
 
@@ -125,18 +106,17 @@ TokenQueue<TCounter>::Push(TCounter n)
     CriticalSection cs;
 
     while (!waiters.IsEmpty() && (numTokens || n)) {
-        TokenQueueAwaiter<TCounter> *w = waiters.PopFirst();
-        if (!w->task.Wakeup()) {
+        TAbstractAwaiter *w = waiters.PopFirst();
+        if (!w->Wakeup()) {
             continue;
         }
-        w->result = value - numTokens;
+        w->SetResult(value - numTokens);
         if (numTokens) {
             numTokens--;
         } else {
             n--;
             value++;
         }
-        w->queue = nullptr;
     }
     value += n;
     if (numTokens + n >= maxTokens) {
@@ -147,10 +127,16 @@ TokenQueue<TCounter>::Push(TCounter n)
 }
 
 template <etl::integral TCounter>
-TokenQueueAwaiter<TCounter>
+TokenQueueAwaiter<TokenQueue<TCounter>>
 TokenQueue<TCounter>::Take()
 {
-    return TokenQueueAwaiter<TCounter>(this);
+    CriticalSection cs;
+    if (numTokens) {
+        TCounter result = value - numTokens;
+        numTokens--;
+        return TokenQueueAwaiter<TokenQueue<TCounter>>(result);
+    }
+    return TokenQueueAwaiter<TokenQueue<TCounter>>(this);
 }
 
 template <etl::integral TCounter>
@@ -162,52 +148,28 @@ TokenQueue<TCounter>::Peek() const
 }
 
 template <etl::integral TCounter>
-TokenQueueAwaiter<TCounter>
+TokenQueueAwaiter<TokenQueue<TCounter>>
 TokenQueue<TCounter>::operator co_await()
 {
-    return TokenQueueAwaiter<TCounter>(this);
+    return Take();
 }
 
 
-template <etl::integral TCounter>
-TokenQueueAwaiter<TCounter>::~TokenQueueAwaiter()
-{
-    CriticalSection cs;
-    if (task) {
-        queue->waiters.Remove(this);
-    }
-}
-
-template <etl::integral TCounter>
+template <class TQueue>
 bool
-TokenQueueAwaiter<TCounter>::await_ready()
+TokenQueueAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 {
-    CriticalSection cs;
-    if (queue->numTokens == 0) {
-        return false;
-    }
-    result = queue->value - queue->numTokens;
-    queue->numTokens--;
-    queue = nullptr;
-    return true;
-}
-
-template <etl::integral TCounter>
-bool
-TokenQueueAwaiter<TCounter>::await_suspend(tasks::CoroutineHandle handle)
-{
-    if (!queue) {
-        return false;
-    }
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
+
+    auto queue = this->source;
     if (queue->numTokens == 0) [[likely]] {
-        task = etl::move(wTask);
+        this->waiter = etl::move(wTask);
         queue->waiters.AddLast(this);
         return true;
     }
-    result = queue->value - queue->numTokens;
+    this->SetResult(queue->value - queue->numTokens);
     queue->numTokens--;
     return false;
 }

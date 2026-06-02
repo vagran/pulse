@@ -8,7 +8,7 @@
 
 namespace pulse {
 
-template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
+template <typename TQueue>
 class DiscardQueuePopAwaiter;
 
 
@@ -47,10 +47,10 @@ public:
     bool
     Emplace(Args &&... args);
 
-    DiscardQueuePopAwaiter<T, tailDrop, TIndex>
+    DiscardQueuePopAwaiter<DiscardQueue>
     Pop();
 
-    DiscardQueuePopAwaiter<T, tailDrop, TIndex>
+    DiscardQueuePopAwaiter<DiscardQueue>
     operator co_await();
 
     etl::optional<T>
@@ -97,10 +97,13 @@ public:
     }
 
 private:
-    friend class DiscardQueuePopAwaiter<T, tailDrop, TIndex>;
+    struct AwaiterSourceTrait;
+    using TAbstractAwaiter = details::AbstractAwaiter<T, DiscardQueue, AwaiterSourceTrait>;
+
+    friend class DiscardQueuePopAwaiter<DiscardQueue>;
 
     T * const buffer;
-    TailedList<DiscardQueuePopAwaiter<T, tailDrop, TIndex> *> popWaiters;
+    TailedList<TAbstractAwaiter *> popWaiters;
     const TIndex capacity;
     TIndex readIdx = 0, size = 0;
 
@@ -127,6 +130,14 @@ private:
 
     void
     CommitPop();
+
+    struct AwaiterSourceTrait {
+        static void
+        DequeueAwaiter(DiscardQueue *queue, TAbstractAwaiter *awaiter)
+        {
+            queue->popWaiters.Remove(awaiter);
+        }
+    };
 };
 
 
@@ -148,50 +159,17 @@ private:
 };
 
 
-template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-class DiscardQueuePopAwaiter: public Awaiter<T> {
+template <class TQueue>
+class DiscardQueuePopAwaiter: public TQueue::TAbstractAwaiter {
 public:
-    ~DiscardQueuePopAwaiter();
-
-    bool
-    await_ready() const
-    {
-        return !this->queue;
-    }
-
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
-    T
-    await_resume()
-    {
-        PULSE_ASSERT(!this->queue);
-        return etl::move(this->Item());
-    }
 private:
-    friend class DiscardQueue<T, tailDrop, TIndex>;
-    friend struct details::ListDefaultTrait<DiscardQueuePopAwaiter<T, tailDrop, TIndex> *>;
+    friend TQueue;
+    using Base = TQueue::TAbstractAwaiter;
 
-    DiscardQueuePopAwaiter<T, tailDrop, TIndex> *next = nullptr;
-    DiscardQueue<T, tailDrop, TIndex> *queue = nullptr;
-    TaskWeakRef task;
-    alignas(T) uint8_t storage[sizeof(T)];
-
-    DiscardQueuePopAwaiter() = delete;
-    DiscardQueuePopAwaiter(DiscardQueue<T, tailDrop, TIndex> *queue):
-        queue(queue)
-    {}
-
-    DiscardQueuePopAwaiter(T &&item)
-    {
-        etl::construct_at(&this->Item(), etl::move(item));
-    }
-
-    T &
-    Item()
-    {
-        return *reinterpret_cast<T *>(storage);
-    }
+    using Base::Base;
 };
 
 
@@ -200,12 +178,11 @@ DiscardQueue<T, tailDrop, TIndex>::~DiscardQueue()
 {
     CriticalSection cs;
     for (auto waiter: popWaiters) {
-        if (!waiter->task.Wakeup()) {
+        if (!waiter->Wakeup()) {
             continue;
         }
-        waiter->queue = nullptr;
         // Return default-constructed item.
-        etl::construct_at(&waiter->Item());
+        waiter->SetResult();
     }
     cs.Exit();
 
@@ -282,7 +259,7 @@ DiscardQueue<T, tailDrop, TIndex>::Emplace(Args &&... args)
 }
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-DiscardQueuePopAwaiter<T, tailDrop, TIndex>
+DiscardQueuePopAwaiter<DiscardQueue<T, tailDrop, TIndex>>
 DiscardQueue<T, tailDrop, TIndex>::Pop()
 {
     CriticalSection cs;
@@ -292,13 +269,13 @@ DiscardQueue<T, tailDrop, TIndex>::Pop()
         // Awaiters do not have copy constructors so temporarily store item here.
         T item = etl::move(CurReadItem());
         CommitPop();
-        return DiscardQueuePopAwaiter<T, tailDrop, TIndex>(etl::move(item));
+        return DiscardQueuePopAwaiter<DiscardQueue<T, tailDrop, TIndex>>(etl::move(item));
     }
-    return DiscardQueuePopAwaiter<T, tailDrop, TIndex>(this);
+    return DiscardQueuePopAwaiter<DiscardQueue<T, tailDrop, TIndex>>(this);
 }
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-DiscardQueuePopAwaiter<T, tailDrop, TIndex>
+DiscardQueuePopAwaiter<DiscardQueue<T, tailDrop, TIndex>>
 DiscardQueue<T, tailDrop, TIndex>::operator co_await()
 {
     return Pop();
@@ -326,16 +303,15 @@ DiscardQueue<T, tailDrop, TIndex>::CommitPush()
     size++;
     while (size && !popWaiters.IsEmpty()) {
         auto waiter = popWaiters.PopFirst();
-        if (!waiter->task.Wakeup()) {
+        if (!waiter->Wakeup()) {
             // Actually this unlikely to happen since Awaiter usually sits in waiter coroutine
             // frame, so when task last reference is released, the frame is destroyed and awaiter
             // destructor removes itself from the list. But make it so for consistency and
             // robustness for some exotic cases when awaiter is outside waiter task frame.
             continue;
         }
-        etl::construct_at(&waiter->Item(), etl::move(CurReadItem()));
+        waiter->SetResult(etl::move(CurReadItem()));
         CommitPop();
-        waiter->queue = nullptr;
     }
 }
 
@@ -352,37 +328,23 @@ DiscardQueue<T, tailDrop, TIndex>::CommitPop()
     }
 }
 
-template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-DiscardQueuePopAwaiter<T, tailDrop, TIndex>::~DiscardQueuePopAwaiter()
-{
-    CriticalSection cs;
-    if (queue) {
-        if (task) {
-            queue->popWaiters.Remove(this);
-        }
-    } else {
-        cs.Exit();
-        etl::destroy_at(&this->Item());
-    }
-}
 
-template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
+template <class TQueue>
 bool
-DiscardQueuePopAwaiter<T, tailDrop, TIndex>::await_suspend(tasks::CoroutineHandle handle)
+DiscardQueuePopAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 {
     auto wTask = TaskRef(handle).GetWeakPtr();
 
     CriticalSection cs;
 
-    if (queue->size) [[unlikely]] {
-        PULSE_ASSERT(queue->popWaiters.IsEmpty());
-        etl::construct_at(&Item(), etl::move(queue->CurReadItem()));
-        queue->CommitPop();
-        queue = nullptr;
+    if (this->source->size) [[unlikely]] {
+        PULSE_ASSERT(this->source->popWaiters.IsEmpty());
+        this->SetResult(etl::move(this->source->CurReadItem()));
+        this->source->CommitPop();
         return false;
     }
-    task = etl::move(wTask);
-    queue->popWaiters.AddLast(this);
+    this->waiter = etl::move(wTask);
+    this->source->popWaiters.AddLast(this);
     return true;
 }
 

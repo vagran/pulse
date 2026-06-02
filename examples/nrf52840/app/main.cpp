@@ -458,7 +458,6 @@ RotaryEncoder::LineTask(bool isA)
     }
 }
 
-//XXX save filtered lines states
 void
 RotaryEncoder::CommitEvent(bool triggerLineA, bool adjLineState)
 {

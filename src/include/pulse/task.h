@@ -6,6 +6,7 @@
 #include <pulse/coroutine.h>
 #include <pulse/list.h>
 #include <pulse/shared_ptr.h>
+#include <pulse/port.h>
 
 #include <etl/optional.h>
 #include <etl/span.h>
@@ -589,6 +590,138 @@ public:
 };
 
 
+namespace details {
+
+/** Abstract base for most common awaiters pattern.
+ *
+ * @tparam TSourceTrait Should have the following methods:
+ *  static void
+ *  DequeueAwaiter(TSource *source, AbstractAwaiter *awaiter);
+ *
+ */
+template <typename TRet, class TSource, class TSourceTrait>
+class AbstractAwaiter {
+public:
+    ~AbstractAwaiter();
+
+    bool
+    await_ready() const
+    {
+        return !this->source;
+    }
+
+    TRet
+    await_resume()
+    {
+        PULSE_ASSERT(!this->source);
+        return etl::move(this->Result());
+    }
+
+    /* Typical `await_suspend()` implementation:
+     *
+     * bool
+     * await_suspend(tasks::CoroutineHandle handle)
+     * {
+     *     auto wTask = TaskRef(handle).GetWeakPtr();
+     *
+     *     CriticalSection cs;
+     *
+     *     if (source->HasItem()) [[unlikely]] {
+     *         SetResult(etl::move(source->Item()));
+     *         source->CommitItemRetrieval();
+     *         return false;
+     *     }
+     *     waiter = etl::move(wTask);
+     *     source->QueueAwaiter(this);
+     *     return true;
+     * }
+     */
+
+    /** @return Result, nullopt if not ready. Keep in mind that it can be already moved out by
+     * `await_resume()` if the result type supports move construction.
+     */
+    etl::optional<TRet>
+    GetResult() const
+    {
+        if (!this->HasResult()) {
+            return etl::nullopt;
+        }
+        return Result();
+    }
+
+    etl::optional<TRet>
+    MoveResult() const
+    {
+        if (!this->HasResult()) {
+            return etl::nullopt;
+        }
+        return etl::move(Result());
+    }
+
+protected:
+    friend TSource;
+    friend struct details::ListDefaultTrait<AbstractAwaiter *>;
+
+    AbstractAwaiter *next = nullptr;
+    TSource *source = nullptr;
+    TaskWeakRef waiter;
+    alignas(TRet) uint8_t storage[sizeof(TRet)];
+
+    AbstractAwaiter() = delete;
+
+    /** Construct with result to create it in ready state. */
+    AbstractAwaiter(TRet &&result)
+    {
+        etl::construct_at(&this->Result(), etl::move(result));
+    }
+
+    AbstractAwaiter(const TRet &result)
+    {
+        etl::construct_at(&this->Result(), result);
+    }
+
+    /** Construct with source to create it in pending state. */
+    AbstractAwaiter(TSource *source):
+        source(source)
+    {}
+
+    TRet &
+    Result()
+    {
+        return *reinterpret_cast<TRet *>(storage);
+    }
+
+    bool
+    HasResult() const
+    {
+        return !source;
+    }
+
+    template <typename T>
+    void
+    SetResult(T &&from)
+    {
+        etl::construct_at(&this->Result(), etl::forward<T>(from));
+        source = nullptr;
+    }
+
+    void
+    SetResult()
+    {
+        etl::construct_at(&this->Result());
+        source = nullptr;
+    }
+
+    bool
+    Wakeup()
+    {
+        return waiter.Wakeup();
+    }
+};
+
+} // namespace details
+
+
 // Awaiter for explicit task switching.
 class TaskSwitchAwaiter: public Awaiter<void> {
 public:
@@ -1100,6 +1233,21 @@ details::Task<void, initialSuspend>::operator co_await() const
 }
 
 
+template <typename TRet, class TSource, class TSourceTrait>
+details::AbstractAwaiter<TRet, TSource, TSourceTrait>::~AbstractAwaiter()
+{
+    CriticalSection cs;
+    if (source) {
+        if (waiter) {
+            TSourceTrait::DequeueAwaiter(source, this);
+        }
+    } else {
+        cs.Exit();
+        etl::destroy_at(&this->Result());
+    }
+}
+
+
 template <size_t NumTasks>
 AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<TaskRef, NumTasks> &tasks):
     details::MultipleTasksAwaiter<NumTasks>(tasks),
@@ -1122,7 +1270,7 @@ AllTasksAwaiter<NumTasks>::AllTasksAwaiter(const etl::span<TaskRef, NumTasks> &t
         }
     };
 
-    for (size_t i = 0; i < Base::numTasks; i++) {
+    for (size_t i = 0; i < this->numTasks; i++) {
         Entry &e = this->tasks[i];
         e.target = tasks[i];
         PULSE_ASSERT(e.target);
@@ -1143,12 +1291,12 @@ AllTasksAwaiter<NumTasks>::await_suspend(tasks::CoroutineHandle handle)
     }
 
     TaskRef waiterTask(handle);
-    Base::waiter = waiterTask.GetWeakPtr();
+    this->waiter = waiterTask.GetWeakPtr();
 
     // Handlers should have the same priority as waiter. Since waiter is blocked until all tasks are
     // completed, priority is also propagated to all targets.
     tasks::Priority pri = waiterTask.GetPriority();
-    for (size_t i = 0; i < Base::numTasks; i++) {
+    for (size_t i = 0; i < this->numTasks; i++) {
         Entry &e = this->tasks[i];
         if (e.handler) {
             e.handler.SetPriority(pri);
@@ -1183,7 +1331,7 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<TaskRef, NumTasks> &tas
         }
     };
 
-    for (size_t i = 0; i < Base::numTasks; i++) {
+    for (size_t i = 0; i < this->numTasks; i++) {
         Entry &e = this->tasks[i];
         e.target = tasks[i];
         PULSE_ASSERT(e.target);
@@ -1193,7 +1341,7 @@ AnyTaskAwaiter<NumTasks>::AnyTaskAwaiter(const etl::span<TaskRef, NumTasks> &tas
             e.handler = etl::move(h);
         } else {
             PULSE_ASSERT(result != NONE);
-            for (size_t i = 0; i < Base::numTasks; i++) {
+            for (size_t i = 0; i < this->numTasks; i++) {
                 this->tasks[i].Reset();
             }
             break;
@@ -1210,11 +1358,11 @@ AnyTaskAwaiter<NumTasks>::await_suspend(tasks::CoroutineHandle handle)
     }
 
     TaskRef waiterTask(handle);
-    Base::waiter = waiterTask.GetWeakPtr();
+    this->waiter = waiterTask.GetWeakPtr();
 
     // Handlers should have the same priority as waiter.
     tasks::Priority pri = waiterTask.GetPriority();
-    for (size_t i = 0; i < Base::numTasks; i++) {
+    for (size_t i = 0; i < this->numTasks; i++) {
         Entry &e = this->tasks[i];
         e.handler.SetPriority(pri);
     }
