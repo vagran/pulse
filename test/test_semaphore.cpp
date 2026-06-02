@@ -58,6 +58,43 @@ TEST_CASE("Semaphore")
     CheckResult(6, "T2:2");
 }
 
+TEST_CASE("Semaphore release wakes only one waiter per token")
+{
+    results.clear();
+
+    Semaphore<> sem(1);
+
+    // Holder grabs the only token, lets the two waiters queue up, then releases
+    // a single token.
+    auto holder = tasks::Spawn([](Semaphore<> &sem) -> Task<> {
+        bool b = co_await sem.Acquire();
+        REQUIRE(b);
+        // Yield so both waiters get a chance to suspend on Acquire().
+        co_await tasks::Switch();
+        // Free exactly one token. Only one waiter must be granted it.
+        sem.Release();
+    }, sem);
+
+    auto waiter1 = tasks::Spawn([](Semaphore<> &sem) -> Task<> {
+        bool b = co_await sem.Acquire();
+        REQUIRE(b);
+        results.push_back("W1");
+    }, sem);
+
+    auto waiter2 = tasks::Spawn([](Semaphore<> &sem) -> Task<> {
+        bool b = co_await sem.Acquire();
+        REQUIRE(b);
+        results.push_back("W2");
+    }, sem);
+
+    tasks::RunSome();
+
+    // A single Release() frees one token, so exactly one waiter may proceed; the
+    // other must stay blocked. With the missing numAcquired++ in Release(), both
+    // waiters wake up and the semaphore is oversubscribed.
+    REQUIRE(results.size() == 1);
+}
+
 TEST_CASE("Semaphore awaiter destruction")
 {
     Semaphore<> sem(2);

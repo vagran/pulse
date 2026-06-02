@@ -206,9 +206,12 @@ Semaphore<TSize>::Release()
 
     while (!waiters.IsEmpty() && numAcquired < numTokens) {
         auto waiter = waiters.PopFirst();
+        if (!waiter->task.Wakeup()) {
+            continue;
+        }
         waiter->sem = nullptr;
         waiter->isAcquired = true;
-        waiter->task.Wakeup();
+        numAcquired++;
     }
 }
 
