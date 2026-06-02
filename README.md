@@ -132,7 +132,7 @@ the following behavior:
 pulse::Timer blinkTimer;
 int blinkIntervalIndex = 0;
 // Published from the button ISR, `true` for pressed event, `false` for release.
-InlineDiscardQueue<bool, true, 8> buttonEvents;
+pulse::InlineDiscardQueue<bool, true, 8> buttonEvents;
 
 /// Make mode switch confirmation indication
 pulse::Awaitable<>
@@ -175,11 +175,11 @@ BlinkTask()
 }
 
 // Handles button debouncing
-Task<>
+pulse::Task<>
 ButtonTask()
 {
     constexpr auto JITTER_DELAY = etl::chrono::milliseconds(50);
-    Timer jitterTimer;
+    pulse::Timer jitterTimer;
 
     while (true) {
         // Wait for press
@@ -195,7 +195,7 @@ ButtonTask()
 
         LOG_INFO("New interval: {}", blinkIntervalIndex);
 
-        MallocStats stats;
+        pulse::MallocStats stats;
         pulse::GetMallocStats(&stats);
         uart.Format("Total free: {}\n", stats.totalFree);
         uart.Format("Total used: {}\n", stats.totalUsed);
@@ -206,8 +206,8 @@ ButtonTask()
         bool isPressed = true;
         while (true) {
             jitterTimer.ExpiresAfter(JITTER_DELAY);
-            size_t idx = co_await tasks::WhenAny(
-                tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+            size_t idx = co_await pulse::tasks::WhenAny(
+                pulse::tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
             if (idx == 0) {
                 // Button toggled again, restart anti-jitter delay
                 continue;
@@ -229,8 +229,8 @@ ButtonTask()
             bool isPressed = false;
             while (true) {
                 jitterTimer.ExpiresAfter(JITTER_DELAY);
-                size_t idx = co_await tasks::WhenAny(
-                    tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
+                size_t idx = co_await pulse::tasks::WhenAny(
+                    pulse::tasks::SaveResult(buttonEvents.Pop(), isPressed), jitterTimer);
                 if (idx == 0) {
                     continue;
                 }
