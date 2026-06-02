@@ -2435,3 +2435,274 @@ TEST_CASE("FormatTo boolean formatting") {
         CHECK_FALSE(errorSeen);
     }
 }
+
+
+TEST_CASE("FormatTo char formatting") {
+    using namespace pulse::fmt;
+    errorSeen = false;
+
+    SECTION("Default formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}", 'A') == 1);
+        CHECK(out == "A");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Character type specifier") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:c}", 'A') == 1);
+        CHECK(out == "A");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Digit character") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}", '5') == 1);
+        CHECK(out == "5");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Space character") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}", ' ') == 1);
+        CHECK(out == " ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Null character") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}", '\0') == 1);
+        CHECK(out.size() == 1);
+        CHECK(out[0] == '\0');
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width default alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:4}", 'A') == 4);
+        CHECK(out == "A   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width left alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:<4}", 'A') == 4);
+        CHECK(out == "A   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width right alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:>4}", 'A') == 4);
+        CHECK(out == "   A");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width center alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:^5}", 'A') == 5);
+        CHECK(out == "  A  ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill left alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:_<4}", 'A') == 4);
+        CHECK(out == "A___");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill right alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:_>4}", 'A') == 4);
+        CHECK(out == "___A");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Custom fill center alignment") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:_^5}", 'A') == 5);
+        CHECK(out == "__A__");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width equal to content size") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:1}", 'A') == 1);
+        CHECK(out == "A");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Width smaller than content size") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:0}", 'A') == 1);
+        CHECK(out == "A");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:{}}", 'A', 4) == 4);
+        CHECK(out == "A   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width with explicit argument index") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{0:{1}}", 'A', 4) == 4);
+        CHECK(out == "A   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Dynamic width reordered arguments") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{1:{0}}", 4, 'A') == 4);
+        CHECK(out == "A   ");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Repeated argument") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{0}{0}{0}", 'X') == 3);
+        CHECK(out == "XXX");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Argument reordering") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{1}{0}", 'A', 'B') == 2);
+        CHECK(out == "BA");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed with integer") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{} {}", 'A', 42) == 4);
+        CHECK(out == "A 42");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Mixed with string") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{}{}", 'A', "BC") == 3);
+        CHECK(out == "ABC");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Literal braces") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{{{}}}", 'A') == 3);
+        CHECK(out == "{A}");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric decimal formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:d}", 'A') == 2);
+        CHECK(out == "65");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric hexadecimal formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:x}", 'A') == 2);
+        CHECK(out == "41");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric hexadecimal alternate formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:#x}", 'A') == 4);
+        CHECK(out == "0x41");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric binary formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:b}", '\x05') == 3);
+        CHECK(out == "101");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric octal formatting") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:o}", '\x09') == 2);
+        CHECK(out == "11");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric width") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:4d}", 'A') == 4);
+        CHECK(out == "  65");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Numeric zero padding") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:04d}", 'A') == 4);
+        CHECK(out == "0065");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Explicit positive sign") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:+d}", 'A') == 3);
+        CHECK(out == "+65");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Space sign") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{: d}", 'A') == 3);
+        CHECK(out == " 65");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Character value 127") {
+        etl::string<64> out;
+
+        CHECK(FormatTo(out, "{:d}", static_cast<char>(127)) == 3);
+        CHECK(out == "127");
+        CHECK_FALSE(errorSeen);
+    }
+
+    SECTION("Small buffer truncation") {
+        etl::string<2> out;
+
+        size_t written = FormatTo(out, "{:4}", 'A');
+        CHECK(written <= out.max_size());
+        CHECK_FALSE(errorSeen);
+    }
+}

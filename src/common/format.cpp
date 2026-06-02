@@ -752,3 +752,20 @@ Formatter<bool>::operator()(OutputStream &stream, size_t n, bool value)
     }
     return FormatNumber(stream, n, value ? "1" : "0", 1);
 }
+
+
+size_t
+Formatter<char>::operator()(OutputStream &stream, size_t n, char value)
+{
+    if (!spec.type || spec.type == 'c') {
+        return AlignString(stream, n, etl::string_view(&value, 1));
+    }
+    etl::format_spec toStringSpec;
+    if (!GetToStringSpec(toStringSpec)) {
+        return 0;
+    }
+    // Maximal size is binary representation and prefix.
+    etl::string<10> s;
+    etl::to_string(value, s, toStringSpec);
+    return FormatNumber(stream, n, s, 1);
+}

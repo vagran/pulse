@@ -359,6 +359,16 @@ public:
 };
 
 
+template <>
+class Formatter<char>: details::IntegralFormatter {
+public:
+    using IntegralFormatter::IntegralFormatter;
+
+    size_t
+    operator()(OutputStream &stream, size_t n, char value);
+};
+
+
 namespace details {
 
 constexpr size_t SIZE_UNLIMITED = etl::numeric_limits<size_t>::max();
@@ -477,8 +487,8 @@ Formatter<T>::operator()(OutputStream &stream, size_t n, T value)
     if (!GetToStringSpec(toStringSpec)) {
         return 0;
     }
-    // Maximal size is binary representation and sign character.
-    etl::string<sizeof(T) * 8 + 1> s;
+    // Maximal size is binary representation, 0b prefix and sign character.
+    etl::string<sizeof(T) * 8 + 3> s;
     // Cannot pass abs(value) because it will not work for `numeric_limits::min()`.
     etl::to_string(value, s, toStringSpec);
     size_t isNeg = value < 0;
