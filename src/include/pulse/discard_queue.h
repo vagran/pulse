@@ -337,10 +337,11 @@ DiscardQueuePopAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 
     CriticalSection cs;
 
-    if (this->source->size) [[unlikely]] {
-        PULSE_ASSERT(this->source->popWaiters.IsEmpty());
-        this->SetResult(etl::move(this->source->CurReadItem()));
-        this->source->CommitPop();
+    auto queue = this->source;
+    if (queue->size) [[unlikely]] {
+        PULSE_ASSERT(queue->popWaiters.IsEmpty());
+        this->SetResult(etl::move(queue->CurReadItem()));
+        queue->CommitPop();
         return false;
     }
     this->waiter = etl::move(wTask);
