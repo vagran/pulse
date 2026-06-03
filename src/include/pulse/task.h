@@ -932,8 +932,23 @@ private:
     size_t result = NONE;
 };
 
-
 namespace tasks {
+
+#if pulseConfig_SCHEDULED_STATS
+
+struct SchedulerStats {
+    /// Number of tasks (task control blocks) currently being referenced.
+    uint32_t numActiveTasks,
+    /// Number of free task control blocks in the free pool.
+             numFreeTasks,
+    /// Number of task control blocks dynamically allocated from the heap.
+             numDynamicAllocations;
+};
+
+void
+GetSchedulerStats(SchedulerStats &stats);
+
+#endif // pulseConfig_SCHEDULED_STATS
 
 /** Pass the task to the scheduler. The returned reference should be kept until task is finished
  * otherwise it might be destroyed once the first suspension point is reached (scheduler releases

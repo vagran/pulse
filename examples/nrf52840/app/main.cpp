@@ -278,12 +278,22 @@ OnButtonClick()
 
     LOG_INFO("New interval: {}", blinkIntervalIndex);
 
-    MallocStats stats;
-    pulse::GetMallocStats(&stats);
-    uart.Format("Total free: {}\n", stats.totalFree);
-    uart.Format("Total used: {}\n", stats.totalUsed);
-    uart.Format("Min free: {}\n", stats.minFree);
-    uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
+    {
+        MallocStats stats;
+        GetMallocStats(&stats);
+        uart.Format("Total free: {}\n", stats.totalFree);
+        uart.Format("Total used: {}\n", stats.totalUsed);
+        uart.Format("Min free: {}\n", stats.minFree);
+        uart.Format("Blocks allocated: {}\n", stats.numBlocksAllocated);
+    }
+
+    {
+        tasks::SchedulerStats stats;
+        tasks::GetSchedulerStats(stats);
+        uart.Format("Active tasks: {}\n", stats.numActiveTasks);
+        uart.Format("Free tasks: {}\n", stats.numFreeTasks);
+        uart.Format("Dynamically allocated tasks: {}\n", stats.numDynamicAllocations);
+    }
 }
 
 // Handles button debouncing

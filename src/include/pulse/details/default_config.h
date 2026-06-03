@@ -186,6 +186,14 @@
 #endif
 
 
+/** pulseConfig_SCHEDULED_STATS
+ * Enable scheduler statistics gathering and `tasks::GetSchedulerStats()` function.
+ */
+#ifndef pulseConfig_SCHEDULED_STATS
+#   define pulseConfig_SCHEDULED_STATS 0
+#endif
+
+
 /** pulseConfig_FORMAT_ERROR
  * Invoked with string message argument in case of any error when formatting strings by `pulse::fmt`
  * API.

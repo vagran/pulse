@@ -13,6 +13,26 @@ using namespace pulse;
 
 namespace {
 
+#ifdef pulseConfig_SCHEDULED_STATS
+
+namespace stats {
+
+etl::atomic<uint32_t> numActiveTasks{0},
+                      numFreeTasks{pulseConfig_NUM_PREALLOCED_TASKS},
+                      numDynamicAllocations{0};
+
+} // namespace stats
+
+#define INC_STAT(name) stats::name.fetch_add(1)
+#define DEC_STAT(name) stats::name.fetch_sub(1)
+
+#else // pulseConfig_SCHEDULED_STATS
+
+#define INC_STAT(name)
+#define DEC_STAT(name)
+
+#endif // pulseConfig_SCHEDULED_STATS
+
 class PriorityBitmap {
 public:
     using Bitmap = SizedUint<pulseConfig_NUM_TASK_PRIORITIES>;
@@ -132,6 +152,7 @@ AllocateTaskCb()
     cbPool = e->next;
     cs.Exit();
     etl::construct_at(&e->cb);
+    DEC_STAT(numFreeTasks);
     return &e->cb;
 }
 
@@ -144,6 +165,7 @@ FreeTaskCb(details::TaskCb *cb)
     CriticalSection cs;
     e->next = cbPool;
     cbPool = e;
+    INC_STAT(numFreeTasks);
 }
 
 // XXX Make it configurable by port.
@@ -338,7 +360,9 @@ details::TaskCb::Allocate()
         auto e = new TaskCbPoolEntry();
         etl::construct_at(&e->cb);
         cb = &e->cb;
+        INC_STAT(numDynamicAllocations);
     }
+    INC_STAT(numActiveTasks);
     return cb;
 }
 
@@ -347,6 +371,7 @@ details::TaskCb::Free()
 {
     PULSE_ASSERT(refCounter == 0);
     PULSE_ASSERT(coroRefCounter == 0);
+    DEC_STAT(numActiveTasks);
     FreeTaskCb(this);
 }
 
@@ -578,3 +603,16 @@ tasks::RunSome()
 {
     details::TaskImpl::RunSomeImpl(nullptr);
 }
+
+#ifdef pulseConfig_SCHEDULED_STATS
+
+void
+tasks::GetSchedulerStats(SchedulerStats &stats)
+{
+    using namespace stats;
+    stats.numActiveTasks = numActiveTasks;
+    stats.numFreeTasks = numFreeTasks;
+    stats.numDynamicAllocations = numDynamicAllocations;
+}
+
+#endif // pulseConfig_SCHEDULED_STATS
