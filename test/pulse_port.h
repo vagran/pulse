@@ -3,4 +3,6 @@
 
 // This file should always be provided by active port.
 
+#define pulsePort_SleepGuardIrq
+
 #endif /* PULSE_PORT_H */
