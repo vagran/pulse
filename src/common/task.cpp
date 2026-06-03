@@ -13,7 +13,7 @@ using namespace pulse;
 
 namespace {
 
-#ifdef pulseConfig_SCHEDULED_STATS
+#if pulseConfig_SCHEDULED_STATS
 
 namespace stats {
 
@@ -604,7 +604,7 @@ tasks::RunSome()
     details::TaskImpl::RunSomeImpl(nullptr);
 }
 
-#ifdef pulseConfig_SCHEDULED_STATS
+#if pulseConfig_SCHEDULED_STATS
 
 void
 tasks::GetSchedulerStats(SchedulerStats &stats)
