@@ -86,4 +86,6 @@ pulsePort_IsIrqEnabled()
 #define pulsePort_GetAndDisableInterrupts()     pulsePort_GetAndRaiseBASEPRI()
 #define pulsePort_SetInterrupts(state)          pulsePort_SetBASEPRI(state)
 
+#define pulsePort_SleepGuardIrq
+
 #endif /* PULSE_PORT_H */

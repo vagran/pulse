@@ -168,8 +168,7 @@ FreeTaskCb(details::TaskCb *cb)
     INC_STAT(numFreeTasks);
 }
 
-// XXX Make it configurable by port.
-using SleepInterruptsGuard = IrqGuard;
+using SleepInterruptsGuard = pulsePort_SleepInterruptGuard;
 
 } // anonymous namespace
 

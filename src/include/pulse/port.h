@@ -136,6 +136,27 @@ pulsePort_TicklessSleep(pulsePort_TickCountType duration);
 #endif // pulseConfig_TICKLESS_IDLE
 
 
+/* One of `pulsePort_SleepGuardIrq` or `pulsePort_SleepGuardInterrupts` should be defined to select
+ * either `pulsePort_DisableIrq` or `pulsePort_DisableInterrupts` to apply when entering low power
+ * state.
+ */
+#if !defined(pulsePort_SleepGuardIrq) && !defined(pulsePort_SleepGuardInterrupts)
+#   error Either `pulsePort_SleepGuardIrq` or `pulsePort_SleepGuardInterrupts` should be defined by port
+#endif
+
+#if defined(pulsePort_SleepGuardIrq) && defined(pulsePort_SleepGuardInterrupts)
+#   error Both `pulsePort_SleepGuardIrq` or `pulsePort_SleepGuardInterrupts` defined
+#endif
+
+#ifdef pulsePort_SleepGuardIrq
+#define pulsePort_SleepInterruptGuard   pulse::IrqGuard
+#endif
+
+#ifdef pulsePort_SleepGuardInterrupts
+#define pulsePort_SleepInterruptGuard   pulse::InterruptsGuard
+#endif
+
+
 #ifdef __cplusplus
 } // extern "C"
 

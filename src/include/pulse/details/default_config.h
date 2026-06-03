@@ -60,7 +60,7 @@
 
 
 /* pulseConfig_MALLOC_BEST_FIT
- * When defined, smallest enough-sized free block is used to fullfil allocation request. First fit
+ * When defined, smallest enough-sized free block is used to fulfill allocation request. First fit
  * used otherwise. This may require longer traversal of free blocks list.
  */
 
@@ -72,7 +72,7 @@
 
 
 /* pulseConfig_MALLOC_UNLOCK
- * Heap operations unlocking complemental to `pulseConfig_MALLOC_LOCK`.
+ * Heap operations unlocking complementary to `pulseConfig_MALLOC_LOCK`.
  */
 
 
