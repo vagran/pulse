@@ -1,6 +1,8 @@
 #include <app_error.h>
 #include <panic.h>
 
+
+// This function called by SDK on panic.
 void
 app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)
 {
