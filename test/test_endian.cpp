@@ -106,9 +106,9 @@ TEST_CASE("ByteSwap constexpr")
 }
 
 
-TEST_CASE("LeUint32 stores little endian bytes")
+TEST_CASE("LeUInt32 stores little endian bytes")
 {
-    LeUint32 value = 0x12345678;
+    LeUInt32 value = 0x12345678;
 
     auto bytes = value.Bytes();
 
@@ -126,9 +126,9 @@ TEST_CASE("LeUint32 stores little endian bytes")
 }
 
 
-TEST_CASE("BeUint32 stores big endian bytes")
+TEST_CASE("BeUInt32 stores big endian bytes")
 {
-    BeUint32 value = 0x12345678;
+    BeUInt32 value = 0x12345678;
 
     auto bytes = value.Bytes();
 
@@ -139,9 +139,9 @@ TEST_CASE("BeUint32 stores big endian bytes")
 }
 
 
-TEST_CASE("LeUint32 conversion")
+TEST_CASE("LeUInt32 conversion")
 {
-    LeUint32 value = 0x12345678;
+    LeUInt32 value = 0x12345678;
 
     uint32_t x = value;
 
@@ -149,25 +149,25 @@ TEST_CASE("LeUint32 conversion")
 }
 
 
-TEST_CASE("LeUint32 Get Set")
+TEST_CASE("LeUInt32 Get Set")
 {
-    uint8_t buffer[sizeof(LeUint32)];
+    uint8_t buffer[sizeof(LeUInt32)];
 
-    LeUint32::Set(buffer, 0x12345678);
+    LeUInt32::Set(buffer, 0x12345678);
 
-    uint32_t value = LeUint32::Get(buffer);
+    uint32_t value = LeUInt32::Get(buffer);
 
     REQUIRE(value == 0x12345678);
 }
 
 
-TEST_CASE("BeUint32 Get Set")
+TEST_CASE("BeUInt32 Get Set")
 {
-    uint8_t buffer[sizeof(BeUint32)];
+    uint8_t buffer[sizeof(BeUInt32)];
 
-    BeUint32::Set(buffer, 0x12345678);
+    BeUInt32::Set(buffer, 0x12345678);
 
-    uint32_t value = BeUint32::Get(buffer);
+    uint32_t value = BeUInt32::Get(buffer);
 
     REQUIRE(value == 0x12345678);
 }
@@ -175,15 +175,15 @@ TEST_CASE("BeUint32 Get Set")
 
 TEST_CASE("Wire type sizes")
 {
-    static_assert(sizeof(LeUint8)  == sizeof(uint8_t));
-    static_assert(sizeof(LeUint16) == sizeof(uint16_t));
-    static_assert(sizeof(LeUint32) == sizeof(uint32_t));
-    static_assert(sizeof(LeUint64) == sizeof(uint64_t));
+    static_assert(sizeof(LeUInt8)  == sizeof(uint8_t));
+    static_assert(sizeof(LeUInt16) == sizeof(uint16_t));
+    static_assert(sizeof(LeUInt32) == sizeof(uint32_t));
+    static_assert(sizeof(LeUInt64) == sizeof(uint64_t));
 
-    static_assert(sizeof(BeUint8)  == sizeof(uint8_t));
-    static_assert(sizeof(BeUint16) == sizeof(uint16_t));
-    static_assert(sizeof(BeUint32) == sizeof(uint32_t));
-    static_assert(sizeof(BeUint64) == sizeof(uint64_t));
+    static_assert(sizeof(BeUInt8)  == sizeof(uint8_t));
+    static_assert(sizeof(BeUInt16) == sizeof(uint16_t));
+    static_assert(sizeof(BeUInt32) == sizeof(uint32_t));
+    static_assert(sizeof(BeUInt64) == sizeof(uint64_t));
 
     SUCCEED();
 }

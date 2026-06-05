@@ -178,6 +178,20 @@ public:
         return *this;
     }
 
+    BoValue &
+    operator |=(T value)
+    {
+        this->value |= Converter::Convert(value);
+        return *this;
+    }
+
+    BoValue &
+    operator &=(T value)
+    {
+        this->value &= Converter::Convert(value);
+        return *this;
+    }
+
     /** Cast to underlying type.
      *
      * @return Value in host byte order.
@@ -255,26 +269,26 @@ using BeValue = BoValue<T, details::BoConverter<T, IsSystemLe()>>;
 
 /// Predefined primitive types for little-endian byte order.
 typedef LeValue<int8_t> LeInt8;
-typedef LeValue<uint8_t> LeUint8;
+typedef LeValue<uint8_t> LeUInt8;
 typedef LeValue<int16_t> LeInt16;
-typedef LeValue<uint16_t> LeUint16;
+typedef LeValue<uint16_t> LeUInt16;
 typedef LeValue<int32_t> LeInt32;
-typedef LeValue<uint32_t> LeUint32;
+typedef LeValue<uint32_t> LeUInt32;
 typedef LeValue<int64_t> LeInt64;
-typedef LeValue<uint64_t> LeUint64;
+typedef LeValue<uint64_t> LeUInt64;
 typedef LeValue<float> LeFloat;
 typedef LeValue<double> LeDouble;
 
 
 /// Predefined primitive types for big-endian byte order.
 typedef BeValue<int8_t> BeInt8;
-typedef BeValue<uint8_t> BeUint8;
+typedef BeValue<uint8_t> BeUInt8;
 typedef BeValue<int16_t> BeInt16;
-typedef BeValue<uint16_t> BeUint16;
+typedef BeValue<uint16_t> BeUInt16;
 typedef BeValue<int32_t> BeInt32;
-typedef BeValue<uint32_t> BeUint32;
+typedef BeValue<uint32_t> BeUInt32;
 typedef BeValue<int64_t> BeInt64;
-typedef BeValue<uint64_t> BeUint64;
+typedef BeValue<uint64_t> BeUInt64;
 typedef BeValue<float> BeFloat;
 typedef BeValue<double> BeDouble;
 
