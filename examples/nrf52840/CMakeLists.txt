@@ -34,7 +34,6 @@ endif()
 
 include_directories(
     "${CMAKE_SOURCE_DIR}/app"
-    "${CMAKE_SOURCE_DIR}/app/nrf"
     "${SDK_DIR}/modules/nrfx"
     "${SDK_DIR}/modules/nrfx/mdk"
     "${SDK_DIR}/modules/nrfx/hal"
