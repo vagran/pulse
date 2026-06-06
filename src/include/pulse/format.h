@@ -389,8 +389,21 @@ public:
 template <typename T>
 class FormatArg: public FormatArgBase {
 public:
-    const T &value;
+    /* Scalar arguments are stored by value: this makes the class accept volatile-qualified
+     * arguments (read once at construction) and is cheap. Larger types are stored by reference to
+     * avoid copying.
+     */
+    static constexpr bool BY_VALUE =
+        etl::is_arithmetic_v<T> || etl::is_pointer_v<T> || etl::is_enum_v<T>;
 
+    etl::conditional_t<BY_VALUE, const T, const T &> value;
+
+    template <bool byValue = BY_VALUE, etl::enable_if_t<byValue, int> = 0>
+    FormatArg(const volatile T &value):
+        value(value)
+    {}
+
+    template <bool byValue = BY_VALUE, etl::enable_if_t<!byValue, int> = 0>
     FormatArg(const T &value):
         value(value)
     {}

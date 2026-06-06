@@ -473,6 +473,14 @@ TEST_CASE("FormatTo integer formatting") {
         CHECK_FALSE(errorSeen);
     }
 
+    SECTION("Volatile int formatting") {
+        etl::string<64> out;
+        volatile int i = 42;
+        CHECK(FormatTo(out, "{}", i) == 2);
+        CHECK(out == "42");
+        CHECK_FALSE(errorSeen);
+    }
+
     SECTION("Negative signed integer") {
         etl::string<64> out;
         CHECK(FormatTo(out, "{}", -42) == 3);
