@@ -235,7 +235,7 @@ namespace details {
 
 template <uint32_t TargetPriority>
 struct InterruptsGuardTrait {
-    uint32_t
+    static uint32_t
     GetAndDisableInterrupt()
     {
         return pulsePort_GetAndSetInterrupts(TargetPriority);
@@ -244,7 +244,7 @@ struct InterruptsGuardTrait {
 
 template <>
 struct InterruptsGuardTrait<pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY> {
-    uint32_t
+    static uint32_t
     GetAndDisableInterrupt()
     {
         return pulsePort_GetAndDisableInterrupts();
