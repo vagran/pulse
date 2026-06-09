@@ -41,8 +41,18 @@ pulsePort_EnableInterrupts();
  * Either macro or function to get current interrupts state and disable them.
  */
 #ifndef pulsePort_GetAndDisableInterrupts
-unsigned
+uint32_t
 pulsePort_GetAndDisableInterrupts();
+#endif
+
+
+
+/** pulsePort_GetAndSetInterrupts
+ * Either macro or function to get current interrupts state and disable them.
+ */
+#ifndef pulsePort_GetAndSetInterrupts
+uint32_t
+pulsePort_GetAndSetInterrupts(uint32_t state);
 #endif
 
 
@@ -52,7 +62,7 @@ pulsePort_GetAndDisableInterrupts();
  */
 #ifndef pulsePort_SetInterrupts
 void
-pulsePort_SetInterrupts(unsigned state);
+pulsePort_SetInterrupts(uint32_t state);
 #endif
 
 
@@ -177,14 +187,20 @@ EnableInterrupts()
     pulsePort_EnableInterrupts();
 }
 
-inline unsigned
+inline uint32_t
 GetAndDisableInterrupts()
 {
     return pulsePort_GetAndDisableInterrupts();
 }
 
+inline uint32_t
+GetAndSetInterrupts(uint32_t state)
+{
+    return pulsePort_GetAndSetInterrupts(state);
+}
+
 inline void
-SetInterrupts(unsigned state)
+SetInterrupts(uint32_t state)
 {
     pulsePort_SetInterrupts(state);
 }
@@ -217,7 +233,7 @@ ExitCriticalSection()
 class InterruptsGuard {
 public:
     bool acquired = false;
-    unsigned state;
+    uint32_t state;
 
     InterruptsGuard(const InterruptsGuard &) = delete;
 

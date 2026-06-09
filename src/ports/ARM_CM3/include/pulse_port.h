@@ -46,6 +46,24 @@ pulsePort_GetAndRaiseBASEPRI()
     return prevBASEPRI;
 }
 
+static inline uint32_t
+pulsePort_GetAndSetBASEPRI(uint32_t newMaskValue)
+{
+    uint32_t prevBASEPRI;
+
+    asm volatile (
+        "mrs %0, basepri        \n" \
+        "msr basepri, %1        \n" \
+        "dsb                    \n" \
+        "isb                    \n" \
+        : "=&r" (prevBASEPRI)
+        : "r" (newMaskValue)
+        : "memory"
+    );
+
+    return prevBASEPRI;
+}
+
 static inline void
 pulsePort_SetBASEPRI(uint32_t newMaskValue)
 {
@@ -84,6 +102,7 @@ pulsePort_IsIrqEnabled()
 #define pulsePort_DisableInterrupts             pulsePort_RaiseBASEPRI
 #define pulsePort_EnableInterrupts()            pulsePort_SetBASEPRI(0)
 #define pulsePort_GetAndDisableInterrupts()     pulsePort_GetAndRaiseBASEPRI()
+#define pulsePort_GetAndSetInterrupts(state)    pulsePort_GetAndSetBASEPRI(state)
 #define pulsePort_SetInterrupts(state)          pulsePort_SetBASEPRI(state)
 
 #define pulsePort_SleepGuardIrq
