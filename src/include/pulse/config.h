@@ -1,5 +1,5 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#ifndef INCLUDE_PULSE_CONFIG_H
+#define INCLUDE_PULSE_CONFIG_H
 
 /** @file config.h
  * Include this file to get all pulseConfig_* values defined by the application, including default
@@ -8,4 +8,4 @@
 
 #include <pulse/details/default_config.h>
 
-#endif /* CONFIG_H */
+#endif /* INCLUDE_PULSE_CONFIG_H */
