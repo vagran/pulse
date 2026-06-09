@@ -86,6 +86,12 @@ struct List {
         other.head = TPtr();
     }
 
+    bool
+    IsEmpty() const
+    {
+        return !head;
+    }
+
     void
     AddFirst(TPtr item);
 
