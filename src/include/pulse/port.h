@@ -3,6 +3,8 @@
 
 // This header should be provided by the port.
 #include <pulse_port.h>
+#include <pulse/config.h>
+#include <stdint.h>
 
 
 #ifdef __cplusplus
@@ -229,7 +231,31 @@ ExitCriticalSection()
     pulsePort_ExitCriticalSection();
 }
 
+namespace details {
+
+template <uint32_t TargetPriority>
+struct InterruptsGuardTrait {
+    uint32_t
+    GetAndDisableInterrupt()
+    {
+        return pulsePort_GetAndSetInterrupts(TargetPriority);
+    }
+};
+
+template <>
+struct InterruptsGuardTrait<pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY> {
+    uint32_t
+    GetAndDisableInterrupt()
+    {
+        return pulsePort_GetAndDisableInterrupts();
+    }
+};
+
+} // namespace details
+
+
 /** Helper class to disable ISRs in this class instance scope. */
+template <uint32_t TargetPriority = pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY>
 class InterruptsGuard {
 public:
     bool acquired = false;
@@ -240,7 +266,7 @@ public:
     InterruptsGuard(bool acquire = true)
     {
         if (acquire) {
-            state = pulsePort_GetAndDisableInterrupts();
+            state = details::InterruptsGuardTrait<TargetPriority>::GetAndDisableInterrupt();
             acquired = true;
         }
     }

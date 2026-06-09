@@ -1,7 +1,7 @@
 #ifndef FORMAT_H
 #define FORMAT_H
 
-/*
+/** @file format.h
  * Implementation for strings formatting library. The goal is to make its code size as small as
  * possible. Current implementation of `etl::format()` consumes too much code space, which is also
  * the case for most other implementations which rely too much on templates. Here we use

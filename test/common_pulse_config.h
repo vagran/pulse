@@ -1,6 +1,8 @@
 #ifndef COMMON_PULSE_CONFIG_H
 #define COMMON_PULSE_CONFIG_H
 
+#define pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY  4
+
 #define pulseConfig_TICK_FREQ 100
 
 // Validate locking.
