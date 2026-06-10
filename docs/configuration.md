@@ -173,7 +173,8 @@ The most up-to-date list of configuration parameters is maintained in the codeba
 
    Highest interrupt priority at which system calls can be made (those which are allowed to be
    called from ISR). Pulse functions should never be called from ISR running on higher priorities.
-   Should not be zero, since it cannot be masked by priority on ARM.
+   Should not be zero, since it cannot be masked by priority on ARM. This is a value directly
+   written to BASEPRI register, no priority bits shift applied.
 
    _Default value:_ _None_
 
