@@ -211,13 +211,13 @@ public:
     }
 
     bool
-    operator ==(SharedPtr other) const
+    operator ==(const SharedPtr &other) const
     {
         return ptr == other.ptr;
     }
 
     bool
-    operator !=(SharedPtr other) const
+    operator !=(const SharedPtr &other) const
     {
         return ptr != other.ptr;
     }
