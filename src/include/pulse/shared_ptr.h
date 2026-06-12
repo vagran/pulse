@@ -210,6 +210,30 @@ public:
         return ptr;
     }
 
+    bool
+    operator ==(SharedPtr other) const
+    {
+        return ptr == other.ptr;
+    }
+
+    bool
+    operator !=(SharedPtr other) const
+    {
+        return ptr != other.ptr;
+    }
+
+    bool
+    operator ==(etl::nullptr_t) const
+    {
+        return ptr == nullptr;
+    }
+
+    bool
+    operator !=(etl::nullptr_t) const
+    {
+        return ptr != nullptr;
+    }
+
     T &
     operator *() const
     {
