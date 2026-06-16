@@ -681,9 +681,9 @@ namespace details {
  *
  */
 template <typename TRet, class TSource, class TSourceTrait>
-class AbstractAwaiter {
+class AwaiterBase {
 public:
-    ~AbstractAwaiter();
+    ~AwaiterBase();
 
     bool
     await_ready() const
@@ -741,28 +741,28 @@ public:
 
 protected:
     friend TSource;
-    friend struct details::ListDefaultTrait<AbstractAwaiter *>;
+    friend struct details::ListDefaultTrait<AwaiterBase *>;
 
-    AbstractAwaiter *next = nullptr;
+    AwaiterBase *next = nullptr;
     TSource *source = nullptr;
     TaskWeakRef waiter;
     alignas(TRet) uint8_t storage[sizeof(TRet)];
 
-    AbstractAwaiter() = delete;
+    AwaiterBase() = delete;
 
     /** Construct with result to create it in ready state. */
-    AbstractAwaiter(TRet &&result)
+    AwaiterBase(TRet &&result)
     {
         etl::construct_at(&this->Result(), etl::move(result));
     }
 
-    AbstractAwaiter(const TRet &result)
+    AwaiterBase(const TRet &result)
     {
         etl::construct_at(&this->Result(), result);
     }
 
     /** Construct with source to create it in pending state. */
-    AbstractAwaiter(TSource *source):
+    AwaiterBase(TSource *source):
         source(source)
     {}
 
@@ -1330,7 +1330,7 @@ details::Task<void, initialSuspend>::operator co_await() const
 
 
 template <typename TRet, class TSource, class TSourceTrait>
-details::AbstractAwaiter<TRet, TSource, TSourceTrait>::~AbstractAwaiter()
+details::AwaiterBase<TRet, TSource, TSourceTrait>::~AwaiterBase()
 {
     CriticalSection cs;
     if (source) {

@@ -98,12 +98,12 @@ public:
 
 private:
     struct AwaiterSourceTrait;
-    using TAbstractAwaiter = details::AbstractAwaiter<T, DiscardQueue, AwaiterSourceTrait>;
+    using TAwaiterBase = details::AwaiterBase<T, DiscardQueue, AwaiterSourceTrait>;
 
     friend class DiscardQueuePopAwaiter<DiscardQueue>;
 
     T * const buffer;
-    TailedList<TAbstractAwaiter *> popWaiters;
+    TailedList<TAwaiterBase *> popWaiters;
     const TIndex capacity;
     TIndex readIdx = 0, size = 0;
 
@@ -133,7 +133,7 @@ private:
 
     struct AwaiterSourceTrait {
         static void
-        DequeueAwaiter(DiscardQueue *queue, TAbstractAwaiter *awaiter)
+        DequeueAwaiter(DiscardQueue *queue, TAwaiterBase *awaiter)
         {
             queue->popWaiters.Remove(awaiter);
         }
@@ -160,14 +160,14 @@ private:
 
 
 template <class TQueue>
-class DiscardQueuePopAwaiter: public TQueue::TAbstractAwaiter {
+class DiscardQueuePopAwaiter: public TQueue::TAwaiterBase {
 public:
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
 private:
     friend TQueue;
-    using Base = TQueue::TAbstractAwaiter;
+    using Base = TQueue::TAwaiterBase;
 
     using Base::Base;
 };

@@ -54,17 +54,17 @@ public:
 
 private:
     struct AwaiterSourceTrait;
-    using TAbstractAwaiter = details::AbstractAwaiter<TCounter, TokenQueue, AwaiterSourceTrait>;
+    using TAwaiterBase = details::AwaiterBase<TCounter, TokenQueue, AwaiterSourceTrait>;
 
     friend class TokenQueueAwaiter<TokenQueue>;
 
-    TailedList<TAbstractAwaiter *> waiters;
+    TailedList<TAwaiterBase *> waiters;
     const TCounter maxTokens;
     TCounter value, numTokens = 0;
 
     struct AwaiterSourceTrait {
         static void
-        DequeueAwaiter(TokenQueue *queue, TAbstractAwaiter *awaiter)
+        DequeueAwaiter(TokenQueue *queue, TAwaiterBase *awaiter)
         {
             queue->waiters.Remove(awaiter);
         }
@@ -73,14 +73,14 @@ private:
 
 
 template <class TQueue>
-class TokenQueueAwaiter: public TQueue::TAbstractAwaiter {
+class TokenQueueAwaiter: public TQueue::TAwaiterBase {
 public:
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
 private:
     friend TQueue;
-    using Base = TQueue::TAbstractAwaiter;
+    using Base = TQueue::TAwaiterBase;
 
     using Base::Base;
 };
@@ -106,7 +106,7 @@ TokenQueue<TCounter>::Push(TCounter n)
     CriticalSection cs;
 
     while (!waiters.IsEmpty() && (numTokens || n)) {
-        TAbstractAwaiter *w = waiters.PopFirst();
+        TAwaiterBase *w = waiters.PopFirst();
         if (!w->Wakeup()) {
             continue;
         }

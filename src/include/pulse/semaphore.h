@@ -52,17 +52,17 @@ public:
 
 private:
     struct AwaiterSourceTrait;
-    using TAbstractAwaiter = details::AbstractAwaiter<bool, Semaphore, AwaiterSourceTrait>;
+    using TAwaiterBase = details::AwaiterBase<bool, Semaphore, AwaiterSourceTrait>;
 
     friend class SemaphoreAwaiter<Semaphore>;
 
-    TailedList<TAbstractAwaiter *> waiters;
+    TailedList<TAwaiterBase *> waiters;
     const TSize numTokens;
     TSize numAcquired;
 
     struct AwaiterSourceTrait {
         static void
-        DequeueAwaiter(Semaphore *sem, TAbstractAwaiter *awaiter)
+        DequeueAwaiter(Semaphore *sem, TAwaiterBase *awaiter)
         {
             sem->waiters.Remove(awaiter);
         }
@@ -71,14 +71,14 @@ private:
 
 
 template <class TSem>
-class SemaphoreAwaiter: public TSem::TAbstractAwaiter {
+class SemaphoreAwaiter: public TSem::TAwaiterBase {
 public:
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
 private:
     friend TSem;
-    using Base = TSem::TAbstractAwaiter;
+    using Base = TSem::TAwaiterBase;
 
     using Base::Base;
 };

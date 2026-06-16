@@ -62,15 +62,15 @@ public:
 private:
     struct PushAwaiterSourceTrait;
     struct PopAwaiterSourceTrait;
-    using TAbstractPushAwaiter = details::AbstractAwaiter<T, BlockingQueue, PushAwaiterSourceTrait>;
-    using TAbstractPopAwaiter = details::AbstractAwaiter<T, BlockingQueue, PopAwaiterSourceTrait>;
+    using TPushAwaiterBase = details::AwaiterBase<T, BlockingQueue, PushAwaiterSourceTrait>;
+    using TPopAwaiterBase = details::AwaiterBase<T, BlockingQueue, PopAwaiterSourceTrait>;
 
     friend class BlockingQueuePushAwaiter<BlockingQueue>;
     friend class BlockingQueuePopAwaiter<BlockingQueue>;
 
     T * const buffer;
-    TailedList<TAbstractPushAwaiter *> pushWaiters;
-    TailedList<TAbstractPopAwaiter *> popWaiters;
+    TailedList<TPushAwaiterBase *> pushWaiters;
+    TailedList<TPopAwaiterBase *> popWaiters;
     const TIndex capacity;
     TIndex readIdx = 0, size = 0;
 
@@ -100,7 +100,7 @@ private:
 
     struct PushAwaiterSourceTrait {
         static void
-        DequeueAwaiter(BlockingQueue *queue, TAbstractPushAwaiter *awaiter)
+        DequeueAwaiter(BlockingQueue *queue, TPushAwaiterBase *awaiter)
         {
             queue->pushWaiters.Remove(awaiter);
         }
@@ -108,7 +108,7 @@ private:
 
     struct PopAwaiterSourceTrait {
         static void
-        DequeueAwaiter(BlockingQueue *queue, TAbstractPopAwaiter *awaiter)
+        DequeueAwaiter(BlockingQueue *queue, TPopAwaiterBase *awaiter)
         {
             queue->popWaiters.Remove(awaiter);
         }
@@ -140,7 +140,7 @@ private:
  * `AbstractAwaiter` base destructor.
  */
 template <class TQueue>
-class BlockingQueuePushAwaiter: public TQueue::TAbstractPushAwaiter {
+class BlockingQueuePushAwaiter: public TQueue::TPushAwaiterBase {
 public:
     ~BlockingQueuePushAwaiter();
 
@@ -153,7 +153,7 @@ public:
 
 private:
     friend TQueue;
-    using Base = TQueue::TAbstractPushAwaiter;
+    using Base = TQueue::TPushAwaiterBase;
 
     template <typename... Args>
     BlockingQueuePushAwaiter(TQueue *queue, Args &&... args):
@@ -174,14 +174,14 @@ private:
 
 
 template <class TQueue>
-class BlockingQueuePopAwaiter: public TQueue::TAbstractPopAwaiter {
+class BlockingQueuePopAwaiter: public TQueue::TPopAwaiterBase {
 public:
     bool
     await_suspend(tasks::CoroutineHandle handle);
 
 private:
     friend TQueue;
-    using Base = TQueue::TAbstractPopAwaiter;
+    using Base = TQueue::TPopAwaiterBase;
 
     using Base::Base;
 };
