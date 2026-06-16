@@ -538,7 +538,7 @@ template <typename TRet = void>
 using Awaitable = details::Task<TRet, false>;
 
 
-/** For now it is mostly marker interface. There is currently no need to make it polymorphic. */
+/** For now it is mostly marker interface. */
 template <typename TRet>
 class Awaiter {
 public:
@@ -582,11 +582,92 @@ public:
      * await_ready() [const];
      *
      * bool | void
-     * await_suspend(Task::CoroutineHandle handle);
+     * await_suspend(tasks::CoroutineHandle handle);
      *
      * TRet
      * await_resume() [const];
      */
+};
+
+
+/** Base class for polymorphic awaiters, mostly for use with AwaiterProxy. */
+template <typename TRet>
+class AbstractAwaiter: public Awaiter<TRet> {
+public:
+    virtual
+    ~AbstractAwaiter()
+    {}
+
+    virtual bool
+    await_ready() = 0;
+
+    /// @return True if suspended, false if ready and not suspended.
+    virtual bool
+    await_suspend(tasks::CoroutineHandle handle) = 0;
+
+    virtual TRet
+    await_resume() = 0;
+};
+
+
+/** Acts as a proxy and unique pointer to AbstractAwaiter. Can be used to wrap an implementation of
+ * AbstractAwaiter. One has three options when implementing an asynchronous interface in some
+ * component:
+ *      1. Return a custom awaiter directly. In this case its definition must be fully exposed in
+ *      the component interface, but this is the most efficient option in terms of overhead.
+ *      2. Return an Awaitable from a wrapper coroutine which co_awaits a custom awaiter inside the
+ *      component implementation. However, this introduces a new coroutine, which in most cases is
+ *      dynamically allocated and separately scheduled. It also has its own wait list with all the
+ *      related overhead.
+ *      3. Return an AwaiterProxy which wraps a polymorphic custom awaiter implementation. This is a
+ *      compromise option. The awaiter implementation is dynamically allocated (although it can have
+ *      a custom allocator and an overloaded `delete` operator) and is polymorphic. However, there
+ *      is no additional coroutine frame, so it is not run through the scheduler.
+ */
+template <typename TRet>
+class AwaiterProxy: public Awaiter<TRet> {
+    AwaiterProxy(AbstractAwaiter<TRet> *awaiter):
+        awaiter(awaiter)
+    {}
+
+    AwaiterProxy() = delete;
+    AwaiterProxy(const AwaiterProxy &) = delete;
+
+    AwaiterProxy(AwaiterProxy &&other):
+        awaiter(other.awaiter)
+    {
+        other.awaiter = nullptr;
+    }
+
+    ~AwaiterProxy()
+    {
+        if (awaiter) {
+            // Implementation type can have delete operator overloaded if needed.
+            delete awaiter;
+        }
+    }
+
+    bool
+    await_ready()
+    {
+        return awaiter->await_ready();
+    }
+
+    /// @return True if suspended, false if ready and not suspended.
+    bool
+    await_suspend(tasks::CoroutineHandle handle)
+    {
+        return awaiter->await_suspend(handle);
+    }
+
+    TRet
+    await_resume()
+    {
+        return awaiter->await_resume();
+    }
+
+private:
+    AbstractAwaiter<TRet> *awaiter;
 };
 
 
