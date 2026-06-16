@@ -62,6 +62,6 @@ LogGetTimestamp(char *buffer, size_t bufferSize);
 
 #define pulseConfig_PULSE_LOG_LEVEL                 PULSE_LOG_LEVEL_INFO
 
-#define pulseConfig_SCHEDULED_STATS                 1
+#define pulseConfig_SCHEDULER_STATS                 1
 
 #endif /* PULSE_CONFIG_H */

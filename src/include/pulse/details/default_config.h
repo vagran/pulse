@@ -187,11 +187,11 @@
 #endif
 
 
-/** pulseConfig_SCHEDULED_STATS
+/** pulseConfig_SCHEDULER_STATS
  * Enable scheduler statistics gathering and `tasks::GetSchedulerStats()` function.
  */
-#ifndef pulseConfig_SCHEDULED_STATS
-#   define pulseConfig_SCHEDULED_STATS 0
+#ifndef pulseConfig_SCHEDULER_STATS
+#   define pulseConfig_SCHEDULER_STATS 0
 #endif
 
 

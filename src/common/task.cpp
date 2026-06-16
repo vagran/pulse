@@ -1,6 +1,7 @@
 #include <pulse/task.h>
 #include <pulse/port.h>
 #include <pulse/timer.h>
+#include <pulse/pool.h>
 #include <pulse/details/pulse_log.h>
 
 #include <etl/limits.h>
@@ -13,7 +14,7 @@ using namespace pulse;
 
 namespace {
 
-#if pulseConfig_SCHEDULED_STATS
+#if pulseConfig_SCHEDULER_STATS
 
 namespace stats {
 
@@ -26,12 +27,12 @@ etl::atomic<uint32_t> numActiveTasks{0},
 #define INC_STAT(name) stats::name.fetch_add(1)
 #define DEC_STAT(name) stats::name.fetch_sub(1)
 
-#else // pulseConfig_SCHEDULED_STATS
+#else // pulseConfig_SCHEDULER_STATS
 
 #define INC_STAT(name)
 #define DEC_STAT(name)
 
-#endif // pulseConfig_SCHEDULED_STATS
+#endif // pulseConfig_SCHEDULER_STATS
 
 class PriorityBitmap {
 public:
@@ -88,85 +89,35 @@ PriorityBitmap readyTasksBitmap;
 /// Currently running task (top-level, resumed by scheduler)
 TaskRef currentTask;
 
-
-struct TaskCbPoolEntry {
-    union {
-        // Next entry when in free list.
-        TaskCbPoolEntry *next;
-        details::TaskCb cb;
-    };
-
-    TaskCbPoolEntry()
+struct CbPoolTrait {
+    static void
+    OnAllocated()
     {
-        // Union members are constructed explicitly in Allocate/Free
+        INC_STAT(numActiveTasks);
+    }
+
+    static void
+    OnPoolAllocated()
+    {
+        DEC_STAT(numFreeTasks);
+    }
+
+    static void
+    OnDynamicallyAllocated()
+    {
+        INC_STAT(numDynamicAllocations);
+        PULSE_LOG_INFO("Allocating task CB from heap");
+    }
+
+    static void
+    OnFreed()
+    {
+        DEC_STAT(numActiveTasks);
+        INC_STAT(numFreeTasks);
     }
 };
 
-TaskCbPoolEntry *cbPool = nullptr;
-
-#if pulseConfig_NUM_PREALLOCED_TASKS > 0
-
-struct TaskCbPreallocatedPool {
-    TaskCbPoolEntry pool[pulseConfig_NUM_PREALLOCED_TASKS];
-
-    TaskCbPreallocatedPool()
-    {
-        for (size_t i = 0; i < pulseConfig_NUM_PREALLOCED_TASKS; i++) {
-            if (i < pulseConfig_NUM_PREALLOCED_TASKS - 1) {
-                pool[i].next = &pool[i + 1];
-            } else {
-                pool[i].next = nullptr;
-            }
-        }
-        cbPool = &pool[0];
-    }
-
-    // For clean unit tests. Stripped by linker when compiling firmware.
-    ~TaskCbPreallocatedPool()
-    {
-        TaskCbPoolEntry *e = cbPool;
-        while (e) {
-            TaskCbPoolEntry *next = e->next;
-            if (e < pool || e >= pool + pulseConfig_NUM_PREALLOCED_TASKS) {
-                delete e;
-            }
-            e = next;
-        }
-    }
-};
-
-TaskCbPreallocatedPool taskCbPreallocatedPool;
-
-#endif // pulseConfig_NUM_PREALLOCED_TASKS > 0
-
-
-/// Allocate from pool. Returns null if no free item.
-details::TaskCb *
-AllocateTaskCb()
-{
-    CriticalSection cs;
-    if (!cbPool) {
-        return nullptr;
-    }
-    TaskCbPoolEntry *e = cbPool;
-    cbPool = e->next;
-    cs.Exit();
-    etl::construct_at(&e->cb);
-    DEC_STAT(numFreeTasks);
-    return &e->cb;
-}
-
-/// Free into pool.
-void
-FreeTaskCb(details::TaskCb *cb)
-{
-    TaskCbPoolEntry *e = reinterpret_cast<TaskCbPoolEntry *>(cb);
-    etl::destroy_at(&e->cb);
-    CriticalSection cs;
-    e->next = cbPool;
-    cbPool = e;
-    INC_STAT(numFreeTasks);
-}
+Pool<details::TaskCb, pulseConfig_NUM_PREALLOCED_TASKS, true, CriticalSection, CbPoolTrait> cbPool;
 
 using SleepInterruptsGuard = pulsePort_SleepInterruptGuard;
 
@@ -353,16 +304,7 @@ TaskWeakRef::Lock()
 details::TaskCb *
 details::TaskCb::Allocate()
 {
-    details::TaskCb *cb = AllocateTaskCb();
-    if (!cb) {
-        PULSE_LOG_INFO("Allocating task CB from heap");
-        auto e = new TaskCbPoolEntry();
-        etl::construct_at(&e->cb);
-        cb = &e->cb;
-        INC_STAT(numDynamicAllocations);
-    }
-    INC_STAT(numActiveTasks);
-    return cb;
+    return cbPool.Allocate();
 }
 
 void
@@ -370,8 +312,7 @@ details::TaskCb::Free()
 {
     PULSE_ASSERT(refCounter == 0);
     PULSE_ASSERT(coroRefCounter == 0);
-    DEC_STAT(numActiveTasks);
-    FreeTaskCb(this);
+    cbPool.Free(this);
 }
 
 void
@@ -603,7 +544,7 @@ tasks::RunSome()
     details::TaskImpl::RunSomeImpl(nullptr);
 }
 
-#if pulseConfig_SCHEDULED_STATS
+#if pulseConfig_SCHEDULER_STATS
 
 void
 tasks::GetSchedulerStats(SchedulerStats &stats)
@@ -614,4 +555,4 @@ tasks::GetSchedulerStats(SchedulerStats &stats)
     stats.numDynamicAllocations = numDynamicAllocations;
 }
 
-#endif // pulseConfig_SCHEDULED_STATS
+#endif // pulseConfig_SCHEDULER_STATS

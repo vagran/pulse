@@ -195,8 +195,8 @@ The most up-to-date list of configuration parameters is maintained in the codeba
    _Default value:_ `1`
 
 
-<a name="pulseConfig_SCHEDULED_STATS"></a>
- - [`pulseConfig_SCHEDULED_STATS`](#pulseConfig_SCHEDULED_STATS)
+<a name="pulseConfig_SCHEDULER_STATS"></a>
+ - [`pulseConfig_SCHEDULER_STATS`](#pulseConfig_SCHEDULER_STATS)
 
    Enable scheduler statistics gathering and `tasks::GetSchedulerStats()` function.
 

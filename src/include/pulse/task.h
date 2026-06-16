@@ -1015,7 +1015,7 @@ private:
 
 namespace tasks {
 
-#if pulseConfig_SCHEDULED_STATS
+#if pulseConfig_SCHEDULER_STATS
 
 struct SchedulerStats {
     /// Number of tasks (task control blocks) currently being referenced.
@@ -1029,7 +1029,7 @@ struct SchedulerStats {
 void
 GetSchedulerStats(SchedulerStats &stats);
 
-#endif // pulseConfig_SCHEDULED_STATS
+#endif // pulseConfig_SCHEDULER_STATS
 
 /** Pass the task to the scheduler. The returned reference should be kept until task is finished
  * otherwise it might be destroyed once the first suspension point is reached (scheduler releases
