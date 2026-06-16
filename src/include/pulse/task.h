@@ -626,6 +626,7 @@ public:
  */
 template <typename TRet>
 class AwaiterProxy: public Awaiter<TRet> {
+public:
     AwaiterProxy(AbstractAwaiter<TRet> *awaiter):
         awaiter(awaiter)
     {}
