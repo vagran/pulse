@@ -1,5 +1,5 @@
-#ifndef RING_BUFFER_H
-#define RING_BUFFER_H
+#ifndef PULSE_FAST_RING_BUFFER_H
+#define PULSE_FAST_RING_BUFFER_H
 
 #include <pulse/details/common.h>
 #include <etl/span.h>
@@ -8,7 +8,7 @@
 namespace pulse {
 
 /** Light-weight ring buffer implementation. Buffer size should be strictly power of two to enable
- * fast math.
+ * fast math. Intended for trivial types and bulk operations.
  * @tparam T Type of values to store.
  * @tparam TIndex Type of index field.
  */
@@ -152,7 +152,7 @@ private:
 };
 
 
-/** RingBuffer with embedded fixed size storage. */
+/** FastRingBuffer with embedded fixed size storage. */
 template <typename T, size_t Capacity,
           etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(Capacity * 2)>>
 class InlineFastRingBuffer: public FastRingBuffer<T, TIndex> {
@@ -169,4 +169,4 @@ private:
 
 } // namespace pulse
 
-#endif /* RING_BUFFER_H */
+#endif /* PULSE_FAST_RING_BUFFER_H */
