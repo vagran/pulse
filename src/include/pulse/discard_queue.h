@@ -74,7 +74,8 @@ public:
 
 
     /** Get reference to the first item (which is next to be popped out). Valid only if not empty.
-     * Should be used only if producer is not in ISR or with interrupts disabled.
+     * Should be used only if producer is not in ISR or with interrupts disabled. Also taildrop
+     * queue is safe for unprotected access.
      */
     T &
     Peek()
