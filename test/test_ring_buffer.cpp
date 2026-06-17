@@ -1,236 +1,216 @@
 #include <catch2/catch_test_macros.hpp>
 #include <pulse/ring_buffer.h>
 
-#include <memory>
-
 using namespace pulse;
 
 
-namespace {
-
-/// Counts construction/destruction so we can verify the buffer drives object lifetime correctly.
-struct Tracker {
-    static int constructed,
-               destroyed;
-
-    int value;
-
-    Tracker(int v = 0) : value(v) { constructed++; }
-    Tracker(const Tracker &other) : value(other.value) { constructed++; }
-    Tracker(Tracker &&other) : value(other.value) { constructed++; }
-
-    ~Tracker() { destroyed++; }
-
-    static void
-    Reset()
-    {
-        constructed = 0;
-        destroyed = 0;
-    }
-
-    static int
-    Alive()
-    {
-        return constructed - destroyed;
-    }
-};
-
-int Tracker::constructed = 0;
-int Tracker::destroyed = 0;
-
-} // anonymous namespace
-
-
-TEST_CASE("Empty buffer state")
+TEST_CASE("RingBuffer basic push/pop")
 {
-    InlineRingBuffer<int, 4> rb;
+    InlineRingBuffer<int, 8> rb;
 
-    REQUIRE(rb.capacity == 4);
+    int input[] = {1, 2, 3, 4};
+    int output[4] = {};
+
+    REQUIRE(rb.capacity == 8);
     REQUIRE(rb.GetSize() == 0);
-    REQUIRE(rb.GetAvailableCapacity() == 4);
-    REQUIRE(rb.IsEmpty());
-    REQUIRE_FALSE(rb.IsFull());
+
+    auto pushed = rb.Write(input, 4);
+    REQUIRE(pushed == 4);
+    REQUIRE(rb.GetSize() == 4);
+
+    auto popped = rb.Read(output, 4);
+    REQUIRE(popped == 4);
+    REQUIRE(rb.GetSize() == 0);
+
+    REQUIRE(std::equal(output, output + 4, input));
 }
 
-
-TEST_CASE("Push and pop preserve FIFO order")
+TEST_CASE("RingBuffer basic push/pop (external storage)")
 {
-    InlineRingBuffer<int, 4> rb;
+    int buffer[8];
+    RingBuffer<int> rb(buffer, PULSE_SIZEOF_ARRAY(buffer));
 
-    REQUIRE(rb.Push(1) != nullptr);
-    REQUIRE(rb.Push(2) != nullptr);
-    REQUIRE(rb.Push(3) != nullptr);
+    int input[] = {1, 2, 3, 4};
+    int output[4] = {};
+
+    REQUIRE(rb.capacity == 8);
+    REQUIRE(rb.GetSize() == 0);
+
+    auto pushed = rb.Write(input, 4);
+    REQUIRE(pushed == 4);
+    REQUIRE(rb.GetSize() == 4);
+
+    auto popped = rb.Read(output, 4);
+    REQUIRE(popped == 4);
+    REQUIRE(rb.GetSize() == 0);
+
+    REQUIRE(std::equal(output, output + 4, input));
+}
+
+TEST_CASE("RingBuffer capacity limit")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    int input[10] = {};
+
+    auto pushed = rb.Write(input, 10);
+    REQUIRE(pushed == 8);
+    REQUIRE(rb.GetSize() == 8);
+    REQUIRE(rb.GetAvailableCapacity() == 0);
+}
+
+TEST_CASE("RingBuffer wraparound behavior")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    int input1[] = {1,2,3,4,5};
+    int input2[] = {6,7,8};
+    int output[8] = {};
+
+    rb.Write(input1, 5);
+    rb.Read(output, 3); // advance readPos
+
+    rb.Write(input2, 3); // should wrap
+
+    REQUIRE(rb.GetSize() == 5);
+
+    rb.Read(output, 5);
+
+    int expected[] = {4,5,6,7,8};
+    REQUIRE(std::equal(output, output + 5, expected));
+}
+
+TEST_CASE("RingBuffer partial pop")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    int input[] = {1,2,3};
+    int output[5] = {};
+
+    rb.Write(input, 3);
+
+    auto popped = rb.Read(output, 5);
+    REQUIRE(popped == 3);
+    REQUIRE(rb.GetSize() == 0);
+
+    REQUIRE(std::equal(output, output + 3, input));
+}
+
+TEST_CASE("RingBuffer zero-copy write region")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    auto region = rb.GetWriteRegion();
+    REQUIRE(region.size() == 8);
+
+    for (size_t i = 0; i < region.size(); ++i)
+        region[i] = static_cast<int>(i + 1);
+
+    rb.CommitWrite(8);
+
+    REQUIRE(rb.GetSize() == 8);
+}
+
+TEST_CASE("RingBuffer zero-copy read region")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    int input[] = {1,2,3,4};
+    rb.Write(input, 4);
+
+    auto region = rb.GetReadRegion();
+    REQUIRE(region.size() == 4);
+
+    REQUIRE(region[0] == 1);
+    REQUIRE(region[3] == 4);
+
+    rb.CommitRead(4);
+    REQUIRE(rb.GetSize() == 0);
+}
+
+TEST_CASE("RingBuffer zero-copy wrap split")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    int input1[] = {1,2,3,4,5};
+    rb.Write(input1, 5);
+
+    int tmp[3];
+    rb.Read(tmp, 3); // force wrap scenario
+
+    auto region = rb.GetWriteRegion();
+
+    // Should only expose tail until end of buffer
+    REQUIRE(region.size() == 3);
+
+    for (size_t i = 0; i < region.size(); ++i)
+        region[i] = static_cast<int>(10 + i);
+
+    rb.CommitWrite(region.size());
+
+    REQUIRE(rb.GetSize() == 5);
+}
+
+TEST_CASE("RingBuffer zero-copy read wrap split")
+{
+    InlineRingBuffer<int, 8> rb;
+
+    int input1[] = {1,2,3,4,5};
+    int input2[] = {6,7,8, 9,10,11};
+
+    rb.Write(input1, 5);
+
+    int tmp[3];
+    rb.Read(tmp, 3); // advance readPos
+
+    rb.Write(input2, 6); // wrap write
+
+    auto region = rb.GetReadRegion();
+
+    // Should read only contiguous part
+    REQUIRE(region.size() == 5);
+    REQUIRE(std::equal(region.begin(), region.end(), std::vector<int>{4, 5, 6, 7, 8}.begin()));
+    REQUIRE(region[0] == 4);
+    REQUIRE(region[1] == 5);
+
+    rb.CommitRead(region.size());
 
     REQUIRE(rb.GetSize() == 3);
-    REQUIRE(rb.GetAvailableCapacity() == 1);
-
-    REQUIRE(rb.Pop() == 1);
-    REQUIRE(rb.Pop() == 2);
-    REQUIRE(rb.Pop() == 3);
-    REQUIRE(rb.IsEmpty());
 }
 
-
-TEST_CASE("Push forwards constructor arguments")
+TEST_CASE("RingBuffer multiple region iteration")
 {
-    struct Pair {
-        int a, b;
-        Pair(int a, int b) : a(a), b(b) {}
-    };
+    InlineRingBuffer<int, 8> rb;
 
-    InlineRingBuffer<Pair, 4> rb;
+    int input[] = {1,2,3,4,5,6};
+    rb.Write(input, 6);
 
-    Pair *p = rb.Push(3, 7);
-    REQUIRE(p != nullptr);
-    REQUIRE(p->a == 3);
-    REQUIRE(p->b == 7);
-}
+    int output[6];
+    size_t offset = 0;
 
-
-TEST_CASE("Push on full buffer returns nullptr")
-{
-    InlineRingBuffer<int, 2> rb;
-
-    REQUIRE(rb.Push(1) != nullptr);
-    REQUIRE(rb.Push(2) != nullptr);
-    REQUIRE(rb.IsFull());
-    REQUIRE(rb.Push(3) == nullptr);
-
-    // No element was clobbered or lost.
-    REQUIRE(rb.GetSize() == 2);
-    REQUIRE(rb.Pop() == 1);
-    REQUIRE(rb.Pop() == 2);
-}
-
-
-TEST_CASE("Peek returns the front element without removing it")
-{
-    InlineRingBuffer<int, 4> rb;
-    rb.Push(10);
-    rb.Push(20);
-
-    REQUIRE(rb.Peek() == 10);
-    REQUIRE(rb.GetSize() == 2);
-
-    const auto &crb = rb;
-    REQUIRE(crb.Peek() == 10);
-
-    rb.RemoveFirst();
-    REQUIRE(rb.Peek() == 20);
-    REQUIRE(rb.GetSize() == 1);
-}
-
-
-TEST_CASE("Read/write indices wrap around")
-{
-    InlineRingBuffer<int, 4> rb;
-
-    // Fill, drain partway, then refill so the write position wraps past the end.
-    for (int i = 0; i < 4; i++) {
-        REQUIRE(rb.Push(i) != nullptr);
+    while (rb.GetSize() > 0) {
+        auto region = rb.GetReadRegion();
+        std::copy(region.begin(), region.end(), output + offset);
+        offset += region.size();
+        rb.CommitRead(region.size());
     }
-    REQUIRE(rb.Pop() == 0);
-    REQUIRE(rb.Pop() == 1);
 
-    REQUIRE(rb.Push(4) != nullptr);
-    REQUIRE(rb.Push(5) != nullptr);
-    REQUIRE(rb.IsFull());
-
-    REQUIRE(rb.Pop() == 2);
-    REQUIRE(rb.Pop() == 3);
-    REQUIRE(rb.Pop() == 4);
-    REQUIRE(rb.Pop() == 5);
-    REQUIRE(rb.IsEmpty());
+    REQUIRE(offset == 6);
+    REQUIRE(std::equal(output, output + 6, input));
 }
 
-
-TEST_CASE("Pop destroys the popped element exactly once")
+TEST_CASE("RingBuffer interleaved push/pop")
 {
-    Tracker::Reset();
-    {
-        InlineRingBuffer<Tracker, 4> rb;
-        rb.Push(1);
-        rb.Push(2);
-        REQUIRE(Tracker::Alive() == 2);
+    InlineRingBuffer<int, 8> rb;
 
-        Tracker t = rb.Pop();
-        REQUIRE(t.value == 1);
-        // One element left in the buffer, one held in `t`.
-        REQUIRE(Tracker::Alive() == 2);
+    for (int i = 0; i < 100; ++i) {
+        REQUIRE(rb.Write(&i, 1) == 1);
+
+        int out = 0;
+        REQUIRE(rb.Read(&out, 1) == 1);
+
+        REQUIRE(out == i);
     }
-    // Buffer drained on destruction, `t` destroyed at end of scope.
-    REQUIRE(Tracker::Alive() == 0);
-}
 
-
-TEST_CASE("Clear destroys all contained elements")
-{
-    Tracker::Reset();
-    InlineRingBuffer<Tracker, 4> rb;
-    rb.Push(1);
-    rb.Push(2);
-    rb.Push(3);
-    REQUIRE(Tracker::Alive() == 3);
-
-    rb.Clear();
-    REQUIRE(rb.IsEmpty());
-    REQUIRE(Tracker::Alive() == 0);
-}
-
-
-TEST_CASE("Destructor drains remaining elements")
-{
-    Tracker::Reset();
-    {
-        InlineRingBuffer<Tracker, 4> rb;
-        rb.Push(1);
-        rb.Push(2);
-        REQUIRE(Tracker::Alive() == 2);
-        // Intentionally leave elements in the buffer.
-    }
-    REQUIRE(Tracker::Alive() == 0);
-}
-
-
-TEST_CASE("Supports move-only types")
-{
-    InlineRingBuffer<std::unique_ptr<int>, 4> rb;
-
-    rb.Push(std::make_unique<int>(42));
-    rb.Push(std::make_unique<int>(43));
-
-    REQUIRE(*rb.Peek() == 42);
-
-    std::unique_ptr<int> p = rb.Pop();
-    REQUIRE(*p == 42);
-    REQUIRE(*rb.Pop() == 43);
-    REQUIRE(rb.IsEmpty());
-}
-
-
-TEST_CASE("Capacity at index-type boundary wraps correctly")
-{
-    // Capacity * 2 - 1 = 399 does not fit in uint8_t, so the default index type must widen.
-    // A too-narrow index would truncate readPos + size and corrupt the wrapped write position.
-    constexpr size_t N = 200;
-    InlineRingBuffer<int, N> rb;
-
-    for (int i = 0; i < static_cast<int>(N); i++) {
-        REQUIRE(rb.Push(i) != nullptr);
-    }
-    REQUIRE(rb.IsFull());
-
-    // Drain half and refill to force the write position to wrap, then verify full FIFO integrity.
-    for (int i = 0; i < 100; i++) {
-        REQUIRE(rb.Pop() == i);
-    }
-    for (int i = 0; i < 100; i++) {
-        REQUIRE(rb.Push(static_cast<int>(N) + i) != nullptr);
-    }
-    REQUIRE(rb.IsFull());
-
-    for (int i = 100; i < static_cast<int>(N) + 100; i++) {
-        REQUIRE(rb.Pop() == i);
-    }
-    REQUIRE(rb.IsEmpty());
+    REQUIRE(rb.GetSize() == 0);
 }

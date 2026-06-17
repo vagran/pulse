@@ -1,35 +1,36 @@
-#ifndef RING_BUFFER_H
-#define RING_BUFFER_H
+#ifndef PULSE_RING_BUFFER_H
+#define PULSE_RING_BUFFER_H
 
 #include <pulse/details/common.h>
-#include <etl/memory.h>
+#include <etl/span.h>
 
 
 namespace pulse {
 
-/// Generic ring buffer. Suitable for non-trivial objects. Supports moveable-only types.
-template <class T, typename TIndex = size_t>
+/** Light-weight ring buffer implementation. Buffer size should be strictly power of two to enable
+ * fast math. Intended for trivial types and bulk operations.
+ * @tparam T Type of values to store.
+ * @tparam TIndex Type of index field.
+ */
+template <typename T, etl::unsigned_integral TIndex = size_t>
+requires requires {
+    etl::is_trivially_constructible_v<T>;
+    etl::is_trivially_destructible_v<T>;
+    etl::is_trivially_copyable_v<T>;
+}
 class RingBuffer {
+private:
+    T * const buffer;
 public:
     const TIndex capacity;
 
     RingBuffer(T *buffer, TIndex capacity):
-        capacity(capacity),
-        buffer(buffer)
+        buffer(buffer),
+        capacity(capacity)
     {
         PULSE_ASSERT(capacity > 0);
-        // GetWritePos() computes readPos + size, which can reach 2 * capacity - 2.
-        PULSE_ASSERT(capacity <= etl::numeric_limits<TIndex>::max() / 2 + 1);
-    }
-
-    RingBuffer(const RingBuffer &) = delete;
-    RingBuffer(RingBuffer &&) = delete;
-    RingBuffer &operator=(const RingBuffer &) = delete;
-    RingBuffer &operator=(RingBuffer &&) = delete;
-
-    ~RingBuffer()
-    {
-        Clear();
+        PULSE_ASSERT(PULSE_IS_POW2(capacity));
+        PULSE_ASSERT(capacity * 2 <= etl::numeric_limits<TIndex>::max());
     }
 
     /**
@@ -38,7 +39,7 @@ public:
     TIndex
     GetSize() const
     {
-        return size;
+        return writePos - readPos;
     }
 
     /**
@@ -62,133 +63,110 @@ public:
         return GetAvailableCapacity() == 0;
     }
 
-    /// Push item to the buffer.
-    /// @return Pointer to added item, null if no space.
-    template <typename... TArgs>
-    T *
-    Push(TArgs &&... args)
-    {
-        if (IsFull()) {
-            return nullptr;
-        }
-        T *p = &GetWriteItem();
-        etl::construct_at(p, etl::forward<TArgs>(args)...);
-        size++;
-        return p;
-    }
-
-    T
-    Pop()
-    {
-        T *p = &GetReadItem();
-        T item = etl::move(*p);
-        CommitPop();
-        return item;
-    }
-
-    T &
-    Peek()
-    {
-        return GetReadItem();
-    }
-
-    const T &
-    Peek() const
-    {
-        return GetReadItem();
-    }
-
-    void
-    RemoveFirst()
-    {
-        CommitPop();
-    }
-
-    /// Destroy all elements currently contained in the buffer.
-    void
-    Clear();
-
-private:
-    T * const buffer;
-    TIndex readPos = 0, size = 0;
-
+    /** Write data into the buffer, not more than currently available capacity.
+     * @return TIndex Actually added data size.
+     */
     TIndex
-    GetWritePos() const
+    Write(const T *data, TIndex size)
     {
-        TIndex pos = readPos + size;
-        if (pos >= capacity) {
-            return pos - capacity;
+        size = etl::min(size, GetAvailableCapacity());
+        TIndex bufferWritePos = writePos & (capacity - 1);
+        TIndex tailSize = etl::min<TIndex>(size, capacity - bufferWritePos);
+        etl::copy(data, data + tailSize, buffer + bufferWritePos);
+        if (tailSize < size) {
+            etl::copy(data + tailSize, data + size, buffer);
         }
-        return pos;
+        writePos += size;
+        return size;
     }
 
-    T &
-    GetWriteItem() const
+    /**
+     * @return TIndex Actually added data size.
+     */
+    TIndex
+    Write(etl::span<const T> data)
     {
-        PULSE_ASSERT(!IsFull());
-        return buffer[GetWritePos()];
+        return Write(data.data(), data.size());
     }
 
-    T &
-    GetReadItem() const
+    /** Pop data from the buffer.
+     * @return TIndex Number of actually obtained elements.
+     */
+    TIndex
+    Read(T *out, TIndex size)
     {
-        PULSE_ASSERT(!IsEmpty());
-        return buffer[readPos];
+        size = etl::min(size, GetSize());
+        TIndex bufferReadPos = readPos & (capacity - 1);
+        TIndex tailSize = etl::min<TIndex>(size, capacity - bufferReadPos);
+        const T *readPtr = buffer + bufferReadPos;
+        etl::copy(readPtr, readPtr + tailSize, out);
+        if (tailSize < size) {
+            etl::copy(buffer, buffer + size - tailSize, out + tailSize);
+        }
+        readPos += size;
+        return size;
     }
 
+    /** Get next available write region. Returns empty region if full. Write should be committed by
+     * subsequent CommitWrite() call.
+     */
+    etl::span<T>
+    GetWriteRegion()
+    {
+        TIndex bufferWritePos = writePos & (capacity - 1);
+        TIndex size = etl::min<TIndex>(GetAvailableCapacity(), capacity - bufferWritePos);
+        T *writePtr = buffer + bufferWritePos;
+        return {writePtr, writePtr + size};
+    }
+
+    /** Commit write to a region previously obtained by GetWriteRegion(). */
     void
-    CommitPop();
+    CommitWrite(TIndex size)
+    {
+        PULSE_ASSERT(size <= etl::min<TIndex>(GetAvailableCapacity(),
+                                              capacity - (writePos & (capacity - 1))));
+        writePos += size;
+    }
+
+    /** Get next available read region. Returns empty region if empty. Read should be committed by
+     * subsequent CommitRead() call.
+     */
+    etl::span<const T>
+    GetReadRegion()
+    {
+        TIndex bufferReadPos = readPos & (capacity - 1);
+        TIndex size = etl::min<TIndex>(GetSize(), capacity - bufferReadPos);
+        T *readPtr = buffer + bufferReadPos;
+        return {readPtr, readPtr + size};
+    }
+
+    /** Commit read to a region previously obtained by GetReadRegion(). */
+    void
+    CommitRead(TIndex size)
+    {
+        PULSE_ASSERT(size <= etl::min<TIndex>(GetSize(), capacity - (readPos & (capacity - 1))));
+        readPos += size;
+    }
+private:
+    TIndex writePos = 0, readPos = 0;
 };
 
 
 /** RingBuffer with embedded fixed size storage. */
 template <typename T, size_t Capacity,
-          etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(Capacity * 2 - 1)>>
+          etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(Capacity * 2)>>
 class InlineRingBuffer: public RingBuffer<T, TIndex> {
 public:
     InlineRingBuffer():
         RingBuffer<T, TIndex>(buffer, Capacity)
     {
-        static_assert(Capacity * 2 - 1 <= etl::numeric_limits<TIndex>::max());
+        static_assert(Capacity * 2 <= etl::numeric_limits<TIndex>::max());
     }
-
-    // User-provided destructor is required: the anonymous union below makes this a union-like
-    // class, so a defaulted destructor would be deleted for non-trivial T. The body is empty
-    // because the base RingBuffer destructor destroys any remaining elements; the union prevents
-    // implicit destruction of the (otherwise managed) storage.
-    ~InlineRingBuffer()
-    {}
 
 private:
-    // Prevent default construction.
-    union {
-        T buffer[Capacity];
-    };
+    T buffer[Capacity];
 };
-
-
-template <class T, typename TIndex>
-void
-RingBuffer<T, TIndex>::CommitPop()
-{
-    PULSE_ASSERT(!IsEmpty());
-    etl::destroy_at(&GetReadItem());
-    size--;
-    readPos++;
-    if (readPos >= capacity) {
-        readPos = 0;
-    }
-}
-
-template <class T, typename TIndex>
-void
-RingBuffer<T, TIndex>::Clear()
-{
-    while (!IsEmpty()) {
-        CommitPop();
-    }
-}
 
 } // namespace pulse
 
-#endif /* RING_BUFFER_H */
+#endif /* PULSE_RING_BUFFER_H */

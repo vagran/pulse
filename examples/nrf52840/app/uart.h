@@ -56,7 +56,7 @@ public:
 
 private:
     union {
-        pulse::FastRingBuffer<uint8_t> buffer;
+        pulse::RingBuffer<uint8_t> buffer;
     };
     nrfx_uart_t h;
     bool txInProgress = false;

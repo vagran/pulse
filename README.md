@@ -11,10 +11,17 @@ _DISCLAIMER: This project is still a work in progress and has not yet been fully
 the API may evolve to better suit real-world use cases. However, it is supported by extensive unit
 test coverage, which helps ensure a solid level of quality._
 
-_I plan to use it in my own embedded projects to identify issues and further refine the API.
+_I plan to use Pulse in my own embedded projects to identify issues and further refine the API.
 Feedback is welcome, and others are encouraged to experiment with it — primarily for learning or
-evaluation purposes rather than production use at this stage. Achieving production readiness will
-likely require validation through several successful real-world deployments._
+evaluation purposes rather than production use at this stage._
+
+_Pulse is also currently being exercised in a more complex real-world project: a Zigbee stack
+implementation (will be open-sourced when done). As development progresses, the API is continuously
+refined to better accommodate practical requirements while the framework itself undergoes further
+validation and battle testing._
+
+_Achieving production readiness will likely require validation through several successful real-world
+deployments._
 
 
 ## Motivation

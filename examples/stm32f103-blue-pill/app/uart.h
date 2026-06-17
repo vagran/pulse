@@ -62,7 +62,7 @@ private:
     UART_HandleTypeDef h;
 
     union {
-        pulse::FastRingBuffer<uint8_t> buffer;
+        pulse::RingBuffer<uint8_t> buffer;
     };
 
     void
