@@ -1,5 +1,5 @@
-#ifndef SHARED_PTR_H
-#define SHARED_PTR_H
+#ifndef PULSE_SHARED_PTR_H
+#define PULSE_SHARED_PTR_H
 
 #include <pulse/details/common.h>
 #include <etl/atomic.h>
@@ -257,4 +257,4 @@ private:
 
 } // namespace pulse
 
-#endif /* SHARED_PTR_H */
+#endif /* PULSE_SHARED_PTR_H */
