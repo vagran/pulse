@@ -2,7 +2,7 @@
 #define UART_H
 
 #include <stm32f1xx_hal.h>
-#include <pulse/ring_buffer.h>
+#include <pulse/fast_ring_buffer.h>
 #include <pulse/format.h>
 
 
@@ -62,7 +62,7 @@ private:
     UART_HandleTypeDef h;
 
     union {
-        pulse::RingBuffer<uint8_t> buffer;
+        pulse::FastRingBuffer<uint8_t> buffer;
     };
 
     void

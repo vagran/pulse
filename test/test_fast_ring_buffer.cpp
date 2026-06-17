@@ -1,12 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
-#include <pulse/ring_buffer.h>
+#include <pulse/fast_ring_buffer.h>
 
 using namespace pulse;
 
 
-TEST_CASE("RingBuffer basic push/pop")
+TEST_CASE("FastRingBuffer basic push/pop")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input[] = {1, 2, 3, 4};
     int output[4] = {};
@@ -25,10 +25,10 @@ TEST_CASE("RingBuffer basic push/pop")
     REQUIRE(std::equal(output, output + 4, input));
 }
 
-TEST_CASE("RingBuffer basic push/pop (external storage)")
+TEST_CASE("FastRingBuffer basic push/pop (external storage)")
 {
     int buffer[8];
-    RingBuffer<int> rb(buffer, PULSE_SIZEOF_ARRAY(buffer));
+    FastRingBuffer<int> rb(buffer, PULSE_SIZEOF_ARRAY(buffer));
 
     int input[] = {1, 2, 3, 4};
     int output[4] = {};
@@ -47,9 +47,9 @@ TEST_CASE("RingBuffer basic push/pop (external storage)")
     REQUIRE(std::equal(output, output + 4, input));
 }
 
-TEST_CASE("RingBuffer capacity limit")
+TEST_CASE("FastRingBuffer capacity limit")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input[10] = {};
 
@@ -59,9 +59,9 @@ TEST_CASE("RingBuffer capacity limit")
     REQUIRE(rb.GetAvailableCapacity() == 0);
 }
 
-TEST_CASE("RingBuffer wraparound behavior")
+TEST_CASE("FastRingBuffer wraparound behavior")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input1[] = {1,2,3,4,5};
     int input2[] = {6,7,8};
@@ -80,9 +80,9 @@ TEST_CASE("RingBuffer wraparound behavior")
     REQUIRE(std::equal(output, output + 5, expected));
 }
 
-TEST_CASE("RingBuffer partial pop")
+TEST_CASE("FastRingBuffer partial pop")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input[] = {1,2,3};
     int output[5] = {};
@@ -96,9 +96,9 @@ TEST_CASE("RingBuffer partial pop")
     REQUIRE(std::equal(output, output + 3, input));
 }
 
-TEST_CASE("RingBuffer zero-copy write region")
+TEST_CASE("FastRingBuffer zero-copy write region")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     auto region = rb.GetWriteRegion();
     REQUIRE(region.size() == 8);
@@ -111,9 +111,9 @@ TEST_CASE("RingBuffer zero-copy write region")
     REQUIRE(rb.GetSize() == 8);
 }
 
-TEST_CASE("RingBuffer zero-copy read region")
+TEST_CASE("FastRingBuffer zero-copy read region")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input[] = {1,2,3,4};
     rb.Write(input, 4);
@@ -128,9 +128,9 @@ TEST_CASE("RingBuffer zero-copy read region")
     REQUIRE(rb.GetSize() == 0);
 }
 
-TEST_CASE("RingBuffer zero-copy wrap split")
+TEST_CASE("FastRingBuffer zero-copy wrap split")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input1[] = {1,2,3,4,5};
     rb.Write(input1, 5);
@@ -151,9 +151,9 @@ TEST_CASE("RingBuffer zero-copy wrap split")
     REQUIRE(rb.GetSize() == 5);
 }
 
-TEST_CASE("RingBuffer zero-copy read wrap split")
+TEST_CASE("FastRingBuffer zero-copy read wrap split")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input1[] = {1,2,3,4,5};
     int input2[] = {6,7,8, 9,10,11};
@@ -178,9 +178,9 @@ TEST_CASE("RingBuffer zero-copy read wrap split")
     REQUIRE(rb.GetSize() == 3);
 }
 
-TEST_CASE("RingBuffer multiple region iteration")
+TEST_CASE("FastRingBuffer multiple region iteration")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     int input[] = {1,2,3,4,5,6};
     rb.Write(input, 6);
@@ -199,9 +199,9 @@ TEST_CASE("RingBuffer multiple region iteration")
     REQUIRE(std::equal(output, output + 6, input));
 }
 
-TEST_CASE("RingBuffer interleaved push/pop")
+TEST_CASE("FastRingBuffer interleaved push/pop")
 {
-    InlineRingBuffer<int, 8> rb;
+    InlineFastRingBuffer<int, 8> rb;
 
     for (int i = 0; i < 100; ++i) {
         REQUIRE(rb.Write(&i, 1) == 1);

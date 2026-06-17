@@ -13,13 +13,18 @@ namespace pulse {
  * @tparam TIndex Type of index field.
  */
 template <typename T, etl::unsigned_integral TIndex = size_t>
-class RingBuffer {
+requires requires {
+    etl::is_trivially_constructible_v<T>;
+    etl::is_trivially_destructible_v<T>;
+    etl::is_trivially_copyable_v<T>;
+}
+class FastRingBuffer {
 private:
     T * const buffer;
 public:
     const TIndex capacity;
 
-    RingBuffer(T *buffer, TIndex capacity):
+    FastRingBuffer(T *buffer, TIndex capacity):
         buffer(buffer),
         capacity(capacity)
     {
@@ -150,10 +155,10 @@ private:
 /** RingBuffer with embedded fixed size storage. */
 template <typename T, size_t Capacity,
           etl::unsigned_integral TIndex = pulse::SizedUint<pulse::UintBitWidth(Capacity * 2)>>
-class InlineRingBuffer: public RingBuffer<T, TIndex> {
+class InlineFastRingBuffer: public FastRingBuffer<T, TIndex> {
 public:
-    InlineRingBuffer():
-        RingBuffer<T, TIndex>(buffer, Capacity)
+    InlineFastRingBuffer():
+        FastRingBuffer<T, TIndex>(buffer, Capacity)
     {
         static_assert(Capacity * 2 <= etl::numeric_limits<TIndex>::max());
     }

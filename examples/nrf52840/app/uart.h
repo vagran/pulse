@@ -2,7 +2,7 @@
 #define UART_H
 
 #include <nrfx_uart.h>
-#include <pulse/ring_buffer.h>
+#include <pulse/fast_ring_buffer.h>
 #include <pulse/format.h>
 
 
@@ -56,7 +56,7 @@ public:
 
 private:
     union {
-        pulse::RingBuffer<uint8_t> buffer;
+        pulse::FastRingBuffer<uint8_t> buffer;
     };
     nrfx_uart_t h;
     bool txInProgress = false;
