@@ -35,8 +35,7 @@ struct ListDefaultTrait {
 };
 
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 class ListIterator {
 public:
     ListIterator(TPtr item):
@@ -71,8 +70,7 @@ private:
 
 
 /// Intrusive singly-linked list.
-template <typename TPtr, class Trait = details::ListDefaultTrait<TPtr>>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait = details::ListDefaultTrait<TPtr>>
 struct List {
     TPtr head = TPtr();
 
@@ -116,8 +114,7 @@ struct List {
     }
 };
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 void
 List<TPtr, Trait>::AddFirst(TPtr item)
 {
@@ -130,8 +127,7 @@ List<TPtr, Trait>::AddFirst(TPtr item)
     }
 }
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 TPtr
 List<TPtr, Trait>::PopFirst()
 {
@@ -143,8 +139,7 @@ List<TPtr, Trait>::PopFirst()
     return etl::move(res);
 }
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 bool
 List<TPtr, Trait>::Remove(const TPtr &item)
 {
@@ -168,8 +163,7 @@ List<TPtr, Trait>::Remove(const TPtr &item)
 
 
 /// Intrusive singly-linked list with tail pointer.
-template <typename TPtr, class Trait = details::ListDefaultTrait<TPtr>>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait = details::ListDefaultTrait<TPtr>>
 struct TailedList {
     TPtr head = TPtr(),
          tail = TPtr();
@@ -219,8 +213,7 @@ struct TailedList {
     }
 };
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 void
 TailedList<TPtr, Trait>::AddFirst(TPtr item)
 {
@@ -236,8 +229,7 @@ TailedList<TPtr, Trait>::AddFirst(TPtr item)
     }
 }
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 void
 TailedList<TPtr, Trait>::AddLast(TPtr item)
 {
@@ -253,8 +245,7 @@ TailedList<TPtr, Trait>::AddLast(TPtr item)
     }
 }
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 TPtr
 TailedList<TPtr, Trait>::PopFirst()
 {
@@ -269,8 +260,7 @@ TailedList<TPtr, Trait>::PopFirst()
     return etl::move(res);
 }
 
-template <typename TPtr, class Trait>
-requires details::ListTrait<Trait, TPtr>
+template <typename TPtr, details::ListTrait<TPtr> Trait>
 bool
 TailedList<TPtr, Trait>::Remove(const TPtr &item)
 {
