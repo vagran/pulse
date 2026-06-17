@@ -2,7 +2,7 @@
 #define UART_H
 
 #include <stm32f1xx_hal.h>
-#include <pulse/fast_ring_buffer.h>
+#include <pulse/ring_buffer.h>
 #include <pulse/format.h>
 
 
