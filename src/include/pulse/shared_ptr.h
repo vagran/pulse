@@ -90,8 +90,7 @@ struct SharedPtrDefaultAtomicTrait {
 
 
 /** Intrusive shared pointer. */
-template <typename T, class Trait = details::SharedPtrDefaultAtomicTrait<T>>
-requires details::SharedPtrTrait<Trait, T>
+template <typename T, details::SharedPtrTrait<T> Trait = details::SharedPtrDefaultAtomicTrait<T>>
 class SharedPtr {
 public:
     SharedPtr():

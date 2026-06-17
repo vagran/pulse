@@ -11,6 +11,25 @@ namespace details {
 
 struct PoolNopGuard {};
 
+template <typename Tr>
+concept PoolTrait = requires {
+    // static void OnAllocated();
+    // Called after each allocation (either from pool or dynamic).
+    { Tr::OnAllocated() } -> etl::same_as<void>;
+
+    // static void OnPoolAllocated();
+    // Called after each allocation from pool.
+    { Tr::OnPoolAllocated() } -> etl::same_as<void>;
+
+    // static void OnDynamicallyAllocated();
+    // Called after each dynamic allocation.
+    { Tr::OnDynamicallyAllocated() } -> etl::same_as<void>;
+
+    // static void OnFreed();
+    // Called after each freeing.
+    { Tr::OnFreed() } -> etl::same_as<void>;
+};
+
 struct DefaultPoolTrait {
     static void
     OnAllocated()
@@ -36,9 +55,10 @@ struct DefaultPoolTrait {
 ///     into the pool.
 /// @tparam TGuard Context object to guard allocation and freeing. May be some kind of
 ///     synchronization primitive.
-/// @tparam Trait Can provide some customization hooks. See @ref DefaultPoolTrait.
+/// @tparam Trait Can provide some customization hooks. See @ref details::PoolTrait.
 template <typename T, size_t initialSize, bool allowDynamicAlloc = false,
-          class TGuard = details::PoolNopGuard, class Trait = details::DefaultPoolTrait>
+          class TGuard = details::PoolNopGuard,
+          details::PoolTrait Trait = details::DefaultPoolTrait>
 class Pool {
 private:
     struct Entry {
@@ -51,6 +71,12 @@ private:
         Entry()
         {
             // Union members are constructed explicitly in Allocate/Free
+        }
+
+        ~Entry()
+        {
+            // Union members are destroyed explicitly in Free. Required so that Entry is
+            // destructible even when T has a non-trivial destructor.
         }
     };
 
@@ -79,7 +105,8 @@ public:
 };
 
 
-template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard, class Trait>
+template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard,
+          details::PoolTrait Trait>
 Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Pool()
 {
     for (size_t i = 0; i < initialSize; i++) {
@@ -96,7 +123,8 @@ Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Pool()
 
 // Mostly for clean unit tests. Global objects destructors are stripped by linker when compiling
 // firmware.
-template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard, class Trait>
+template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard,
+          details::PoolTrait Trait>
 Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::~Pool()
 {
     Entry *e = freeList;
@@ -109,7 +137,8 @@ Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::~Pool()
     }
 }
 
-template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard, class Trait>
+template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard,
+          details::PoolTrait Trait>
 template <typename... TArgs>
 T *
 Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Allocate(TArgs &&... args)
@@ -122,7 +151,8 @@ Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Allocate(TArgs &&... arg
     return item;
 }
 
-template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard, class Trait>
+template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard,
+          details::PoolTrait Trait>
 void
 Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Free(T *item)
 {
@@ -130,14 +160,15 @@ Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Free(T *item)
     Delete(item, sizeof(T));
 }
 
-template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard, class Trait>
+template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard,
+          details::PoolTrait Trait>
 void *
 Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::New(size_t size)
 {
     PULSE_ASSERT(size == sizeof(T));
     Entry *e = nullptr;
     {
-        TGuard guard;
+        [[maybe_unused]] TGuard guard;
         if (freeList) {
             e = freeList;
             freeList = e->next;
@@ -160,14 +191,15 @@ Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::New(size_t size)
     return e;
 }
 
-template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard, class Trait>
+template <typename T, size_t initialSize, bool allowDynamicAlloc, class TGuard,
+          details::PoolTrait Trait>
 void
 Pool<T, initialSize, allowDynamicAlloc, TGuard, Trait>::Delete(void *mem, size_t size)
 {
     PULSE_ASSERT(size == sizeof(T));
     Entry *e = reinterpret_cast<Entry *>(mem);
     {
-        TGuard guard;
+        [[maybe_unused]] TGuard guard;
         e->next = freeList;
         freeList = e;
     }
