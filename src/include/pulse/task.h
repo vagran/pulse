@@ -626,39 +626,24 @@ struct DefaultAwaiterProxyTrait {
     }
 };
 
-} // namespace details
 
-/** Acts as a proxy and unique pointer to AbstractAwaiter. Can be used to wrap an implementation of
- * AbstractAwaiter. One has three options when implementing an asynchronous interface in some
- * component:
- *      1. Return a custom awaiter directly. In this case its definition must be fully exposed in
- *      the component interface, but this is the most efficient option in terms of overhead.
- *      2. Return an Awaitable from a wrapper coroutine which co_awaits a custom awaiter inside the
- *      component implementation. However, this introduces a new coroutine, which in most cases is
- *      dynamically allocated and separately scheduled. It also has its own wait list with all the
- *      related overhead.
- *      3. Return an AwaiterProxy which wraps a polymorphic custom awaiter implementation. This is a
- *      compromise option. The awaiter implementation is dynamically allocated (although it can have
- *      a custom allocator and an overloaded `delete` operator) and is polymorphic. However, there
- *      is no additional coroutine frame, so it is not run through the scheduler.
- */
-template <typename TRet, class Trait = details::DefaultAwaiterProxyTrait<TRet{}>>
-class AwaiterProxy: public Awaiter<TRet> {
+template <typename TRet>
+class AwaiterProxyBase: public Awaiter<TRet> {
 public:
-    AwaiterProxy(AbstractAwaiter<TRet> *awaiter):
+    AwaiterProxyBase(AbstractAwaiter<TRet> *awaiter):
         awaiter(awaiter)
     {}
 
-    AwaiterProxy() = default;
-    AwaiterProxy(const AwaiterProxy &) = delete;
+    AwaiterProxyBase() = default;
+    AwaiterProxyBase(const AwaiterProxyBase &) = delete;
 
-    AwaiterProxy(AwaiterProxy &&other):
+    AwaiterProxyBase(AwaiterProxyBase &&other):
         awaiter(other.awaiter)
     {
         other.awaiter = nullptr;
     }
 
-    ~AwaiterProxy()
+    ~AwaiterProxyBase()
     {
         if (awaiter) {
             // Implementation type can have delete operator overloaded if needed.
@@ -685,21 +670,59 @@ public:
         return awaiter->await_suspend(handle);
     }
 
+protected:
+    AbstractAwaiter<TRet> *awaiter = nullptr;
+};
+
+
+} // namespace details
+
+/** Acts as a proxy and unique pointer to AbstractAwaiter. Can be used to wrap an implementation of
+ * AbstractAwaiter. One has three options when implementing an asynchronous interface in some
+ * component:
+ *      1. Return a custom awaiter directly. In this case its definition must be fully exposed in
+ *      the component interface, but this is the most efficient option in terms of overhead.
+ *      2. Return an Awaitable from a wrapper coroutine which co_awaits a custom awaiter inside the
+ *      component implementation. However, this introduces a new coroutine, which in most cases is
+ *      dynamically allocated and separately scheduled. It also has its own wait list with all the
+ *      related overhead.
+ *      3. Return an AwaiterProxy which wraps a polymorphic custom awaiter implementation. This is a
+ *      compromise option. The awaiter implementation is dynamically allocated (although it can have
+ *      a custom allocator and an overloaded `delete` operator) and is polymorphic. However, there
+ *      is no additional coroutine frame, so it is not run through the scheduler.
+ */
+template <typename TRet, class Trait = details::DefaultAwaiterProxyTrait<TRet{}>>
+class AwaiterProxy: public details::AwaiterProxyBase<TRet> {
+public:
+    using details::AwaiterProxyBase<TRet>::AwaiterProxyBase;
+
     TRet
     await_resume()
     {
         if constexpr (Trait::HasDefaultValue()) {
-            if (awaiter) {
-                return awaiter->await_resume();
+            if (this->awaiter) {
+                return this->awaiter->await_resume();
             }
             return Trait::GetDefaultValue();
         }
-        PULSE_ASSERT(awaiter);
-        return awaiter->await_resume();
+        PULSE_ASSERT(this->awaiter);
+        return this->awaiter->await_resume();
     }
+};
 
-private:
-    AbstractAwaiter<TRet> *awaiter = nullptr;
+
+template <>
+class AwaiterProxy<void, void>: public details::AwaiterProxyBase<void> {
+public:
+    using details::AwaiterProxyBase<void>::AwaiterProxyBase;
+
+    void
+    await_resume()
+    {
+        if (this->awaiter) {
+            this->awaiter->await_resume();
+        }
+    }
 };
 
 
