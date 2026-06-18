@@ -609,6 +609,24 @@ public:
     await_resume() = 0;
 };
 
+namespace details {
+
+template <auto DefaultValue>
+struct DefaultAwaiterProxyTrait {
+    static constexpr bool
+    HasDefaultValue()
+    {
+        return true;
+    }
+
+    static constexpr auto
+    GetDefaultValue()
+    {
+        return DefaultValue;
+    }
+};
+
+} // namespace details
 
 /** Acts as a proxy and unique pointer to AbstractAwaiter. Can be used to wrap an implementation of
  * AbstractAwaiter. One has three options when implementing an asynchronous interface in some
@@ -624,14 +642,14 @@ public:
  *      a custom allocator and an overloaded `delete` operator) and is polymorphic. However, there
  *      is no additional coroutine frame, so it is not run through the scheduler.
  */
-template <typename TRet>
+template <typename TRet, class Trait = details::DefaultAwaiterProxyTrait<TRet{}>>
 class AwaiterProxy: public Awaiter<TRet> {
 public:
     AwaiterProxy(AbstractAwaiter<TRet> *awaiter):
         awaiter(awaiter)
     {}
 
-    AwaiterProxy() = delete;
+    AwaiterProxy() = default;
     AwaiterProxy(const AwaiterProxy &) = delete;
 
     AwaiterProxy(AwaiterProxy &&other):
@@ -651,6 +669,9 @@ public:
     bool
     await_ready()
     {
+        if (!awaiter) {
+            return true;
+        }
         return awaiter->await_ready();
     }
 
@@ -658,17 +679,27 @@ public:
     bool
     await_suspend(tasks::CoroutineHandle handle)
     {
+        if (!awaiter) {
+            return false;
+        }
         return awaiter->await_suspend(handle);
     }
 
     TRet
     await_resume()
     {
+        if constexpr (Trait::HasDefaultValue()) {
+            if (awaiter) {
+                return awaiter->await_resume();
+            }
+            return Trait::GetDefaultValue();
+        }
+        PULSE_ASSERT(awaiter);
         return awaiter->await_resume();
     }
 
 private:
-    AbstractAwaiter<TRet> *awaiter;
+    AbstractAwaiter<TRet> *awaiter = nullptr;
 };
 
 
@@ -678,16 +709,16 @@ namespace details {
  *
  * @tparam TSourceTrait Should have the following methods:
  *  static void
- *  DequeueAwaiter(TSource *source, AbstractAwaiter *awaiter);
+ *  DequeueAwaiter(TSource *source, AwaiterBase *awaiter);
  *
  */
-template <typename TRet, class TSource, class TSourceTrait>
-class AwaiterBase {
+template <typename TRet, class TSource, class TSourceTrait, class TBase = Awaiter<TRet>>
+class AwaiterBase: public TBase {
 public:
     ~AwaiterBase();
 
     bool
-    await_ready() const
+    await_ready()
     {
         return !this->source;
     }
@@ -800,6 +831,11 @@ protected:
         return waiter.Wakeup();
     }
 };
+
+
+/// AbstractAwaiter with partial implementation by AwaiterBase.
+template <typename TRet, class TSource, class TSourceTrait>
+using AbstractAwaiterBase = AwaiterBase<TRet, TSource, TSourceTrait, AbstractAwaiter<TRet>>;
 
 } // namespace details
 
@@ -1330,8 +1366,8 @@ details::Task<void, initialSuspend>::operator co_await() const
 }
 
 
-template <typename TRet, class TSource, class TSourceTrait>
-details::AwaiterBase<TRet, TSource, TSourceTrait>::~AwaiterBase()
+template <typename TRet, class TSource, class TSourceTrait, class TBase>
+details::AwaiterBase<TRet, TSource, TSourceTrait, TBase>::~AwaiterBase()
 {
     CriticalSection cs;
     if (source) {
