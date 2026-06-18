@@ -50,6 +50,9 @@ public:
     void
     Release();
 
+    SemaphoreAwaiter<Semaphore>
+    operator co_await();
+
 private:
     struct AwaiterSourceTrait;
     using TAwaiterBase = details::AwaiterBase<bool, Semaphore, AwaiterSourceTrait>;
@@ -200,6 +203,13 @@ Semaphore<TSize>::Release()
         waiter->SetResult(true);
         numAcquired++;
     }
+}
+
+template <etl::unsigned_integral TSize>
+SemaphoreAwaiter<Semaphore<TSize>>
+Semaphore<TSize>::operator co_await()
+{
+    return Acquire();
 }
 
 
