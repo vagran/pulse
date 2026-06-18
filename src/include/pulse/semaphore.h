@@ -156,10 +156,8 @@ Semaphore<TSize>::Acquire()
 
     if (numAcquired < numTokens) {
         numAcquired++;
-        cs.Exit();
         return SemaphoreAwaiter<Semaphore<TSize>>(true);
     }
-    cs.Exit();
     return SemaphoreAwaiter<Semaphore<TSize>>(this);
 }
 

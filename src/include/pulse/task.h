@@ -705,6 +705,41 @@ private:
 
 namespace details {
 
+template <class TSource, class TSourceTrait, class TBase>
+class _AwaiterBase: public TBase {
+public:
+    bool
+    await_ready()
+    {
+        return !this->source;
+    }
+
+protected:
+    friend TSource;
+
+    TSource *source = nullptr;
+    TaskWeakRef waiter;
+
+    _AwaiterBase() = default;
+
+    /** Construct with source to create it in pending state. */
+    _AwaiterBase(TSource *source):
+        source(source)
+    {}
+
+    bool
+    HasResult() const
+    {
+        return !source;
+    }
+
+    bool
+    Wakeup()
+    {
+        return waiter.Wakeup();
+    }
+};
+
 /** Abstract base for most common awaiters pattern.
  *
  * @tparam TSourceTrait Should have the following methods:
@@ -713,15 +748,10 @@ namespace details {
  *
  */
 template <typename TRet, class TSource, class TSourceTrait, class TBase = Awaiter<TRet>>
-class AwaiterBase: public TBase {
+class AwaiterBase: public _AwaiterBase<TSource, TSourceTrait, TBase> {
 public:
-    ~AwaiterBase();
 
-    bool
-    await_ready()
-    {
-        return !this->source;
-    }
+    ~AwaiterBase();
 
     TRet
     await_resume()
@@ -772,13 +802,16 @@ public:
     }
 
 protected:
+    using Base = _AwaiterBase<TSource, TSourceTrait, TBase>;
+
     friend TSource;
     friend struct details::ListDefaultTrait<AwaiterBase *>;
 
+    // Waiters list in source
     AwaiterBase *next = nullptr;
-    TSource *source = nullptr;
-    TaskWeakRef waiter;
     alignas(TRet) uint8_t storage[sizeof(TRet)];
+
+    using Base::Base;
 
     AwaiterBase() = delete;
 
@@ -793,21 +826,10 @@ protected:
         etl::construct_at(&this->Result(), result);
     }
 
-    /** Construct with source to create it in pending state. */
-    AwaiterBase(TSource *source):
-        source(source)
-    {}
-
     TRet &
     Result()
     {
         return *reinterpret_cast<TRet *>(storage);
-    }
-
-    bool
-    HasResult() const
-    {
-        return !source;
     }
 
     template <typename T>
@@ -815,20 +837,76 @@ protected:
     SetResult(T &&from)
     {
         etl::construct_at(&this->Result(), etl::forward<T>(from));
-        source = nullptr;
+        this->source = nullptr;
     }
 
     void
     SetResult()
     {
         etl::construct_at(&this->Result());
-        source = nullptr;
+        this->source = nullptr;
+    }
+};
+
+
+/// Specialization for void result
+template <class TSource, class TSourceTrait, class TBase>
+class AwaiterBase<void, TSource, TSourceTrait, TBase>:
+    public _AwaiterBase<TSource, TSourceTrait, TBase> {
+public:
+
+    ~AwaiterBase();
+
+    void
+    await_resume()
+    {
+        PULSE_ASSERT(!this->source);
     }
 
+    /* Typical `await_suspend()` implementation:
+     *
+     * bool
+     * await_suspend(tasks::CoroutineHandle handle)
+     * {
+     *     auto wTask = TaskRef(handle).GetWeakPtr();
+     *
+     *     CriticalSection cs;
+     *
+     *     if (source->Ready()) [[unlikely]] {
+     *         SetResult();
+     *         source->CommitResultRetrieval();
+     *         return false;
+     *     }
+     *     waiter = etl::move(wTask);
+     *     source->QueueAwaiter(this);
+     *     return true;
+     * }
+     */
+
+    /// @return True if result set, false if not ready.
     bool
-    Wakeup()
+    GetResult() const
     {
-        return waiter.Wakeup();
+        return this->HasResult();
+    }
+
+protected:
+    using Base = _AwaiterBase<TSource, TSourceTrait, TBase>;
+
+    friend TSource;
+    friend struct details::ListDefaultTrait<AwaiterBase *>;
+
+    // Waiters list in source
+    AwaiterBase *next = nullptr;
+
+    // Use default constructor to construct with result to create it in ready state.
+    using Base::Base;
+
+
+    void
+    SetResult()
+    {
+        this->source = nullptr;
     }
 };
 
@@ -1370,13 +1448,23 @@ template <typename TRet, class TSource, class TSourceTrait, class TBase>
 details::AwaiterBase<TRet, TSource, TSourceTrait, TBase>::~AwaiterBase()
 {
     CriticalSection cs;
-    if (source) {
-        if (waiter) {
-            TSourceTrait::DequeueAwaiter(source, this);
+    if (this->source) {
+        if (this->waiter) {
+            TSourceTrait::DequeueAwaiter(this->source, this);
         }
     } else {
         cs.Exit();
         etl::destroy_at(&this->Result());
+    }
+}
+
+
+template <class TSource, class TSourceTrait, class TBase>
+details::AwaiterBase<void, TSource, TSourceTrait, TBase>::~AwaiterBase()
+{
+    CriticalSection cs;
+    if (this->source && this->waiter) {
+        TSourceTrait::DequeueAwaiter(this->source, this);
     }
 }
 
