@@ -1,5 +1,5 @@
-#ifndef EVENT_H
-#define EVENT_H
+#ifndef PULSE_EVENT_H
+#define PULSE_EVENT_H
 
 #include <pulse/task.h>
 
@@ -9,7 +9,7 @@ namespace pulse {
 class EventAwaiter;
 
 
-/// Single flag which can be set or reset, and awaited for being set.
+/// Single flag which can be set or reset, and awaited for being set. Can be set from ISR.
 class Event {
 public:
     Event(bool isSet = false):
@@ -73,4 +73,4 @@ Event::operator co_await()
 
 } // namespace pulse
 
-#endif /* EVENT_H */
+#endif /* PULSE_EVENT_H */
