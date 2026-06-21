@@ -66,8 +66,6 @@ Event::AwaiterSourceTrait::DequeueAwaiter(Event *ev, TAwaiterBase *awaiter)
 bool
 EventAwaiter::await_suspend(tasks::CoroutineHandle handle)
 {
-    auto wTask = TaskRef(handle).GetWeakPtr();
-
     CriticalSection cs;
 
     auto ev = this->source;
@@ -77,7 +75,7 @@ EventAwaiter::await_suspend(tasks::CoroutineHandle handle)
         return false;
     }
 
-    this->waiter = etl::move(wTask);
+    this->waiter = TaskRef(handle).GetWeakPtr();;
     ev->waiters.AddLast(this);
     return true;
 }

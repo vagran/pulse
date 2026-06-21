@@ -159,13 +159,11 @@ template <class TQueue>
 bool
 TokenQueueAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 {
-    auto wTask = TaskRef(handle).GetWeakPtr();
-
     CriticalSection cs;
 
     auto queue = this->source;
     if (queue->numTokens == 0) [[likely]] {
-        this->waiter = etl::move(wTask);
+        this->waiter = TaskRef(handle).GetWeakPtr();
         queue->waiters.AddLast(this);
         return true;
     }

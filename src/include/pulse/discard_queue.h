@@ -334,8 +334,6 @@ template <class TQueue>
 bool
 DiscardQueuePopAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
 {
-    auto wTask = TaskRef(handle).GetWeakPtr();
-
     CriticalSection cs;
 
     auto queue = this->source;
@@ -345,7 +343,7 @@ DiscardQueuePopAwaiter<TQueue>::await_suspend(tasks::CoroutineHandle handle)
         queue->CommitPop();
         return false;
     }
-    this->waiter = etl::move(wTask);
+    this->waiter = TaskRef(handle).GetWeakPtr();
     this->source->popWaiters.AddLast(this);
     return true;
 }

@@ -215,8 +215,6 @@ template <class TSem>
 bool
 SemaphoreAwaiter<TSem>::await_suspend(tasks::CoroutineHandle handle)
 {
-    auto wTask = TaskRef(handle).GetWeakPtr();
-
     CriticalSection cs;
 
     auto sem = this->source;
@@ -227,7 +225,7 @@ SemaphoreAwaiter<TSem>::await_suspend(tasks::CoroutineHandle handle)
         return false;
     }
 
-    this->waiter = etl::move(wTask);
+    this->waiter = etl::move(TaskRef(handle).GetWeakPtr());
     sem->waiters.AddLast(this);
     return true;
 }
