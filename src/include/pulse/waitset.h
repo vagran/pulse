@@ -263,7 +263,7 @@ protected:
  * @tparam TFactory Types for awaiter factories.
  */
 template <class... TFactory>
-class Waitset: public details::WaitsetBase {
+class Waitset final: public details::WaitsetBase {
 public:
     static constexpr size_t numSlots = sizeof...(TFactory);
 
