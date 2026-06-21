@@ -29,13 +29,19 @@ template <etl::integral T>
 consteval int
 UintBitWidth(T value)
 {
-    if (value <= etl::numeric_limits<uint8_t>::max()) {
+    if constexpr (etl::signed_integral<T>) {
+        if (value < 0) {
+            return -1;
+        }
+    }
+    using U = etl::make_unsigned_t<T>;
+    if (static_cast<U>(value) <= etl::numeric_limits<uint8_t>::max()) {
         return sizeof(uint8_t) * 8;
-    } else if (value <= etl::numeric_limits<uint16_t>::max()) {
+    } else if (static_cast<U>(value) <= etl::numeric_limits<uint16_t>::max()) {
         return sizeof(uint16_t) * 8;
-    } else if (value <= etl::numeric_limits<uint32_t>::max()) {
+    } else if (static_cast<U>(value) <= etl::numeric_limits<uint32_t>::max()) {
         return sizeof(uint32_t) * 8;
-    } else if (value <= etl::numeric_limits<uint64_t>::max()) {
+    } else if (static_cast<U>(value) <= etl::numeric_limits<uint64_t>::max()) {
         return sizeof(uint64_t) * 8;
     } else {
         return -1;
