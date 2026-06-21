@@ -12,11 +12,13 @@ class EventAwaiter;
 /// Single flag which can be set or reset, and awaited for being set. Can be set from ISR.
 class Event {
 public:
+
+    Event(const Event &) = delete;
+    Event(Event &&) = delete;
+
     Event(bool isSet = false):
         isSet(isSet)
     {}
-
-    Event(const Event &) = delete;
 
     ~Event();
 

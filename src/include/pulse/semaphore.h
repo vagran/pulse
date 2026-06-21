@@ -21,7 +21,9 @@ class SemaphoreGuard;
 template <etl::unsigned_integral TSize = uint8_t>
 class Semaphore {
 public:
+
     Semaphore(const Semaphore &) = delete;
+    Semaphore(Semaphore &&) = delete;
 
     Semaphore(TSize numTokens, TSize numInitiallyAcquired = 0):
         numTokens(numTokens),

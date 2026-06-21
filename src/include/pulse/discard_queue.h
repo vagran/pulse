@@ -23,6 +23,10 @@ class DiscardQueuePopAwaiter;
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex = size_t>
 class DiscardQueue {
 public:
+
+    DiscardQueue(const DiscardQueue &other) = delete;
+    DiscardQueue(DiscardQueue &&other) = delete;
+
     /** Use provided buffer as storage. The buffer lifetime should not be less than this object
      * lifetime. Buffer values should not be initialized (not constructed).
      */

@@ -24,6 +24,10 @@ class BlockingQueuePopAwaiter;
 template <typename T, etl::unsigned_integral TIndex = size_t>
 class BlockingQueue {
 public:
+
+    BlockingQueue(const BlockingQueue &) = delete;
+    BlockingQueue(BlockingQueue &&) = delete;
+
     /** Use provided buffer as storage. The buffer lifetime should not be less than this object
      * lifetime. Buffer values should not be initialized (not constructed).
      */

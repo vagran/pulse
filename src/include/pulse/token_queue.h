@@ -24,6 +24,10 @@ class TokenQueueAwaiter;
 template <etl::integral TCounter = size_t>
 class TokenQueue {
 public:
+
+    TokenQueue(const TokenQueue &) = delete;
+    TokenQueue(TokenQueue &&) = delete;
+
     /**
      * @param initialValue Initial token value returned for the first awaiter.
      * @param maxTokens Maximal number of pending tokens. Excessive tokens are discarded if not
@@ -33,8 +37,6 @@ public:
         maxTokens(maxTokens),
         value(initialValue)
     {}
-
-    TokenQueue(const TokenQueue &) = delete;
 
     ~TokenQueue();
 
