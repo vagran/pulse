@@ -236,6 +236,7 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
         ig.Exit();
         currentTask = weakRef.Lock();
         if (currentTask) {
+            PULSE_ASSERT(!currentTask.IsFinished());
             cb->Resume();
             currentTask.ReleaseHandle();
         }
