@@ -282,7 +282,9 @@ struct TaskCb {
     /// Task currently queued in runnable queue.
             isRunnable: 1 = 0,
     /// Task finished and result is available.
-            isFinished: 1 = 0;
+            isFinished: 1 = 0,
+    /// Task is switched from by `tasks::Switch(true)`.
+            isSwitched: 1 = 0;
 
     /// Allocate control block from pool or heap.
     static TaskCb *
@@ -944,6 +946,10 @@ using AbstractAwaiterBase = AwaiterBase<TRet, TSource, TSourceTrait, AbstractAwa
 // Awaiter for explicit task switching.
 class TaskSwitchAwaiter: public Awaiter<void> {
 public:
+    TaskSwitchAwaiter(bool lowerPriority):
+        lowerPriority(lowerPriority)
+    {}
+
     bool
     await_ready() const
     {
@@ -961,6 +967,7 @@ public:
     }
 
 private:
+    const bool lowerPriority;
     bool switched = false;
 };
 
@@ -1272,14 +1279,20 @@ GetCurrentTask();
 
 /** Switch to other runnable task if any. `co_await` returns true if task was switched, false if
  * immediately returned to calling task.
+ * @param lowerPriority If `true`, temporarily assigns the current task the lowest possible
+ * priority, below that of any runnable task. In this mode, the scheduler also guarantees that
+ * execution will not switch to another task that is likewise awaiting `Switch(true)`. As a result,
+ * all tasks currently present in the runnable queue are given an opportunity to execute before the
+ * current task resumes. If `false`, execution may switch only to runnable tasks with the same or
+ * higher priority as the current task.
  * @code
  * co_await Task::Switch();
  * @endcode
  */
 inline TaskSwitchAwaiter
-Switch()
+Switch(bool lowerPriority = false)
 {
-    return {};
+    return TaskSwitchAwaiter(lowerPriority);
 }
 
 /** Wait when all of the provided tasks complete. Uses dynamic allocation for tasks list if

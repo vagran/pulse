@@ -308,6 +308,174 @@ TEST_CASE("Priority propagation")
 }
 
 
+TEST_CASE("Switch yields to lower priority task")
+{
+    struct Tasks {
+        static Task<>
+        High()
+        {
+            REQUIRE(results.empty());
+            results.push_back("H:1");
+            // Only a lower-priority task is runnable. `Switch(true)` must still
+            // yield to it, unlike the default `Switch()`.
+            bool sw = co_await tasks::Switch(true);
+            REQUIRE(sw);
+            CheckResult(2, "L:1");
+            results.push_back("H:2");
+        }
+
+        static Task<>
+        Low()
+        {
+            // Runs only because `High` explicitly yielded to lower priority.
+            CheckResult(1, "H:1");
+            results.push_back("L:1");
+            co_return;
+        }
+    };
+
+    results.clear();
+
+    auto high = tasks::Spawn(Tasks::High(), 0);
+    auto low = tasks::Spawn(Tasks::Low(), 1);
+
+    tasks::RunSome();
+
+    CheckResult({"H:1", "L:1", "H:2"});
+}
+
+
+TEST_CASE("Switch does not yield to lower priority by default")
+{
+    struct Tasks {
+        static Task<>
+        High()
+        {
+            REQUIRE(results.empty());
+            results.push_back("H:1");
+            // Default `Switch()` only switches to same-or-higher priority tasks,
+            // so it must not suspend while the only other task is lower priority.
+            bool sw = co_await tasks::Switch();
+            REQUIRE(!sw);
+            CheckResult(1, "H:1");
+            results.push_back("H:2");
+        }
+
+        static Task<>
+        Low()
+        {
+            CheckResult(2, "H:2");
+            results.push_back("L:1");
+            co_return;
+        }
+    };
+
+    results.clear();
+
+    auto high = tasks::Spawn(Tasks::High(), 0);
+    auto low = tasks::Spawn(Tasks::Low(), 1);
+
+    tasks::RunSome();
+
+    CheckResult({"H:1", "H:2", "L:1"});
+}
+
+
+TEST_CASE("Switch lower priority fairness")
+{
+    struct Tasks {
+        static Task<>
+        High(const char *name)
+        {
+            results.push_back(std::string(name) + ":1");
+            bool sw = co_await tasks::Switch(true);
+            REQUIRE(sw);
+            results.push_back(std::string(name) + ":2");
+        }
+
+        static Task<>
+        Low()
+        {
+            results.push_back("L:1");
+            // At this point only the switched-out tasks remain. `Switch(true)`
+            // must never switch into them, so it returns immediately.
+            bool sw = co_await tasks::Switch(true);
+            REQUIRE(!sw);
+            results.push_back("L:2");
+        }
+    };
+
+    results.clear();
+
+    auto h1 = tasks::Spawn(Tasks::High("H1"), 0);
+    auto h2 = tasks::Spawn(Tasks::High("H2"), 0);
+    auto low = tasks::Spawn(Tasks::Low(), 1);
+
+    tasks::RunSome();
+
+    // Both high-priority tasks yield (in FIFO order), the low task runs to
+    // completion, then the switched-out tasks resume in the order they yielded.
+    CheckResult({
+        "H1:1",
+        "H2:1",
+        "L:1",
+        "L:2",
+        "H1:2",
+        "H2:2",
+    });
+}
+
+
+TEST_CASE("Switch lower priority with priority change")
+{
+    struct Tasks {
+        static Task<>
+        Parked()
+        {
+            results.push_back("P:1");
+            bool sw = co_await tasks::Switch(true);
+            REQUIRE(sw);
+            results.push_back("P:2");
+        }
+
+        static Task<>
+        Raiser(TaskRef parked)
+        {
+            results.push_back("R:1");
+            // `parked` is currently suspended in the switched-tasks queue.
+            // Changing its priority must de-park it cleanly (no panic).
+            parked.SetPriority(tasks::HIGHEST_PRIORITY);
+            results.push_back("R:2");
+            co_return;
+        }
+
+        static Task<>
+        Filler()
+        {
+            results.push_back("F:1");
+            co_return;
+        }
+    };
+
+    results.clear();
+
+    auto p = tasks::Spawn(Tasks::Parked(), 1);
+    auto r = tasks::Spawn(Tasks::Raiser(p), 1);
+    auto f = tasks::Spawn(Tasks::Filler(), 2);
+
+    tasks::RunSome();
+
+    REQUIRE(p.IsFinished());
+    CheckResult({
+        "P:1",
+        "R:1",
+        "R:2",
+        "P:2",
+        "F:1",
+    });
+}
+
+
 TEST_CASE("WhenAll")
 {
     struct Tasks {

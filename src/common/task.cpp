@@ -46,13 +46,13 @@ public:
     }
 
     void
-    Set(uint8_t priority)
+    Set(tasks::Priority priority)
     {
         bitmap |= Mask(priority);
     }
 
     void
-    Clear(uint8_t priority)
+    Clear(tasks::Priority priority)
     {
         bitmap &= ~Mask(priority);
     }
@@ -60,7 +60,7 @@ public:
     /** @return Index of highest priority bit set. May be greater or equal to
      * pulseConfig_NUM_TASK_PRIORITIES if no bits set.
      */
-    uint8_t
+    tasks::Priority
     FirstSet() const
     {
         return etl::countr_zero(bitmap);
@@ -68,7 +68,7 @@ public:
 
 private:
     static constexpr Bitmap
-    Mask(uint8_t priority)
+    Mask(tasks::Priority priority)
     {
         return static_cast<Bitmap>(1) << priority;
     }
@@ -85,6 +85,9 @@ details::TaskTailedList readyTasks[pulseConfig_NUM_TASK_PRIORITIES];
 
 /// Each set bit corresponds to non-empty queue for corresponding priority.
 PriorityBitmap readyTasksBitmap;
+
+/// Tasks switch by `tasks::Switch(true)`
+details::TaskTailedList switchedTasks;
 
 /// Currently running task (top-level, resumed by scheduler)
 TaskRef currentTask;
@@ -167,15 +170,17 @@ bool
 details::TaskImpl::TryDescheduleTask(TaskCb &cb)
 {
     PULSE_ASSERT(cb.priority < pulseConfig_NUM_TASK_PRIORITIES);
-    TaskTailedList &list = readyTasks[cb.priority];
     CriticalSection cs;
+    TaskTailedList &list = cb.isSwitched ? switchedTasks : readyTasks[cb.priority];
     if (!cb.isRunnable) {
         return false;
     }
     if (!list.Remove(&cb)) {
         PULSE_PANIC("Task not scheduled");
     }
-    if (list.IsEmpty()) {
+    if (cb.isSwitched) {
+        cb.isSwitched = false;
+    } else if (list.IsEmpty()) {
         readyTasksBitmap.Clear(cb.priority);
     }
     cb.isRunnable = 0;
@@ -206,7 +211,7 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
             shouldRecheckTimers = false;
         }
         SleepInterruptsGuard ig;
-        if (!readyTasksBitmap) {
+        if (!readyTasksBitmap && switchedTasks.IsEmpty()) {
             if (!timersChecked) {
                 // Some tasks were run since last timer check, new timers might be scheduled so need
                 // to re-check them.
@@ -220,19 +225,29 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
             break;
         }
         timersChecked = false;
-        uint8_t pri = readyTasksBitmap.FirstSet();
-        PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
-        TaskTailedList &list = readyTasks[pri];
-        // Reference transferred from list.
-        TaskWeakRef weakRef(details::TaskCbPtr(list.PopFirst(), true));
-        TaskCb *cb = weakRef.cb.Get();
-        PULSE_ASSERT(cb);
-        if (list.IsEmpty()) {
-            readyTasksBitmap.Clear(pri);
+
+        TaskCb *cb;
+
+        if (readyTasksBitmap) {
+            uint8_t pri = readyTasksBitmap.FirstSet();
+            PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
+            TaskTailedList &list = readyTasks[pri];
+            cb = list.PopFirst();
+            // Reference transferred from list.
+            if (list.IsEmpty()) {
+                readyTasksBitmap.Clear(pri);
+            }
+
+        } else {
+            cb = switchedTasks.PopFirst();
+            PULSE_ASSERT(cb->isSwitched);
+            cb->isSwitched = 0;
         }
+
         // Even destroyed task should still be runnable if queued
         PULSE_ASSERT(cb->isRunnable);
         cb->isRunnable = 0;
+        TaskWeakRef weakRef(details::TaskCbPtr(cb, true));
         ig.Exit();
         currentTask = weakRef.Lock();
         if (currentTask) {
@@ -499,15 +514,19 @@ TaskSwitchAwaiter::await_suspend(tasks::CoroutineHandle handle)
     details::TaskCb &cb = *task.cb;
     tasks::Priority pri = cb.priority;
     CriticalSection cs;
-    if (!readyTasksBitmap || readyTasksBitmap.FirstSet() > pri) {
+    if (!readyTasksBitmap || (!lowerPriority && readyTasksBitmap.FirstSet() > pri)) {
         // Do not suspend calling coroutine if there is no other runnable tasks or they have lower
-        // priority.
+        // priority (if `lowerPriority` is not set). Never switch to other tasks in `switchedTasks`.
         return false;
     }
-    details::TaskTailedList &list = readyTasks[pri];
+    details::TaskTailedList &list = lowerPriority ? switchedTasks : readyTasks[pri];
     cb.AddRef();
     list.AddLast(&cb);
-    readyTasksBitmap.Set(pri);
+    if (lowerPriority) {
+        cb.isSwitched = true;
+    } else {
+        readyTasksBitmap.Set(pri);
+    }
     cb.isRunnable = 1;
     switched = true;
     return true;
