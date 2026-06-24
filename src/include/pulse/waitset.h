@@ -15,6 +15,14 @@ namespace details {
 template <class TFactory>
 using WaitsetFactoryAwaiterResult = decltype(etl::declval<TFactory>()().await_resume());
 
+using WaitsetMask = uint32_t;
+
+constexpr static WaitsetMask
+WaitsetSlotMask(size_t slotIndex)
+{
+    return static_cast<WaitsetMask>(1) << slotIndex;
+}
+
 template <class TFactory>
 constexpr bool
 IsWaitsetVoidFactory()
@@ -32,6 +40,12 @@ struct WaitsetSlotBase {
     WaitsetSlotBase(TFactoryFrom &&factory):
         factory(etl::forward<TFactoryFrom>(factory))
     {}
+
+    void
+    ClearHandler()
+    {
+        handler.ReleaseHandle();
+    }
 };
 
 template<typename F>
@@ -122,7 +136,7 @@ struct WaitsetSlots<_slotIndex> {
 
     template <WaitsetHandlerCallback TCallback>
     void
-    SetupHandler(TCallback cbk)
+    SetupHandler(TCallback cbk, WaitsetMask disableMask)
     {}
 
     template <size_t index>
@@ -145,6 +159,13 @@ struct WaitsetSlots<_slotIndex> {
     {
         static_assert(false, "Should not be reached");
     }
+
+    template <size_t index>
+    void
+    ClearHandler()
+    {
+        static_assert(false, "Should not be reached");
+    }
 };
 
 template <size_t _slotIndex, typename TFactory, typename... TTail>
@@ -162,7 +183,7 @@ struct WaitsetSlots<_slotIndex, TFactory, TTail...> : WaitsetSlots<_slotIndex + 
 
     template <WaitsetHandlerCallback TCallback>
     void
-    SetupHandler(TCallback cbk);
+    SetupHandler(TCallback cbk, WaitsetMask disableMask);
 
     template <size_t index>
     auto
@@ -198,22 +219,43 @@ struct WaitsetSlots<_slotIndex, TFactory, TTail...> : WaitsetSlots<_slotIndex + 
             Base::template ClearResult<index>();
         }
     }
+
+    template <size_t index>
+    void
+    ClearHandler()
+    {
+        if constexpr (index == slotIndex) {
+            slot.ClearHandler();
+        } else {
+            Base::template ClearHandler<index>();
+        }
+    }
 };
 
 
 class WaitsetBase {
 public:
-    /// Returned by awaiter if waitset destructed.
+    /// Returned by awaiter if the waitset is destructed.
     static constexpr size_t DESTRUCTED = etl::numeric_limits<size_t>::max();
 
     WaitsetBase(const WaitsetBase &) = delete;
     WaitsetBase(WaitsetBase &&) = delete;
 
-    /// Wait until any awaiter is ready. Awaiter returns index of the first ready awaiter, or
-    /// DESTRUCTED in waitset destructed while being awaited.
-    /// Note, that if awaited concurrently by multiple coroutines, multiple awaiters may receive the
-    /// same ready slot index, so they should check if result available by HasResult() method. In
-    /// general, it is not really intended to be used in such way.
+    /// Waits until any awaitable becomes ready.
+    ///
+    /// The await operation returns the index of the first ready slot, or `DESTRUCTED` if the
+    /// `Waitset` is destroyed while the coroutine is suspended.
+    ///
+    /// `Waitset` operates in rounds. If results from a previous round are still available, slots
+    /// that have already produced results are not awaited again until all pending results have been
+    /// consumed. This ensures that every slot has an opportunity to contribute results and prevents
+    /// busy slots from starving others.
+    ///
+    /// If multiple coroutines await the same `Waitset` concurrently, more than one coroutine may
+    /// receive the same ready slot index. Therefore, callers should verify that a result is still
+    /// available by calling `HasResult()` before attempting to consume it. Concurrent awaiting is
+    /// generally not the intended usage pattern and should be avoided unless this behavior is
+    /// explicitly handled.
     WaitsetAwaiter
     WaitAny();
 
@@ -227,23 +269,17 @@ protected:
         static void
         DequeueAwaiter(WaitsetBase *ws, TAwaiterBase *awaiter);
     };
-
     WaitsetBase() = default;
 
     TailedList<TAwaiterBase *> waiters;
-    uint32_t readyMask = 0;
+    WaitsetMask readyMask = 0;
+    WaitsetMask disableMask = 0;
 
     void
     Wakeup(TAwaiterBase *waiter, size_t result);
 
     virtual void
     PrepareWait() = 0;
-
-    constexpr static auto
-    SlotMask(size_t slotIndex)
-    {
-        return static_cast<decltype(readyMask)>(1) << slotIndex;
-    }
 };
 
 } // namespace details
@@ -289,7 +325,7 @@ public:
     auto
     PopResult()
     {
-        readyMask &= ~SlotMask(index);
+        readyMask &= ~details::WaitsetSlotMask(index);
         return slots.template PopResult<index>();
     }
 
@@ -307,8 +343,32 @@ public:
     void
     ClearResult()
     {
-        readyMask &= ~SlotMask(index);
+        readyMask &= ~details::WaitsetSlotMask(index);
         slots.template ClearResult<index>();
+    }
+
+    /// Disable the specified slot, so it is not awaited anymore. In case there is some pending
+    /// result in coroutines chain it is discarded. If result already saved in the waitset, it is
+    /// preserved (`WaitAny()` returns it). Use `ClearResult()` to discard saved result if needed.
+    template <size_t index>
+    void
+    DisableSlot()
+    {
+        disableMask |= details::WaitsetSlotMask(index);
+        slots.template ClearHandler<index>();
+    }
+
+    /// Enables the specified slot if it is currently disabled.
+    ///
+    /// If there are pending results from a previous consumption round, the slot will not be awaited
+    /// immediately on the next `WaitAny()` call. Newly enabled slots participate only after all
+    /// saved results from the current round have been consumed. See the `WaitAny()` documentation
+    /// for details on round-based result processing.
+    template <size_t index>
+    void
+    EnableSlot()
+    {
+        disableMask &= ~details::WaitsetSlotMask(index);
     }
 
 private:
@@ -387,10 +447,13 @@ details::WaitsetSlot<TFactory, true>::SetupHandler(size_t index, TCallback cbk)
 template <size_t _slotIndex, typename TFactory, typename... TTail>
 template <details::WaitsetHandlerCallback TCallback>
 void
-details::WaitsetSlots<_slotIndex, TFactory, TTail...>::SetupHandler(TCallback cbk)
+details::WaitsetSlots<_slotIndex, TFactory, TTail...>::SetupHandler(TCallback cbk,
+                                                                    WaitsetMask disableMask)
 {
-    slot.SetupHandler(slotIndex, cbk);
-    Base::SetupHandler(cbk);
+    if ((disableMask & WaitsetSlotMask(slotIndex)) == 0) {
+        slot.SetupHandler(slotIndex, cbk);
+    }
+    Base::SetupHandler(cbk, disableMask);
 }
 
 template <class... TFactory>
@@ -413,7 +476,7 @@ bool
 Waitset<TFactory...>::HasResult(size_t index)
 {
     PULSE_ASSERT(index < numSlots);
-    return readyMask & SlotMask(index);
+    return readyMask & details::WaitsetSlotMask(index);
 }
 
 template <class... TFactory>
@@ -421,11 +484,11 @@ void
 Waitset<TFactory...>::PrepareWait()
 {
     slots.SetupHandler([this](size_t slotIndex){
-        readyMask |= SlotMask(slotIndex);
+        readyMask |= details::WaitsetSlotMask(slotIndex);
         while (!waiters.IsEmpty()) {
             Wakeup(waiters.PopFirst(), slotIndex);
         }
-    });
+    }, disableMask);
 }
 
 } // namespace pulse

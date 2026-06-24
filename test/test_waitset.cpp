@@ -231,3 +231,135 @@ TEST_CASE("Simultaneously ready slots are drained lowest-index-first")
 
     REQUIRE(consumer.IsFinished());
 }
+
+
+TEST_CASE("A disabled slot is not awaited and EnableSlot re-arms it")
+{
+    TokenQueue<> q0, q1;
+
+    auto ws = CreateWaitset(
+        [&](){ return q0.Take(); },
+        [&](){ return q1.Take(); }
+    );
+
+    // Slot 0 is disabled, so it must not be armed even though its queue has data.
+    ws.DisableSlot<0>();
+
+    q0.Push();
+    q1.Push();
+
+    auto consumer = tasks::Spawn([](decltype(ws) &ws) -> Task<> {
+        // Slot 0 is disabled, so only slot 1 is awaited - its index is reported despite slot 0
+        // also having a ready token.
+        size_t a = co_await ws;
+        REQUIRE(a == 1);
+        REQUIRE(!ws.HasResult(0));
+        ws.ClearResult<1>();
+
+        // Re-enable slot 0; the token pushed earlier is still queued and must now be picked up.
+        ws.EnableSlot<0>();
+        size_t b = co_await ws;
+        REQUIRE(b == 0);
+        REQUIRE(ws.HasResult(0));
+        ws.ClearResult<0>();
+    }, ws);
+
+    tasks::RunSome();
+
+    REQUIRE(consumer.IsFinished());
+}
+
+
+TEST_CASE("DisableSlot discards an already-scheduled completion")
+{
+    // When a slot's awaitable completes, its handler coroutine is scheduled (the runnable queue
+    // holds only a weak reference to it). Disabling the slot releases the handler's last strong
+    // reference, destroying the coroutine frame - so the scheduler skips it and the completion is
+    // never delivered. Any result already moved into the handler chain is destroyed with the frame.
+    Tracked::liveCount = 0;
+    {
+        InlineDiscardQueue<Tracked, true, 4> dqA, dqB;
+
+        auto fa = [&](){ return dqA.Pop(); };
+        auto fb = [&](){ return dqB.Pop(); };
+        using WS = Waitset<decltype(fa), decltype(fb)>;
+
+        etl::optional<WS> ws;
+        ws.emplace(fa, fb);
+
+        bool woke = false;
+        size_t wokeIdx = 999;
+
+        auto consumer = tasks::Spawn(
+            [](etl::optional<WS> &ws, bool &woke, size_t &wokeIdx) -> Task<> {
+                wokeIdx = co_await *ws;
+                woke = true;
+            }, ws, woke, wokeIdx);
+
+        // Both handlers are armed and suspended on their (empty) queues.
+        tasks::RunSome();
+        REQUIRE(!woke);
+
+        // Slot 0 completes: its handler is now scheduled and the produced value lives in the
+        // handler chain.
+        dqA.Emplace(7);
+        REQUIRE(Tracked::liveCount == 1);
+
+        // Disable slot 0 before the scheduler gets to run the handler. The in-flight result must be
+        // destroyed immediately with the handler frame.
+        ws->DisableSlot<0>();
+        REQUIRE(Tracked::liveCount == 0);
+
+        // The scheduler must skip the now-dead handler - no completion is delivered.
+        tasks::RunSome();
+        REQUIRE(!woke);
+        REQUIRE(!ws->HasResult(0));
+
+        // Slot 1 is still active and can still wake the consumer.
+        dqB.Emplace(9);
+        tasks::RunSome();
+        REQUIRE(woke);
+        REQUIRE(wokeIdx == 1);
+        REQUIRE(ws->HasResult(1));
+        REQUIRE(ws->Result<1>().value == 9);
+
+        // Slot 1's result is retained until the waitset is destroyed.
+        REQUIRE(Tracked::liveCount == 1);
+        ws.reset();
+        REQUIRE(Tracked::liveCount == 0);
+    }
+    REQUIRE(Tracked::liveCount == 0);
+}
+
+
+TEST_CASE("DisableSlot preserves an already-saved result")
+{
+    TokenQueue<> q;
+
+    auto ws = CreateWaitset([&](){ return q.Take(); });
+
+    q.Push();
+
+    auto consumer = tasks::Spawn([](decltype(ws) &ws) -> Task<> {
+        // Slot produces a result that gets saved in the waitset.
+        size_t a = co_await ws;
+        REQUIRE(a == 0);
+        REQUIRE(ws.HasResult(0));
+
+        // Disabling the slot must preserve the already-saved result...
+        ws.DisableSlot<0>();
+        REQUIRE(ws.HasResult(0));
+
+        // ...and WaitAny keeps returning it until it is explicitly cleared.
+        size_t b = co_await ws;
+        REQUIRE(b == 0);
+        REQUIRE(ws.HasResult(0));
+
+        ws.ClearResult<0>();
+        REQUIRE(!ws.HasResult(0));
+    }, ws);
+
+    tasks::RunSome();
+
+    REQUIRE(consumer.IsFinished());
+}
