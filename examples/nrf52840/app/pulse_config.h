@@ -37,7 +37,7 @@ LogGetTimestamp(char *buffer, size_t bufferSize);
 
 #ifdef DEBUG
 #   define pulseConfig_ASSERT(x) do { \
-        if (!(x)) { \
+        if (!(x)) PULSE_UNLIKELY { \
             Panic("pulseConfig_ASSERT failed: " PULSE_STR(x)); \
         } \
     } while (false)

@@ -36,4 +36,12 @@
 /** Weak symbol linkage. */
 #define PULSE_WEAK                      __attribute__((weak))
 
+#ifdef __cplusplus
+#   define PULSE_LIKELY                 [[likely]]
+#   define PULSE_UNLIKELY               [[unlikely]]
+#else
+#   define PULSE_LIKELY
+#   define PULSE_UNLIKELY
+#endif
+
 #endif /* PULSE_DEFS_H_ */

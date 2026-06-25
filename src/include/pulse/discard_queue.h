@@ -40,16 +40,14 @@ public:
 
     ~DiscardQueue();
 
-    /**
+    /** Push item into the queue. Item is discarded if no more space.
+     * @param value All parameters forwarded to item constructor (default constructed if no
+     * arguments).
      * @return True if no discard occurred, false if some item discarded.
      */
-    template <typename U>
+    template <typename... U>
     bool
-    Push(U &&value);
-
-    template <typename... Args>
-    bool
-    Emplace(Args &&... args);
+    Push(U &&... value);
 
     DiscardQueuePopAwaiter<DiscardQueue>
     Pop();
@@ -131,9 +129,6 @@ private:
     }
 
     void
-    CommitPush();
-
-    void
     CommitPop();
 
     struct AwaiterSourceTrait {
@@ -202,50 +197,29 @@ DiscardQueue<T, tailDrop, TIndex>::~DiscardQueue()
 }
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-template <typename U>
+template <typename... U>
 bool
-DiscardQueue<T, tailDrop, TIndex>::Push(U &&value)
+DiscardQueue<T, tailDrop, TIndex>::Push(U &&... value)
 {
     CriticalSection cs;
 
-    if (size) {
-        PULSE_ASSERT(popWaiters.IsEmpty());
-    }
-
-    if (size < capacity) {
-        etl::construct_at(&CurWriteItem(), etl::forward<U>(value));
-        CommitPush();
-        return true;
-    }
-
-    if constexpr (!tailDrop) {
-        // Discard least recently added item, and push a new one
-        T &item = CurReadItem();
-        etl::destroy_at(&item);
-        etl::construct_at(&item, etl::forward<U>(value));
-        readIdx++;
-        if (readIdx >= capacity) {
-            readIdx = 0;
+    while (!popWaiters.IsEmpty()) {
+        PULSE_ASSERT(size == 0);
+        auto waiter = popWaiters.PopFirst();
+        if (!waiter->Wakeup()) {
+            // Actually this unlikely to happen since Awaiter usually sits in waiter coroutine
+            // frame, so when task last reference is released, the frame is destroyed and awaiter
+            // destructor removes itself from the list. But make it so for consistency and
+            // robustness for some exotic cases when awaiter is outside waiter task frame.
+            continue;
         }
-    }
-
-    return false;
-}
-
-template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-template <typename... Args>
-bool
-DiscardQueue<T, tailDrop, TIndex>::Emplace(Args &&... args)
-{
-    CriticalSection cs;
-
-    if (size) {
-        PULSE_ASSERT(popWaiters.IsEmpty());
+        waiter->SetResult(etl::forward<U>(value)...);
+        return true;
     }
 
     if (size < capacity) {
-        etl::construct_at(&CurWriteItem(), etl::forward<Args>(args)...);
-        CommitPush();
+        etl::construct_at(&CurWriteItem(), etl::forward<U>(value)...);
+        size++;
         return true;
     }
 
@@ -253,7 +227,7 @@ DiscardQueue<T, tailDrop, TIndex>::Emplace(Args &&... args)
         // Discard least recently added item, and push a new one
         T &item = CurReadItem();
         etl::destroy_at(&item);
-        etl::construct_at(&item, etl::forward<Args>(args)...);
+        etl::construct_at(&item, etl::forward<U>(value)...);
         readIdx++;
         if (readIdx >= capacity) {
             readIdx = 0;
@@ -298,26 +272,6 @@ DiscardQueue<T, tailDrop, TIndex>::TryPop()
         return etl::optional<T>(etl::move(item));
     }
     return etl::nullopt;
-}
-
-template <typename T, bool tailDrop, etl::unsigned_integral TIndex>
-void
-DiscardQueue<T, tailDrop, TIndex>::CommitPush()
-{
-    PULSE_ASSERT(size <= capacity);
-    size++;
-    while (size && !popWaiters.IsEmpty()) {
-        auto waiter = popWaiters.PopFirst();
-        if (!waiter->Wakeup()) {
-            // Actually this unlikely to happen since Awaiter usually sits in waiter coroutine
-            // frame, so when task last reference is released, the frame is destroyed and awaiter
-            // destructor removes itself from the list. But make it so for consistency and
-            // robustness for some exotic cases when awaiter is outside waiter task frame.
-            continue;
-        }
-        waiter->SetResult(etl::move(CurReadItem()));
-        CommitPop();
-    }
 }
 
 template <typename T, bool tailDrop, etl::unsigned_integral TIndex>

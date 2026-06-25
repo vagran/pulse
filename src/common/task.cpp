@@ -233,7 +233,6 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
             PULSE_ASSERT(pri < pulseConfig_NUM_TASK_PRIORITIES);
             TaskTailedList &list = readyTasks[pri];
             cb = list.PopFirst();
-            // Reference transferred from list.
             if (list.IsEmpty()) {
                 readyTasksBitmap.Clear(pri);
             }
@@ -247,6 +246,7 @@ details::TaskImpl::RunSomeImpl(Timer::TickCount *nextTimerTicks)
         // Even destroyed task should still be runnable if queued
         PULSE_ASSERT(cb->isRunnable);
         cb->isRunnable = 0;
+        // Reference transferred from list.
         TaskWeakRef weakRef(details::TaskCbPtr(cb, true));
         ig.Exit();
         currentTask = weakRef.Lock();

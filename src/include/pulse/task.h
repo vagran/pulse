@@ -217,7 +217,7 @@ class TaskWeakRef: public details::TaskRefBase {
 public:
     using TaskRefBase::TaskRefBase;
 
-    /** Obtain reference to task if not yet destroyed. Returns null (empty Task) if already
+    /** Obtain reference to task if not yet destroyed. Returns null (empty TaskRef) if already
      * destroyed.
      */
     TaskRef
@@ -857,18 +857,11 @@ protected:
         return *reinterpret_cast<TRet *>(storage);
     }
 
-    template <typename T>
+    template <typename... TFrom>
     void
-    SetResult(T &&from)
+    SetResult(TFrom &&... from)
     {
-        etl::construct_at(&this->Result(), etl::forward<T>(from));
-        this->source = nullptr;
-    }
-
-    void
-    SetResult()
-    {
-        etl::construct_at(&this->Result());
+        etl::construct_at(&this->Result(), etl::forward<TFrom>(from)...);
         this->source = nullptr;
     }
 };

@@ -15,7 +15,7 @@ extern "C" void TestMallocUnlock();
 extern "C" void Panic(const char *msg);
 
 #define pulseConfig_ASSERT(x) do { \
-    if (!(x)) { \
+    if (!(x)) PULSE_UNLIKELY { \
         Panic("pulseConfig_ASSERT failed [" __FILE__ ":" PULSE_STR(__LINE__) "]: " PULSE_STR(x)); \
     } \
 } while (false)

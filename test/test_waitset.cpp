@@ -144,7 +144,7 @@ TEST_CASE("Retained non-trivial result is destroyed with the waitset")
 
         // Item is ready before the consumer awaits, so the handler completes synchronously and the
         // result is parked in slot 0.
-        dq.Emplace(42);
+        dq.Push(42);
 
         auto consumer = tasks::Spawn([](etl::optional<WS> &ws) -> Task<> {
             size_t idx = co_await *ws;
@@ -302,7 +302,7 @@ TEST_CASE("DisableSlot discards an already-scheduled completion")
 
         // Slot 0 completes: its handler is now scheduled and the produced value lives in the
         // handler chain.
-        dqA.Emplace(7);
+        dqA.Push(7);
         REQUIRE(Tracked::liveCount == 1);
 
         // Disable slot 0 before the scheduler gets to run the handler. The in-flight result must be
@@ -316,7 +316,7 @@ TEST_CASE("DisableSlot discards an already-scheduled completion")
         REQUIRE(!ws->HasResult(0));
 
         // Slot 1 is still active and can still wake the consumer.
-        dqB.Emplace(9);
+        dqB.Push(9);
         tasks::RunSome();
         REQUIRE(woke);
         REQUIRE(wokeIdx == 1);
