@@ -37,11 +37,13 @@ public:
     struct Duration {
         TickCount duration;
 
+        constexpr
         Duration(TickCount duration):
             duration(duration)
         {}
 
         template <typename TRep, typename TPeriod>
+        constexpr
         Duration(etl::chrono::duration<TRep, TPeriod> duration):
             duration(etl::chrono::duration_cast<Ticks>(duration).count())
         {}
