@@ -122,6 +122,7 @@ Timer::Timer(Timer &&other):
 
 Timer::~Timer()
 {
+    CancelImpl(true);
     PULSE_ASSERT(dynamicAlloc ? refCounter == 0 : refCounter == 1);
     if (state == SCHEDULED) {
         // May be called from Heap destructor when in unit tests. In this case it should not be
@@ -129,7 +130,6 @@ Timer::~Timer()
         // links to this instance.
         state = INITIAL;
     }
-    CancelImpl(true);
 }
 
 int
