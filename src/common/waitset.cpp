@@ -32,12 +32,13 @@ WaitsetAwaiter::await_suspend(tasks::CoroutineHandle handle)
         this->SetResult(etl::countr_zero(source->readyMask));
         return false;
     }
-    source->PrepareWait();
+    auto task = TaskRef(handle);
+    source->PrepareWait(task.GetPriority());
     if (source->readyMask) {
         this->SetResult(etl::countr_zero(source->readyMask));
         return false;
     }
-    this->waiter = TaskRef(handle).GetWeakPtr();
+    this->waiter = task.GetWeakPtr();
     source->waiters.AddLast(this);
     return true;
 }

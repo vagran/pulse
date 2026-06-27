@@ -108,7 +108,7 @@ struct WaitsetSlot: WaitsetSlotBase<TFactory> {
 
     template <WaitsetHandlerCallback TCallback>
     void
-    SetupHandler(size_t index, TCallback cbk);
+    SetupHandler(size_t index, TCallback cbk, tasks::Priority priority);
 };
 
 template <class TFactory>
@@ -119,7 +119,7 @@ struct WaitsetSlot<TFactory, true>:
 
     template <WaitsetHandlerCallback TCallback>
     void
-    SetupHandler(size_t index, TCallback cbk);
+    SetupHandler(size_t index, TCallback cbk, tasks::Priority priority);
 
     void
     ClearResult()
@@ -136,7 +136,7 @@ struct WaitsetSlots<_slotIndex> {
 
     template <WaitsetHandlerCallback TCallback>
     void
-    SetupHandler(TCallback cbk, WaitsetMask disableMask)
+    SetupHandler(TCallback cbk, WaitsetMask disableMask, tasks::Priority priority)
     {}
 
     template <size_t index>
@@ -183,7 +183,7 @@ struct WaitsetSlots<_slotIndex, TFactory, TTail...> : WaitsetSlots<_slotIndex + 
 
     template <WaitsetHandlerCallback TCallback>
     void
-    SetupHandler(TCallback cbk, WaitsetMask disableMask);
+    SetupHandler(TCallback cbk, WaitsetMask disableMask, tasks::Priority priority);
 
     template <size_t index>
     auto
@@ -279,7 +279,7 @@ protected:
     Wakeup(TAwaiterBase *waiter, size_t result);
 
     virtual void
-    PrepareWait() = 0;
+    PrepareWait(tasks::Priority priority) = 0;
 };
 
 } // namespace details
@@ -377,7 +377,7 @@ private:
     details::WaitsetSlots<0, TFactory...> slots;
 
     void
-    PrepareWait() override;
+    PrepareWait(tasks::Priority priority) override;
 };
 
 
@@ -404,9 +404,14 @@ CreateWaitset(TFactory &&... factories)
 template <typename TFactory, bool IsVoid>
 template <details::WaitsetHandlerCallback TCallback>
 void
-details::WaitsetSlot<TFactory, IsVoid>::SetupHandler(size_t index, TCallback cbk)
+details::WaitsetSlot<TFactory, IsVoid>::SetupHandler(size_t index, TCallback cbk,
+                                                     tasks::Priority priority)
 {
-    if (this->handler || this->hasResult) {
+    if (this->hasResult) {
+        return;
+    }
+    if (this->handler) {
+        this->handler.SetPriority(priority);
         return;
     }
 
@@ -418,6 +423,7 @@ details::WaitsetSlot<TFactory, IsVoid>::SetupHandler(size_t index, TCallback cbk
 
     if (!this->hasResult) {
         this->handler = handler;
+        this->handler.SetPriority(priority);
     }
 }
 
@@ -425,9 +431,14 @@ details::WaitsetSlot<TFactory, IsVoid>::SetupHandler(size_t index, TCallback cbk
 template <class TFactory>
 template <details::WaitsetHandlerCallback TCallback>
 void
-details::WaitsetSlot<TFactory, true>::SetupHandler(size_t index, TCallback cbk)
+details::WaitsetSlot<TFactory, true>::SetupHandler(size_t index, TCallback cbk,
+                                                   tasks::Priority priority)
 {
-    if (this->handler || this->hasResult) {
+    if (this->hasResult) {
+        return;
+    }
+    if (this->handler) {
+        this->handler.SetPriority(priority);
         return;
     }
 
@@ -440,6 +451,7 @@ details::WaitsetSlot<TFactory, true>::SetupHandler(size_t index, TCallback cbk)
 
     if (!this->hasResult) {
         this->handler = handler;
+        this->handler.SetPriority(priority);
     }
 }
 
@@ -448,12 +460,13 @@ template <size_t _slotIndex, typename TFactory, typename... TTail>
 template <details::WaitsetHandlerCallback TCallback>
 void
 details::WaitsetSlots<_slotIndex, TFactory, TTail...>::SetupHandler(TCallback cbk,
-                                                                    WaitsetMask disableMask)
+                                                                    WaitsetMask disableMask,
+                                                                    tasks::Priority priority)
 {
     if ((disableMask & WaitsetSlotMask(slotIndex)) == 0) {
-        slot.SetupHandler(slotIndex, cbk);
+        slot.SetupHandler(slotIndex, cbk, priority);
     }
-    Base::SetupHandler(cbk, disableMask);
+    Base::SetupHandler(cbk, disableMask, priority);
 }
 
 template <class... TFactory>
@@ -481,14 +494,14 @@ Waitset<TFactory...>::HasResult(size_t index)
 
 template <class... TFactory>
 void
-Waitset<TFactory...>::PrepareWait()
+Waitset<TFactory...>::PrepareWait(tasks::Priority priority)
 {
     slots.SetupHandler([this](size_t slotIndex){
         readyMask |= details::WaitsetSlotMask(slotIndex);
         while (!waiters.IsEmpty()) {
             Wakeup(waiters.PopFirst(), slotIndex);
         }
-    }, disableMask);
+    }, disableMask, priority);
 }
 
 } // namespace pulse
