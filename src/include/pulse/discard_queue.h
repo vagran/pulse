@@ -74,6 +74,13 @@ public:
         return size == 0;
     }
 
+    /// Check if queue is empty. Should be used only if producer is not in ISR or with
+    // interrupts disabled.
+    bool
+    IsFull() const
+    {
+        return size == capacity;
+    }
 
     /** Get reference to the first item (which is next to be popped out). Valid only if not empty.
      * Should be used only if producer is not in ISR or with interrupts disabled. Also taildrop
