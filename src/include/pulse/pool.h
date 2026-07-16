@@ -1,7 +1,8 @@
 #ifndef PULSE_POOL_H
 #define PULSE_POOL_H
 
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
+#include <etl/concepts.h>
 #include <etl/memory.h>
 
 

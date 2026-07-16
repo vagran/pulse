@@ -1,7 +1,7 @@
 #ifndef HEAP_H
 #define HEAP_H
 
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
 #include <etl/concepts.h>
 #include <etl/memory.h>
 

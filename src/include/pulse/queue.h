@@ -1,6 +1,7 @@
 #ifndef PULSE_QUEUE_H
 #define PULSE_QUEUE_H
 
+#include <pulse/debug.h>
 #include <pulse/details/common.h>
 #include <etl/memory.h>
 

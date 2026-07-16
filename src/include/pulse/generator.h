@@ -2,7 +2,7 @@
 #define GENERATOR_H
 
 #include <pulse/coroutine.h>
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
 #include <etl/optional.h>
 
 
