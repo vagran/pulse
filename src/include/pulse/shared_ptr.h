@@ -1,7 +1,7 @@
 #ifndef PULSE_SHARED_PTR_H
 #define PULSE_SHARED_PTR_H
 
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
 #include <etl/atomic.h>
 #include <etl/limits.h>
 

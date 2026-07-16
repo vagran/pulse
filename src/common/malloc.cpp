@@ -1,9 +1,10 @@
 #include <pulse/malloc.h>
+#include <pulse/debug.h>
 #include <pulse/details/common.h>
 #include <etl/bit.h>
 #include <etl/limits.h>
-#include <stdint.h>
 #include <string.h>
+
 
 #if pulseConfig_MALLOC_DEBUG
 #   include <etl/vector.h>

@@ -11,7 +11,7 @@
  * feature is the ability to provide formatters for custom user types.
  */
 
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
 #include <etl/string_view.h>
 #include <etl/string.h>
 #include <etl/tuple.h>

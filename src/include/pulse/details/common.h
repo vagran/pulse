@@ -8,10 +8,6 @@
 #include <etl/bit.h>
 
 
-#define PULSE_ASSERT(x)     pulseConfig_ASSERT(x)
-
-#define PULSE_PANIC(msg)    pulseConfig_PANIC(msg)
-
 namespace pulse {
 
 // Best matched uint type of given size in bits.

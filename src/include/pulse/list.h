@@ -1,7 +1,7 @@
 #ifndef LIST_H
 #define LIST_H
 
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
 #include <etl/concepts.h>
 
 

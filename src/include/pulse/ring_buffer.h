@@ -1,6 +1,7 @@
 #ifndef PULSE_RING_BUFFER_H
 #define PULSE_RING_BUFFER_H
 
+#include <pulse/debug.h>
 #include <pulse/details/common.h>
 #include <etl/span.h>
 
