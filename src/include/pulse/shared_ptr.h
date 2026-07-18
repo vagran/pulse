@@ -4,6 +4,7 @@
 #include <pulse/debug.h>
 #include <etl/atomic.h>
 #include <etl/limits.h>
+#include <etl/concepts.h>
 
 
 namespace pulse {
