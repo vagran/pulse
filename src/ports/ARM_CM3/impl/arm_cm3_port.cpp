@@ -1,5 +1,5 @@
 #include <pulse/port.h>
-#include <pulse/details/common.h>
+#include <pulse/debug.h>
 
 
 static_assert(pulseConfig_MAX_SYSCALL_INTERRUPT_PRIORITY > 0, "Cannot be zero on ARM");
